@@ -53,6 +53,7 @@ export interface Asset {
   vendor?: string;
   os_version?: string;
   arch?: string; // CPU 架构: x86_64 / aarch64 ...（认证采集得到）
+  virtualization?: string; // 虚拟化: physical/vmware/kvm/hyper-v/xen/qemu/aws/container:*（认证采集得到）
   ports?: string; // JSON string e.g. "[22, 80]"
   description?: string;
   credential_id?: number | null;

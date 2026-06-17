@@ -272,9 +272,9 @@ export const Assets: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    const header = ['名称', 'IP', '类型', '状态', '厂商', '系统', '端口', '标签', '描述'];
+    const header = ['名称', 'IP', '类型', '状态', '厂商', '系统', '架构', '虚拟化', '端口', '标签', '描述'];
     const rows = assets.map((a) => [
-      a.name, a.ip, a.type, a.status || '', a.vendor || '', a.os_version || '',
+      a.name, a.ip, a.type, a.status || '', a.vendor || '', a.os_version || '', a.arch || '', a.virtualization || '',
       a.ports || '', a.tags || '', (a.description || '').replace(/\n/g, ' '),
     ]);
     const csv = [header, ...rows]
@@ -341,6 +341,33 @@ export const Assets: React.FC = () => {
     }
   };
 
+  // 虚拟化标签：绿色=实体机，其它颜色=虚拟机/云/容器，一眼区分是否为虚拟机
+  const virtTagMap: Record<string, { label: string; color: string }> = {
+    physical: { label: '实体机', color: 'green' },
+    vmware: { label: 'VMware', color: 'blue' },
+    kvm: { label: 'KVM', color: 'geekblue' },
+    'hyper-v': { label: 'Hyper-V', color: 'purple' },
+    virtualbox: { label: 'VirtualBox', color: 'orange' },
+    xen: { label: 'Xen', color: 'cyan' },
+    qemu: { label: 'QEMU', color: 'geekblue' },
+    aws: { label: 'AWS', color: 'gold' },
+    gcp: { label: 'GCP', color: 'gold' },
+    aliyun: { label: '阿里云', color: 'gold' },
+    openstack: { label: 'OpenStack', color: 'gold' },
+    parallels: { label: 'Parallels', color: 'magenta' },
+  };
+  const CLOUD_VIRT = new Set(['aws', 'gcp', 'aliyun', 'openstack']);
+  const renderVirtTag = (v?: string) => {
+    if (!v) return null;
+    const base: React.CSSProperties = { borderRadius: 4, margin: 0 };
+    if (v === 'physical') return <Tag color="green" style={base}>🖥 实体机</Tag>;
+    if (v.startsWith('container:'))
+      return <Tag color="magenta" style={base}>📦 容器·{v.slice('container:'.length)}</Tag>;
+    const info = virtTagMap[v] || { label: v, color: 'geekblue' };
+    const prefix = CLOUD_VIRT.has(v) ? '☁ ' : '💻 ';
+    return <Tag color={info.color} style={base}>{prefix}{info.label}</Tag>;
+  };
+
   const renderTags = (tagsStr?: string) => {
     if (!tagsStr) return null;
     try {
@@ -376,6 +403,7 @@ export const Assets: React.FC = () => {
             </a>
             <Space size="small" align="center" style={{ flexWrap: 'wrap' }}>
               {info && <Text type="secondary" style={{ fontSize: '11px' }}>{info}</Text>}
+              {renderVirtTag(record.virtualization)}
               {renderTags(record.tags)}
             </Space>
           </Space>
@@ -735,6 +763,9 @@ export const Assets: React.FC = () => {
                   ) : (
                     <Text type="secondary">未采集</Text>
                   )}
+                </Descriptions.Item>
+                <Descriptions.Item label="虚拟化">
+                  {drawerAsset.virtualization ? renderVirtTag(drawerAsset.virtualization) : <Text type="secondary">未采集（点「采集」探测）</Text>}
                 </Descriptions.Item>
                 <Descriptions.Item label="最后扫描时间">
                   {drawerAsset.last_scanned_at ? (
