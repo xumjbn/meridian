@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,28 @@ import (
 	"backend/internal/model"
 	"gorm.io/gorm"
 )
+
+// loadScanParams 从「系统设置」读取扫描并发数与端口探测超时（带默认值兜底）
+func loadScanParams(db *gorm.DB) (int, time.Duration) {
+	concurrency := 100
+	timeout := 2000 * time.Millisecond
+	var settings []model.SystemSetting
+	if err := db.Find(&settings).Error; err == nil {
+		for _, s := range settings {
+			switch s.Key {
+			case "scan_concurrency":
+				if n, e := strconv.Atoi(strings.TrimSpace(s.Value)); e == nil && n >= 1 && n <= 1000 {
+					concurrency = n
+				}
+			case "scan_timeout":
+				if f, e := strconv.ParseFloat(strings.TrimSpace(s.Value), 64); e == nil && f > 0 {
+					timeout = time.Duration(f * float64(time.Second))
+				}
+			}
+		}
+	}
+	return concurrency, timeout
+}
 
 // ScanResult 包含探测出来的单个主机信息
 type ScanResult struct {
@@ -51,8 +74,8 @@ func appendDetailLog(db *gorm.DB, scanLog *model.ScanLog, format string, args ..
 	db.Model(scanLog).Update("detail", gorm.Expr("detail || ?", msg))
 }
 
-// StartScanTask 执行后台扫描任务并更新数据库
-func StartScanTask(db *gorm.DB, taskID uint) {
+// runDiscoveryScan 执行后台端口发现扫描任务并更新数据库（原 StartScanTask 主体，逻辑保持不变）
+func runDiscoveryScan(db *gorm.DB, taskID uint) {
 	var task model.ScanTask
 	if err := db.First(&task, taskID).Error; err != nil {
 		log.Printf("Scanner: task %d not found: %v", taskID, err)
@@ -101,15 +124,9 @@ func StartScanTask(db *gorm.DB, taskID uint) {
 		return
 	}
 
-	// 3. 动态配置扫描参数 (限流与超时控制)
-	timeout := 1000 * time.Millisecond
-	concurrency := 50
+	// 3. 扫描参数：优先采用「系统设置」中用户配置的并发数与超时；大网段额外限流
+	concurrency, timeout := loadScanParams(db)
 	rateLimit := 0 // 0 表示不限流
-
-	if len(ips) > 256 {
-		timeout = 400 * time.Millisecond
-		concurrency = 150
-	}
 	if len(ips) > 1000 {
 		rateLimit = 200 // 大网段下限制每秒最多发送 200 个 IP 扫描探测
 	}

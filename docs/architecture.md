@@ -1,6 +1,8 @@
-# 资产管理系统 架构设计文档 (Architecture Design)
+# Meridian 架构设计文档 (Architecture Design)
 
-本文档描述了资产管理系统的整体技术架构、模块职责、以及关键机制的实现逻辑。
+> **产品**: Meridian · 子午 — 网络资产发现与统一接入平台
+
+本文档描述了 Meridian 的整体技术架构、模块职责、以及关键机制的实现逻辑。
 
 ---
 

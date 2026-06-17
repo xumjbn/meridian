@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"backend/internal/model"
@@ -14,6 +15,7 @@ import (
 	"backend/internal/store"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 )
 
@@ -70,7 +72,9 @@ func GetDashboardStats(c *gin.Context) {
 	db.Model(&model.Asset{}).Where("type = ?", "server").Count(&servers)
 	db.Model(&model.Asset{}).Where("type = ?", "switch").Count(&switches)
 	db.Model(&model.Asset{}).Where("type = ?", "router").Count(&routers)
-	db.Model(&model.Asset{}).Where("type = ?", "other").Count(&other)
+	// “其他”涵盖除服务器/交换机/路由器外的全部类型（如指纹识别得到的 camera、unknown 等），
+	// 保证 servers+switches+routers+other == total_assets，前端分布饼图不会漏计。
+	db.Model(&model.Asset{}).Where("type NOT IN ?", []string{"server", "switch", "router"}).Count(&other)
 
 	db.Model(&model.Asset{}).Where("status = ?", "online").Count(&onlineAssets)
 	db.Model(&model.Asset{}).Where("status = ?", "offline").Count(&offlineAssets)
@@ -154,6 +158,8 @@ func DeleteCredential(c *gin.Context) {
 		SendError(c, 500, err.Error())
 		return
 	}
+	// 解除被删凭据在资产上的悬空引用，避免资产 credential_id 指向已不存在的记录
+	db.Model(&model.Asset{}).Where("credential_id = ?", id).Update("credential_id", nil)
 	SendSuccess(c, nil)
 }
 
@@ -214,6 +220,12 @@ func CreateAsset(c *gin.Context) {
 		return
 	}
 
+	// 校验 IP 格式（服务端兜底，避免非法 IP 入库后扫描/探测报错）
+	if net.ParseIP(strings.TrimSpace(asset.IP)) == nil {
+		SendError(c, 400, "IP 地址格式不合法")
+		return
+	}
+
 	// 检查 IP 唯一性
 	var count int64
 	db.Model(&model.Asset{}).Where("ip = ?", asset.IP).Count(&count)
@@ -255,6 +267,8 @@ func UpdateAsset(c *gin.Context) {
 		return
 	}
 
+	old := asset // 记录变更前的值
+
 	asset.Name = req.Name
 	asset.IP = req.IP
 	asset.Type = req.Type
@@ -270,6 +284,15 @@ func UpdateAsset(c *gin.Context) {
 		return
 	}
 
+	// 记录字段级变更历史
+	recordAssetChange(db, asset.ID, "名称", old.Name, asset.Name)
+	recordAssetChange(db, asset.ID, "IP", old.IP, asset.IP)
+	recordAssetChange(db, asset.ID, "类型", old.Type, asset.Type)
+	recordAssetChange(db, asset.ID, "状态", old.Status, asset.Status)
+	recordAssetChange(db, asset.ID, "描述", old.Description, asset.Description)
+	recordAssetChange(db, asset.ID, "标签", old.Tags, asset.Tags)
+	recordAssetChange(db, asset.ID, "凭据", credIDStr(old.CredentialID), credIDStr(asset.CredentialID))
+
 	db.Create(&model.ActivityLog{
 		Type:    "asset_updated",
 		Message: fmt.Sprintf("资产 %s (%s) 信息已更新", asset.Name, asset.IP),
@@ -279,13 +302,42 @@ func UpdateAsset(c *gin.Context) {
 	SendSuccess(c, asset)
 }
 
+func recordAssetChange(db *gorm.DB, assetID uint, field, oldV, newV string) {
+	if oldV == newV {
+		return
+	}
+	db.Create(&model.AssetHistory{AssetID: assetID, Field: field, OldValue: oldV, NewValue: newV, CreatedAt: time.Now()})
+}
+
+func credIDStr(p *uint) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.FormatUint(uint64(*p), 10)
+}
+
+// GetAssetHistory 资产变更历史
+func GetAssetHistory(c *gin.Context) {
+	db := store.GlobalDB
+	id, _ := strconv.Atoi(c.Param("id"))
+	var hist []model.AssetHistory
+	if err := db.Where("asset_id = ?", id).Order("id desc").Limit(100).Find(&hist).Error; err != nil {
+		SendError(c, 500, err.Error())
+		return
+	}
+	SendSuccess(c, hist)
+}
+
 func DeleteAsset(c *gin.Context) {
 	db := store.GlobalDB
 	idStr := c.Param("id")
 	id, _ := strconv.Atoi(idStr)
 
 	var asset model.Asset
-	db.First(&asset, id)
+	if err := db.First(&asset, id).Error; err != nil {
+		SendError(c, 404, "资产不存在")
+		return
+	}
 
 	if err := db.Delete(&model.Asset{}, id).Error; err != nil {
 		SendError(c, 500, err.Error())
@@ -481,8 +533,12 @@ func ConnectTerminal(c *gin.Context) {
 		return
 	}
 
-	// 交给 sshproxy 处理
-	go sshproxy.ProxyTerminal(ws, &asset, credPtr)
+	// 根据凭据类型选择 SSH 或 Telnet 代理
+	if credPtr != nil && credPtr.Type == "telnet" {
+		go sshproxy.ProxyTelnet(ws, &asset, credPtr)
+	} else {
+		go sshproxy.ProxyTerminal(ws, &asset, credPtr)
+	}
 }
 
 // ==========================================
@@ -538,4 +594,310 @@ func GetRecentActivity(c *gin.Context) {
 		return
 	}
 	SendSuccess(c, logs)
+}
+
+// ==========================================
+// 8. 系统配置 — GetSettings / UpdateSettings
+// ==========================================
+
+// GetSettings 返回所有系统配置（key -> value）
+func GetSettings(c *gin.Context) {
+	db := store.GlobalDB
+	var settings []model.SystemSetting
+	if err := db.Find(&settings).Error; err != nil {
+		SendError(c, 500, err.Error())
+		return
+	}
+	m := make(map[string]string)
+	for _, s := range settings {
+		m[s.Key] = s.Value
+	}
+	SendSuccess(c, m)
+}
+
+// UpdateSettings 批量更新系统配置（upsert）
+func UpdateSettings(c *gin.Context) {
+	db := store.GlobalDB
+	var payload map[string]string
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		SendError(c, 400, "参数格式错误")
+		return
+	}
+	now := time.Now()
+	for k, v := range payload {
+		var existing model.SystemSetting
+		if err := db.First(&existing, "key = ?", k).Error; err == nil {
+			db.Model(&existing).Updates(map[string]interface{}{"value": v, "updated_at": now})
+		} else {
+			db.Create(&model.SystemSetting{Key: k, Value: v, UpdatedAt: now})
+		}
+	}
+	SendSuccess(c, gin.H{"updated": len(payload)})
+}
+
+// ==========================================
+// 9. TestCredential — 用指定凭据测试连接目标主机
+// ==========================================
+
+type testCredReq struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+func TestCredential(c *gin.Context) {
+	db := store.GlobalDB
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	var cred model.Credential
+	if err := db.First(&cred, id).Error; err != nil {
+		SendError(c, 404, "凭据不存在")
+		return
+	}
+
+	var req testCredReq
+	_ = c.ShouldBindJSON(&req)
+	if req.Host == "" {
+		SendError(c, 400, "请提供测试目标主机 IP")
+		return
+	}
+	if req.Port == 0 {
+		if cred.Type == "telnet" {
+			req.Port = 23
+		} else {
+			req.Port = 22
+		}
+	}
+
+	addr := fmt.Sprintf("%s:%d", req.Host, req.Port)
+
+	// Telnet：当前仅校验端口连通性（不做登录验证）
+	if cred.Type == "telnet" {
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		if err != nil {
+			SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("Telnet 端口不可达: %v", err)})
+			return
+		}
+		conn.Close()
+		SendSuccess(c, gin.H{"ok": true, "message": "Telnet 端口连通（未做登录校验）"})
+		return
+	}
+
+	sshConfig := &ssh.ClientConfig{
+		User:            cred.Username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         8 * time.Second,
+	}
+	if cred.Type == "ssh_key" && cred.PrivateKey != "" {
+		signer, err := ssh.ParsePrivateKey([]byte(cred.PrivateKey))
+		if err != nil {
+			SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("私钥解析失败: %v", err)})
+			return
+		}
+		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+	} else {
+		sshConfig.Auth = []ssh.AuthMethod{ssh.Password(cred.Password)}
+	}
+
+	client, err := ssh.Dial("tcp", addr, sshConfig)
+	if err != nil {
+		SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("连接失败: %v", err)})
+		return
+	}
+	client.Close()
+	SendSuccess(c, gin.H{"ok": true, "message": "连接成功，凭据有效 ✓"})
+}
+
+// ==========================================
+// 10. CollectAsset — 认证采集（SSH uname）系统/架构信息
+// ==========================================
+
+func CollectAsset(c *gin.Context) {
+	db := store.GlobalDB
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	var asset model.Asset
+	if err := db.First(&asset, id).Error; err != nil {
+		SendError(c, 404, "资产不存在")
+		return
+	}
+	if asset.CredentialID == nil {
+		SendError(c, 400, "请先为该资产绑定 SSH 凭据后再采集")
+		return
+	}
+	var cred model.Credential
+	if err := db.First(&cred, *asset.CredentialID).Error; err != nil {
+		SendError(c, 400, "关联的凭据不存在")
+		return
+	}
+	if cred.Type == "telnet" {
+		SendError(c, 400, "Telnet 凭据暂不支持信息采集")
+		return
+	}
+
+	sshConfig := &ssh.ClientConfig{
+		User:            cred.Username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         8 * time.Second,
+	}
+	if cred.Type == "ssh_key" && cred.PrivateKey != "" {
+		signer, err := ssh.ParsePrivateKey([]byte(cred.PrivateKey))
+		if err != nil {
+			SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("私钥解析失败: %v", err)})
+			return
+		}
+		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+	} else {
+		sshConfig.Auth = []ssh.AuthMethod{ssh.Password(cred.Password)}
+	}
+
+	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", asset.IP), sshConfig)
+	if err != nil {
+		SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("SSH 连接失败: %v", err)})
+		return
+	}
+	defer client.Close()
+	session, err := client.NewSession()
+	if err != nil {
+		SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("创建会话失败: %v", err)})
+		return
+	}
+	defer session.Close()
+
+	// uname -m -> 架构；uname -sr -> 内核
+	out, err := session.CombinedOutput("uname -m; uname -sr")
+	if err != nil {
+		SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("命令执行失败: %v", err)})
+		return
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	arch, kernel := "", ""
+	if len(lines) > 0 {
+		arch = strings.TrimSpace(lines[0])
+	}
+	if len(lines) > 1 {
+		kernel = strings.TrimSpace(lines[1])
+	}
+
+	updates := map[string]interface{}{}
+	if arch != "" {
+		updates["arch"] = arch
+	}
+	if kernel != "" {
+		updates["os_version"] = kernel
+	}
+	if len(updates) > 0 {
+		db.Model(&asset).Updates(updates)
+	}
+	logActivity(db, "asset_updated", fmt.Sprintf("资产 %s 采集成功 (%s)", asset.Name, arch), asset.ID)
+	SendSuccess(c, gin.H{"ok": true, "arch": arch, "os": kernel, "message": fmt.Sprintf("采集成功: %s / %s", arch, kernel)})
+}
+
+// ==========================================
+// 11. GetVulnFindings — 漏洞发现列表（可选 ?asset_id= 过滤）
+// ==========================================
+
+func GetVulnFindings(c *gin.Context) {
+	db := store.GlobalDB
+	q := db.Order("id desc")
+	if aid := c.Query("asset_id"); aid != "" {
+		q = q.Where("asset_id = ?", aid)
+	}
+	var findings []model.VulnFinding
+	if err := q.Limit(500).Find(&findings).Error; err != nil {
+		SendError(c, 500, err.Error())
+		return
+	}
+	SendSuccess(c, findings)
+}
+
+// ==========================================
+// 12. StreamScanLog — SSE 实时推送扫描日志与状态
+// ==========================================
+
+func StreamScanLog(c *gin.Context) {
+	db := store.GlobalDB
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		SendError(c, 500, "streaming unsupported")
+		return
+	}
+
+	lastLen := 0
+	lastStatus := ""
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	done := c.Request.Context().Done()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			var sl model.ScanLog
+			if err := db.Where("task_id = ?", id).Order("id desc").First(&sl).Error; err != nil {
+				continue
+			}
+			if len(sl.Detail) > lastLen {
+				delta := sl.Detail[lastLen:]
+				lastLen = len(sl.Detail)
+				for _, line := range strings.Split(strings.TrimRight(delta, "\n"), "\n") {
+					if line == "" {
+						continue
+					}
+					fmt.Fprintf(c.Writer, "data: %s\n\n", line)
+				}
+				flusher.Flush()
+			}
+			if sl.Status != lastStatus {
+				lastStatus = sl.Status
+				fmt.Fprintf(c.Writer, "event: status\ndata: %s\n\n", sl.Status)
+				flusher.Flush()
+			}
+			if sl.Status != "running" && sl.Status != "" {
+				fmt.Fprintf(c.Writer, "event: done\ndata: %s\n\n", sl.Summary)
+				flusher.Flush()
+				return
+			}
+		}
+	}
+}
+
+// ==========================================
+// 13. Login — 登录校验（默认 admin/admin，可在 system_settings 改）
+// ==========================================
+
+type loginReq struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func Login(c *gin.Context) {
+	db := store.GlobalDB
+	var req loginReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		SendError(c, 400, "参数错误")
+		return
+	}
+	user := getSettingValue(db, "auth_username", "admin")
+	pass := getSettingValue(db, "auth_password", "admin")
+	if req.Username == user && req.Password == pass {
+		SendSuccess(c, gin.H{"ok": true, "token": "meridian-session", "username": user})
+		return
+	}
+	SendError(c, 401, "用户名或密码错误")
+}
+
+func getSettingValue(db *gorm.DB, key, def string) string {
+	var s model.SystemSetting
+	if err := db.First(&s, "key = ?", key).Error; err == nil && s.Value != "" {
+		return s.Value
+	}
+	return def
 }

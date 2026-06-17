@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"backend/internal/handler"
+	"backend/internal/scheduler"
 	"backend/internal/store"
 	"github.com/gin-gonic/gin"
 )
@@ -37,6 +38,9 @@ func main() {
 		defer sqlDB.Close()
 	}
 
+	// 启动定时扫描调度器
+	scheduler.Start(db)
+
 	// 2. 初始化 Gin 引擎
 	r := gin.Default()
 
@@ -54,6 +58,11 @@ func main() {
 		api.POST("/credentials", handler.CreateCredential)
 		api.PUT("/credentials/:id", handler.UpdateCredential)
 		api.DELETE("/credentials/:id", handler.DeleteCredential)
+		api.POST("/credentials/:id/test", handler.TestCredential)
+
+		// 系统配置
+		api.GET("/settings", handler.GetSettings)
+		api.PUT("/settings", handler.UpdateSettings)
 
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)
@@ -70,9 +79,22 @@ func main() {
 		api.POST("/tasks/:id/run", handler.RunScanTask)
 		api.POST("/tasks/:id/stop", handler.StopScanTask)
 		api.GET("/tasks/:id/logs", handler.GetScanLogs)
+		api.GET("/tasks/:id/stream", handler.StreamScanLog)
 
 		// 资产在线探测
 		api.POST("/assets/:id/ping", handler.PingAsset)
+
+		// 认证采集（架构/系统信息）
+		api.POST("/assets/:id/collect", handler.CollectAsset)
+
+		// 资产变更历史
+		api.GET("/assets/:id/history", handler.GetAssetHistory)
+
+		// 漏洞发现列表
+		api.GET("/vulns", handler.GetVulnFindings)
+
+		// 登录校验
+		api.POST("/login", handler.Login)
 
 		// 最近活动日志
 		api.GET("/activity/recent", handler.GetRecentActivity)
@@ -82,7 +104,8 @@ func main() {
 	}
 
 	// 5. 启动服务，监听 8080 端口
-	log.Println("Backend server is running on http://localhost:8080")
+	log.Println("Meridian · 子午 — 网络资产发现与统一接入平台")
+	log.Println("Meridian backend is running on http://localhost:8080")
 	if err := r.Run("127.0.0.1:8080"); err != nil {
 		log.Fatalf("Failed to run server: %v", err)
 	}
