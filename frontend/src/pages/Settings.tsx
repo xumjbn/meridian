@@ -1,11 +1,15 @@
-import React from 'react';
-import { Row, Col, Slider, Typography, Divider, Tag, Space } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Slider, Typography, Divider, Tag, Space, Button, message, Spin } from 'antd';
 import {
   SettingOutlined,
   GithubOutlined,
   SafetyOutlined,
   ThunderboltOutlined,
+  SaveOutlined,
 } from '@ant-design/icons';
+import { PageHeader } from '../components/PageHeader';
+import { palette, brand } from '../theme';
+import { getSettings, updateSettings } from '../services/api';
 
 const { Text, Link } = Typography;
 
@@ -18,18 +22,19 @@ interface SettingCardProps {
 
 const SettingCard: React.FC<SettingCardProps> = ({ icon, title, description, children }) => (
   <div style={{
-    background: '#ffffff',
-    border: '1px solid #f1f5f9',
-    borderRadius: 8,
+    background: palette.surface,
+    border: `1px solid ${palette.border}`,
+    borderRadius: 12,
     padding: '24px',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+    boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
     marginBottom: 20,
   }}>
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
       <div style={{
-        width: 36, height: 36, borderRadius: 8,
-        background: '#eff6ff', color: '#2563eb',
+        width: 38, height: 38, borderRadius: 10,
+        background: palette.brandGradient, color: '#fff',
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        boxShadow: '0 6px 16px -6px rgba(99,102,241,0.55)',
       }}>
         {icon}
       </div>
@@ -54,39 +59,71 @@ const SettingRow: React.FC<{ label: string; hint?: string; children: React.React
 );
 
 export const Settings: React.FC = () => {
-  return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
-      {/* Header */}
-      <div style={{
-        background: '#ffffff',
-        padding: '20px 32px',
-        borderBottom: '1px solid #f1f5f9',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 600, color: '#0f172a' }}>系统设置</h1>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>扫描引擎参数、安全配置与系统信息</p>
-        </div>
-      </div>
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [concurrency, setConcurrency] = useState(100);
+  const [portTimeout, setPortTimeout] = useState(2);
+  const [sshTimeout, setSshTimeout] = useState(10);
 
-      <div style={{ padding: '32px', maxWidth: 860 }}>
-        <Row gutter={[0, 0]}>
-          <Col span={24}>
+  useEffect(() => {
+    getSettings()
+      .then((s) => {
+        if (s.scan_concurrency) setConcurrency(Number(s.scan_concurrency));
+        if (s.scan_timeout) setPortTimeout(Number(s.scan_timeout));
+        if (s.ssh_timeout) setSshTimeout(Number(s.ssh_timeout));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await updateSettings({
+        scan_concurrency: String(concurrency),
+        scan_timeout: String(portTimeout),
+        ssh_timeout: String(sshTimeout),
+      });
+      message.success('扫描引擎配置已保存');
+    } catch (e) {
+      message.error('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+      <PageHeader
+        title="系统设置"
+        subtitle="扫描引擎参数、安全配置与系统信息"
+        icon={<SettingOutlined />}
+        extra={
+          <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+            保存配置
+          </Button>
+        }
+      />
+
+      <div style={{ padding: 32 }} className="mrd-fade-up">
+        <div style={{ maxWidth: 880, margin: '0 auto' }}>
             {/* 扫描引擎 */}
             <SettingCard
               icon={<ThunderboltOutlined style={{ fontSize: 16 }} />}
               title="扫描引擎配置"
               description="控制并发扫描的性能参数，影响扫描速度与目标主机/网络的压力"
             >
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '24px 0' }}><Spin /></div>
+              ) : (
+              <>
               <SettingRow
                 label="最大并发连接数"
                 hint="同时建立的 TCP 探测连接数，建议 50–200，过大可能导致目标网络告警"
               >
                 <div style={{ width: 200 }}>
                   <Slider
-                    min={10} max={500} defaultValue={100}
+                    min={10} max={500} value={concurrency} onChange={setConcurrency}
                     marks={{ 10: '10', 100: '100', 500: '500' }}
                     tooltip={{ formatter: (v) => `${v} 个` }}
                   />
@@ -98,7 +135,7 @@ export const Settings: React.FC = () => {
               >
                 <div style={{ width: 200 }}>
                   <Slider
-                    min={1} max={10} defaultValue={2} step={0.5}
+                    min={1} max={10} step={0.5} value={portTimeout} onChange={setPortTimeout}
                     marks={{ 1: '1s', 5: '5s', 10: '10s' }}
                     tooltip={{ formatter: (v) => `${v}s` }}
                   />
@@ -110,18 +147,20 @@ export const Settings: React.FC = () => {
               >
                 <div style={{ width: 200 }}>
                   <Slider
-                    min={5} max={60} defaultValue={10}
+                    min={5} max={60} value={sshTimeout} onChange={setSshTimeout}
                     marks={{ 5: '5s', 10: '10s', 60: '60s' }}
                     tooltip={{ formatter: (v) => `${v}s` }}
                   />
                 </div>
               </SettingRow>
 
-              <div style={{ marginTop: 16, padding: '10px 14px', background: '#fafafa', borderRadius: 6, border: '1px solid #f1f5f9' }}>
-                <Text style={{ fontSize: 12, color: '#94a3b8' }}>
-                  ⚠️ 当前版本配置仅在此会话中生效，重启后端后将恢复默认值。持久化配置将在 Phase 3 版本中实现。
+              <div style={{ marginTop: 16, padding: '10px 14px', background: '#f0fdf4', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                <Text style={{ fontSize: 12, color: '#15803d' }}>
+                  ✓ 配置已持久化到数据库（system_settings 表），重启后端依然生效。修改后点击右上角「保存配置」应用。
                 </Text>
               </div>
+              </>
+              )}
             </SettingCard>
 
             {/* 安全 */}
@@ -159,11 +198,19 @@ export const Settings: React.FC = () => {
             {/* 关于 */}
             <SettingCard
               icon={<SettingOutlined style={{ fontSize: 16 }} />}
-              title="关于"
+              title="关于 Meridian"
               description="系统版本信息与项目链接"
             >
+              <SettingRow label="产品名称">
+                <Text style={{ fontWeight: 600, color: palette.text }}>
+                  {brand.name} · {brand.zh}
+                </Text>
+              </SettingRow>
+              <SettingRow label="产品定位" hint={brand.tagline}>
+                <Tag color="purple" style={{ borderRadius: 4 }}>资产中枢</Tag>
+              </SettingRow>
               <SettingRow label="当前版本">
-                <Tag color="blue" style={{ borderRadius: 4, fontFamily: 'monospace' }}>v2.0.0-phase1</Tag>
+                <Tag color="blue" style={{ borderRadius: 4, fontFamily: 'monospace' }}>{brand.version}</Tag>
               </SettingRow>
               <SettingRow label="技术栈">
                 <Space size={4} wrap>
@@ -178,7 +225,7 @@ export const Settings: React.FC = () => {
                 <Text code style={{ fontSize: 12 }}>backend/assets.db</Text>
               </SettingRow>
               <SettingRow label="项目源码">
-                <Link href="https://github.com" target="_blank">
+                <Link href={brand.repo} target="_blank">
                   <Space size={4}>
                     <GithubOutlined />
                     <span style={{ fontSize: 13 }}>GitHub</span>
@@ -186,8 +233,7 @@ export const Settings: React.FC = () => {
                 </Link>
               </SettingRow>
             </SettingCard>
-          </Col>
-        </Row>
+        </div>
       </div>
     </div>
   );

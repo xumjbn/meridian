@@ -1,0 +1,7 @@
+# Compiled server binary (built locally, not source)
+meridian-server.exe
+*.exe
+*.exe~
+
+# Local runtime artifacts
+*.log
