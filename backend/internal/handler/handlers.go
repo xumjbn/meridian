@@ -763,20 +763,26 @@ func CollectAsset(c *gin.Context) {
 	}
 	defer session.Close()
 
-	// uname -m -> 架构；uname -sr -> 内核
-	out, err := session.CombinedOutput("uname -m; uname -sr")
+	// 第1行 uname -m -> 架构；第2行 uname -sr -> 内核；第3行 -> 虚拟化探测
+	// 虚拟化探测优先 systemd-detect-virt；缺失时回退 CPUID hypervisor 位 + DMI product_name；物理机输出 none
+	virtProbe := "( systemd-detect-virt 2>/dev/null || ( grep -qa hypervisor /proc/cpuinfo 2>/dev/null && cat /sys/class/dmi/id/product_name 2>/dev/null ) || echo none ) | head -n1"
+	out, err := session.CombinedOutput("uname -m; uname -sr; " + virtProbe)
 	if err != nil {
 		SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("命令执行失败: %v", err)})
 		return
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	arch, kernel := "", ""
+	arch, kernel, virtRaw := "", "", ""
 	if len(lines) > 0 {
 		arch = strings.TrimSpace(lines[0])
 	}
 	if len(lines) > 1 {
 		kernel = strings.TrimSpace(lines[1])
 	}
+	if len(lines) > 2 {
+		virtRaw = strings.TrimSpace(lines[len(lines)-1]) // 取最后一行，规避前面命令多输出的兜底行
+	}
+	virt := normalizeVirt(virtRaw)
 
 	updates := map[string]interface{}{}
 	if arch != "" {
@@ -785,11 +791,69 @@ func CollectAsset(c *gin.Context) {
 	if kernel != "" {
 		updates["os_version"] = kernel
 	}
+	if virt != "" {
+		updates["virtualization"] = virt
+	}
 	if len(updates) > 0 {
 		db.Model(&asset).Updates(updates)
 	}
-	logActivity(db, "asset_updated", fmt.Sprintf("资产 %s 采集成功 (%s)", asset.Name, arch), asset.ID)
-	SendSuccess(c, gin.H{"ok": true, "arch": arch, "os": kernel, "message": fmt.Sprintf("采集成功: %s / %s", arch, kernel)})
+	logActivity(db, "asset_updated", fmt.Sprintf("资产 %s 采集成功 (%s / %s)", asset.Name, arch, virtLabel(virt)), asset.ID)
+	SendSuccess(c, gin.H{"ok": true, "arch": arch, "os": kernel, "virtualization": virt,
+		"message": fmt.Sprintf("采集成功: %s / %s / %s", arch, kernel, virtLabel(virt))})
+}
+
+// normalizeVirt 把 systemd-detect-virt / DMI product_name 的原始输出归一化为内部标识
+func normalizeVirt(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return ""
+	}
+	switch {
+	case s == "none":
+		return "physical"
+	case strings.Contains(s, "vmware"):
+		return "vmware"
+	case strings.Contains(s, "microsoft") || strings.Contains(s, "hyper-v") || strings.Contains(s, "hyperv"):
+		return "hyper-v"
+	case strings.Contains(s, "virtualbox") || s == "oracle":
+		return "virtualbox"
+	case strings.Contains(s, "kvm"):
+		return "kvm"
+	case strings.Contains(s, "xen"):
+		return "xen"
+	case strings.Contains(s, "qemu") || strings.Contains(s, "bochs") || strings.Contains(s, "i440fx") || strings.Contains(s, "q35"):
+		return "qemu"
+	case strings.Contains(s, "amazon") || strings.Contains(s, "ec2"):
+		return "aws"
+	case strings.Contains(s, "google"):
+		return "gcp"
+	case strings.Contains(s, "alibaba") || strings.Contains(s, "aliyun"):
+		return "aliyun"
+	case strings.Contains(s, "openstack"):
+		return "openstack"
+	case strings.Contains(s, "parallels"):
+		return "parallels"
+	case s == "docker" || s == "lxc" || s == "lxc-libvirt" || s == "podman" || s == "openvz" ||
+		s == "systemd-nspawn" || s == "wsl" || s == "rkt":
+		return "container:" + s
+	default:
+		// 其它 systemd 已知标识（bhyve/zvm/powervm 等）直接保留原 token
+		return s
+	}
+}
+
+// virtLabel 给日志/消息用的中文短标签
+func virtLabel(v string) string {
+	switch {
+	case v == "":
+		return "虚拟化未知"
+	case v == "physical":
+		return "实体机"
+	case strings.HasPrefix(v, "container:"):
+		return "容器(" + strings.TrimPrefix(v, "container:") + ")"
+	default:
+		return v
+	}
 }
 
 // ==========================================
