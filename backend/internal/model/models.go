@@ -14,6 +14,7 @@ type Asset struct {
 	Vendor        string     `gorm:"size:100" json:"vendor"` // Cisco, Huawei, Dell, Ubuntu等
 	OSVersion     string     `gorm:"size:100" json:"os_version"`
 	Arch          string     `gorm:"size:30" json:"arch"` // CPU 架构: x86_64 / aarch64 / armv7l（需认证采集）
+	Virtualization string    `gorm:"size:30" json:"virtualization"` // 虚拟化: physical / vmware / kvm / hyper-v / xen / qemu / aws / container:* …（需认证采集）
 	Ports         string     `gorm:"type:text" json:"ports"` // JSON 字符串数组，如 "[22, 80]"
 	Tags          string     `gorm:"type:text" json:"tags"`  // JSON 字符串数组，如 ["生产","DMZ"]
 	Description   string     `gorm:"type:text" json:"description"`
