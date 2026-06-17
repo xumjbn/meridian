@@ -1,6 +1,8 @@
-# 资产管理系统 接口定义文档 (API Specification)
+# Meridian 接口定义文档 (API Specification)
 
-本文档定义了前后端交互的 RESTful API 接口和 WebSocket 终端协议。
+> 产品：Meridian · 子午 — 网络资产发现与统一接入平台 · 文档版本 v4.0（2026-06-18）
+
+本文档定义了前后端交互的 RESTful API 接口和 WebSocket 终端协议。所有列出的接口均已实现。
 
 所有 REST API 请求与响应的主体均为 JSON 格式，且响应包含统一的 JSON 结构：
 ```json
@@ -97,9 +99,12 @@
     "ip": "192.168.1.50",
     "type": "server",
     "status": "online",
-    "vendor": "Ubuntu / Linux",
-    "os_version": "20.04.1 LTS",
-    "ports": "[22, 80, 443]", // 字符串化 JSON 数组
+    "vendor": "Ubuntu",
+    "os_version": "Linux 5.15.0-91-generic",
+    "arch": "x86_64",                  // 认证采集得到：x86_64 / aarch64 ...
+    "virtualization": "kvm",           // 认证采集得到：physical/vmware/kvm/hyper-v/xen/qemu/aws/gcp/aliyun/openstack/container:* ...
+    "ports": "[22, 80, 443]",          // 字符串化 JSON 数组
+    "tags": "[\"生产\",\"DMZ\"]",      // 字符串化 JSON 数组
     "description": "生产 Web 主机 1",
     "credential_id": 1,
     "last_scanned_at": "2026-06-17T14:30:00Z",
@@ -146,7 +151,9 @@
     "name": "局域网段扫描",
     "target_range": "192.168.1.1-192.168.1.254", // 支持 CIDR: 192.168.1.0/24
     "ports": "22,23,80,443",
-    "status": "idle", // idle | running | completed | failed
+    "kind": "discovery",     // discovery（端口发现） | vuln（nuclei 漏扫）
+    "schedule": "@every 1h", // 定时计划：""（仅手动） | "@every 15m" | "daily:HH:MM"
+    "status": "idle",        // idle | running | completed | failed
     "last_run_at": "2026-06-17T15:00:00Z",
     "created_at": "2026-06-17T09:00:00Z"
   }
@@ -299,34 +306,102 @@
 
 ---
 
-## 8. 计划中的接口（Phase 2 / Phase 3）
+## 8. 认证采集与变更历史 (Collect / History)
 
-> 以下接口已在设计文档中定义，尚未实现。
-
-### 8.1 扫描进度 SSE 流（Phase 2）
-- **请求方式**：`GET`
-- **请求路径**：`/api/tasks/:id/stream`
-- **说明**：Server-Sent Events 单向推流，扫描引擎每发现一个存活 IP 即推送一条事件。
-- **Event 数据格式**：
-```
-event: discovery
-data: {"ip":"192.168.1.50","status":"online","ports":[22,80],"type":"server"}
-
-event: progress
-data: {"scanned":45,"total":254,"found":3}
-
-event: done
-data: {"summary":"扫描完成，共发现 12 台主机"}
-```
-
-### 8.2 凭据连通性测试（Phase 3）
+### 8.1 认证采集（架构 / 虚拟化 / 内核）
 - **请求方式**：`POST`
-- **请求路径**：`/api/credentials/:id/test?assetId=101`
-- **说明**：用指定凭据对目标资产发起 SSH 连接测试，返回是否成功。
+- **请求路径**：`/api/assets/:id/collect`
+- **说明**：对**已绑定 SSH 凭据**的资产建立会话，执行 `uname -m; uname -sr` 取架构/内核，并以 `systemd-detect-virt`（回退 `/proc/cpuinfo` hypervisor 位 + DMI `product_name`）判定虚拟化；结果写入 `arch` / `virtualization` / `os_version`。Telnet 凭据不支持采集。
 - **响应数据** (`data`)：
 ```json
 {
-  "success": true,
-  "message": "SSH 连接成功，用时 1.2s"
+  "ok": true,
+  "arch": "aarch64",
+  "os": "Linux 4.19.90-25.10.v2101.ky10.aarch64",
+  "virtualization": "kvm",
+  "message": "采集成功: aarch64 / Linux 4.19.90... / kvm"
 }
 ```
+
+### 8.2 资产字段变更历史
+- **请求方式**：`GET`
+- **请求路径**：`/api/assets/:id/history`
+- **说明**：返回该资产最近 100 条字段级变更（名称/IP/类型/状态/描述/标签/凭据等），按时间倒序。
+- **响应数据** (`data`)：`[{ "id", "asset_id", "field", "old_value", "new_value", "created_at" }]`
+
+---
+
+## 9. 凭据连通性测试 (Test)
+
+- **请求方式**：`POST`
+- **请求路径**：`/api/credentials/:id/test`
+- **请求体**：`{ "host": "192.168.1.10", "port": 0 }`（`port` 传 0 时按凭据类型取默认：SSH 22 / Telnet 23）
+- **说明**：用指定凭据对目标主机发起连接测试（Telnet 仅校验端口连通）。
+- **响应数据** (`data`)：`{ "ok": true, "message": "连接成功，凭据有效 ✓" }`
+
+---
+
+## 10. 系统设置 (Settings)
+
+### 10.1 读取
+- **请求方式**：`GET` · **路径**：`/api/settings`
+- **响应数据** (`data`)：`key -> value` 映射，如：
+```json
+{ "scan_concurrency": "100", "scan_timeout": "2", "ssh_timeout": "10", "auth_username": "admin", "auth_password": "admin" }
+```
+
+### 10.2 更新（upsert）
+- **请求方式**：`PUT` · **路径**：`/api/settings`
+- **请求体**：`{ "scan_concurrency": "200", "scan_timeout": "3" }`（只传需更新的键）
+- **响应数据** (`data`)：`{ "updated": 2 }`
+
+---
+
+## 11. 扫描进度 SSE 流 (Stream)
+
+- **请求方式**：`GET` · **路径**：`/api/tasks/:id/stream`
+- **说明**：`text/event-stream` 单向推流。服务端每秒轮询该任务最新一条 `ScanLog`，增量推送新控制台行与状态；前端用 `EventSource` 实时追加。
+- **事件格式**：
+```
+data: [14:30:05] 发现存活设备: 192.168.1.50 | 类型: server ...   # 默认 message 事件 = 每行控制台输出
+
+event: status
+data: running
+
+event: done
+data: 扫描完成。总IP数: 254，存活主机数: 12，新增资产: 3 ...        # 结束后服务端关闭连接
+```
+
+---
+
+## 12. 漏洞发现 (Vulnerabilities)
+
+- **请求方式**：`GET` · **路径**：`/api/vulns`（可选 `?asset_id=101` 过滤）
+- **说明**：返回 nuclei 漏扫结果（最多 500 条，倒序）。
+- **响应数据** (`data`)：
+```json
+[
+  { "id": 1, "asset_id": 101, "target": "192.168.1.50:80", "template_id": "CVE-2021-XXXX",
+    "name": "示例漏洞", "severity": "high", "matched_at": "http://192.168.1.50/...", "engine": "nuclei", "created_at": "2026-06-18T10:00:00Z" }
+]
+```
+
+---
+
+## 13. 登录 (Login)
+
+- **请求方式**：`POST` · **路径**：`/api/login`
+- **请求体**：`{ "username": "admin", "password": "admin" }`（默认 admin/admin，可在 `system_settings` 改）
+- **成功响应** (`data`)：`{ "ok": true, "token": "meridian-session", "username": "admin" }`
+- **失败**：`code` 为 `401`，`message` 为「用户名或密码错误」。
+- **说明**：当前 token 为占位，受保护路由暂未做服务端校验，鉴权由前端门禁实现（详见架构文档第 4 节「有意延后的设计取舍」）。
+
+---
+
+## 14. 其它已实现接口
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| POST | `/api/assets/:id/ping` | 单资产 TCP 在线探测（见第 6 节） |
+| GET | `/api/activity/recent` | 最近操作活动（见第 7 节） |
+| WS | `/api/ws/terminal/:id` | WebSSH / Telnet 终端（见第 5 节，按凭据类型选择 SSH 或 Telnet 代理） |
