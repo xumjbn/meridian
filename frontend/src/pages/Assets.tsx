@@ -14,7 +14,11 @@ import {
   message,
   Modal,
   Descriptions,
-  Card
+  Card,
+  Segmented,
+  Collapse,
+  Timeline,
+  Spin
 } from 'antd';
 import {
   SearchOutlined,
@@ -24,7 +28,10 @@ import {
   DeleteOutlined,
   CompassOutlined,
   InfoCircleOutlined,
-  SyncOutlined
+  SyncOutlined,
+  DatabaseOutlined,
+  DownloadOutlined,
+  CloudDownloadOutlined
 } from '@ant-design/icons';
 import {
   getAssets,
@@ -33,9 +40,15 @@ import {
   deleteAsset,
   getCredentials,
   pingAsset,
+  collectAsset,
+  getAssetHistory,
   type Asset,
-  type Credential
+  type Credential,
+  type AssetHistory
 } from '../services/api';
+import { PageHeader } from '../components/PageHeader';
+import { palette, cardStyle } from '../theme';
+import { useTerminals } from '../terminalSessions';
 
 const { Text, Title, Paragraph } = Typography;
 const { Option } = Select;
@@ -44,12 +57,18 @@ export const Assets: React.FC = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
   const [searchKey, setSearchKey] = useState('');
   const [filterType, setFilterType] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
 
   // 正在探测的资产ID映射
   const [pingingIds, setPingingIds] = useState<Record<number, boolean>>({});
+  // 正在认证采集的资产ID映射
+  const [collectingIds, setCollectingIds] = useState<Record<number, boolean>>({});
+
+  // 在 App 内部打开终端会话（不再新开浏览器标签页）
+  const { open: openTerminal } = useTerminals();
 
   // 弹窗状态
   const [modalVisible, setModalVisible] = useState(false);
@@ -59,6 +78,13 @@ export const Assets: React.FC = () => {
   // 资产详情抽屉
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [drawerAsset, setDrawerAsset] = useState<Asset | null>(null);
+  // 抽屉内的变更历史
+  const [history, setHistory] = useState<AssetHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // 常用功能：批量选择 / 分组
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [groupBy, setGroupBy] = useState<'none' | 'type' | 'status' | 'tag'>('none');
 
   const fetchAssets = async () => {
     try {
@@ -85,10 +111,40 @@ export const Assets: React.FC = () => {
     }
   };
 
+  // 搜索输入防抖：停止输入 350ms 后再发起查询，避免逐字符打接口
+  useEffect(() => {
+    const t = setTimeout(() => setSearchKey(searchInput), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   useEffect(() => {
     fetchAssets();
     fetchCredentials();
   }, [searchKey, filterType, filterStatus]);
+
+  // 抽屉打开时拉取该资产的变更历史
+  useEffect(() => {
+    if (!drawerVisible || !drawerAsset?.id) {
+      setHistory([]);
+      return;
+    }
+    let cancelled = false;
+    const id = drawerAsset.id;
+    setHistoryLoading(true);
+    getAssetHistory(id)
+      .then((data) => {
+        if (!cancelled) setHistory(data);
+      })
+      .catch(() => {
+        if (!cancelled) setHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [drawerVisible, drawerAsset?.id]);
 
   const handleOpenAdd = () => {
     setEditingAsset(null);
@@ -146,7 +202,8 @@ export const Assets: React.FC = () => {
   };
 
   const handleConnectConsole = (record: Asset) => {
-    window.open(`/terminal/${record.id}`, '_blank');
+    if (record.id == null) return;
+    openTerminal({ id: record.id, name: record.name, ip: record.ip });
   };
 
   const handleShowDetail = (record: Asset) => {
@@ -174,6 +231,88 @@ export const Assets: React.FC = () => {
     } finally {
       setPingingIds((prev) => ({ ...prev, [id]: false }));
     }
+  };
+
+  // 单资产认证采集（采集 CPU 架构 / 系统等信息）
+  const handleCollect = async (id: number) => {
+    setCollectingIds((prev) => ({ ...prev, [id]: true }));
+    try {
+      const res = await collectAsset(id);
+      if (res.ok) {
+        message.success(res.message);
+      } else {
+        message.warning(res.message);
+      }
+      fetchAssets();
+    } catch (e: any) {
+      message.error(`采集失败: ${e.message || '网络连接超时'}`);
+    } finally {
+      setCollectingIds((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  // ── 常用功能：批量探测 / 批量删除 / 导出 CSV ──────────────
+  const handleBatchPing = async () => {
+    const ids = selectedRowKeys.map(Number);
+    if (ids.length === 0) return;
+    message.loading({ content: `正在批量探测 ${ids.length} 台资产...`, key: 'batch_ping', duration: 0 });
+    await Promise.allSettled(ids.map((id) => pingAsset(id)));
+    message.success({ content: `已完成 ${ids.length} 台资产探测`, key: 'batch_ping' });
+    setSelectedRowKeys([]);
+    fetchAssets();
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = selectedRowKeys.map(Number);
+    if (ids.length === 0) return;
+    await Promise.allSettled(ids.map((id) => deleteAsset(id)));
+    message.success(`已删除 ${ids.length} 台资产`);
+    setSelectedRowKeys([]);
+    fetchAssets();
+  };
+
+  const handleExportCSV = () => {
+    const header = ['名称', 'IP', '类型', '状态', '厂商', '系统', '端口', '标签', '描述'];
+    const rows = assets.map((a) => [
+      a.name, a.ip, a.type, a.status || '', a.vendor || '', a.os_version || '',
+      a.ports || '', a.tags || '', (a.description || '').replace(/\n/g, ' '),
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `meridian-assets-${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    message.success(`已导出 ${assets.length} 台资产`);
+  };
+
+  const typeLabelMap: Record<string, string> = {
+    server: 'PC 服务器', switch: '以太网交换机', router: '核心路由器', other: '其他硬件',
+  };
+  const statusLabelMap: Record<string, string> = { online: '在线', offline: '离线', unknown: '未知' };
+
+  // 按 groupBy 把资产分组 -> [组名, 资产[]][]
+  const groupedAssets = (): [string, Asset[]][] => {
+    const map = new Map<string, Asset[]>();
+    assets.forEach((a) => {
+      let keys: string[] = ['其他'];
+      if (groupBy === 'type') keys = [typeLabelMap[a.type] || a.type];
+      else if (groupBy === 'status') keys = [statusLabelMap[a.status || 'unknown'] || '未知'];
+      else if (groupBy === 'tag') {
+        let tags: string[] = [];
+        try { tags = a.tags ? JSON.parse(a.tags) : []; } catch (e) { tags = []; }
+        keys = tags.length ? tags : ['未打标签'];
+      }
+      keys.forEach((k) => {
+        if (!map.has(k)) map.set(k, []);
+        map.get(k)!.push(a);
+      });
+    });
+    return Array.from(map.entries());
   };
 
   const renderPorts = (portsStr?: string) => {
@@ -226,19 +365,22 @@ export const Assets: React.FC = () => {
       title: '资产名称',
       dataIndex: 'name',
       key: 'name',
-      render: (text: string, record: Asset) => (
-        <Space direction="vertical" size={2}>
-          <a onClick={() => handleShowDetail(record)} style={{ fontWeight: 600, color: '#1e293b' }}>
-            {text}
-          </a>
-          <Space size="small" align="center" style={{ flexWrap: 'wrap' }}>
-            <Text type="secondary" style={{ fontSize: '11px' }}>
-              {record.vendor || '未知系统厂商'}
-            </Text>
-            {renderTags(record.tags)}
+      render: (text: string, record: Asset) => {
+        // 仅展示「系统(厂商) · 架构」与标签：用简洁的 vendor 作为系统，
+        // 原始 SSH/Telnet banner（os_version）过于冗长，仅在详情抽屉展示
+        const info = [record.vendor, record.arch].filter(Boolean).join(' · ');
+        return (
+          <Space direction="vertical" size={2}>
+            <a onClick={() => handleShowDetail(record)} style={{ fontWeight: 600, color: palette.text }}>
+              {text}
+            </a>
+            <Space size="small" align="center" style={{ flexWrap: 'wrap' }}>
+              {info && <Text type="secondary" style={{ fontSize: '11px' }}>{info}</Text>}
+              {renderTags(record.tags)}
+            </Space>
           </Space>
-        </Space>
-      ),
+        );
+      },
     },
     {
       title: 'IP 地址',
@@ -302,6 +444,16 @@ export const Assets: React.FC = () => {
             在线探测
           </Button>
           <Button
+            type="link"
+            size="small"
+            icon={collectingIds[record.id!] ? <SyncOutlined spin /> : <CloudDownloadOutlined />}
+            loading={collectingIds[record.id!]}
+            onClick={() => handleCollect(record.id!)}
+            style={{ padding: 0, fontWeight: 500, color: '#8b5cf6' }}
+          >
+            采集
+          </Button>
+          <Button
             type="text"
             size="small"
             icon={<EditOutlined style={{ color: '#475569' }} />}
@@ -323,90 +475,110 @@ export const Assets: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
-      {/* 顶部 Header */}
-      <div style={{
-        background: '#ffffff',
-        padding: '24px 32px',
-        borderBottom: '1px solid #f1f5f9',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '24px'
-      }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: '#0f172a' }}>资产管理 (CMDB)</h1>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>登记并维护您的物理主机和网络设备，支持快速探测端口状态以及打开交互式 SSH 会话</p>
-        </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={handleOpenAdd}
-          style={{ borderRadius: 6, height: 38, fontWeight: 500 }}
-        >
-          手动录入资产
-        </Button>
-      </div>
+    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+      <PageHeader
+        title="资产清单 (CMDB)"
+        subtitle="登记并维护物理主机与网络设备，支持端口探测与一键交互式 SSH 会话"
+        icon={<DatabaseOutlined />}
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
+            手动录入资产
+          </Button>
+        }
+      />
 
-      <div style={{ padding: '0 32px 32px 32px' }}>
-        {/* 检索和过滤 */}
-        <div style={{
-          background: '#ffffff',
-          border: '1px solid #f1f5f9',
-          borderRadius: '8px',
-          padding: '16px 20px',
-          marginBottom: '20px',
-          boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)'
-        }}>
-          <Space wrap size="middle" style={{ width: '100%' }}>
-            <Input
-              placeholder="搜索 IP、设备名称..."
-              prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-              style={{ width: 240, borderRadius: 6 }}
-              allowClear
-              onChange={(e) => setSearchKey(e.target.value)}
+      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
+        {/* 检索 / 过滤 / 分组 / 常用功能 */}
+        <div style={{ ...cardStyle, padding: '16px 20px', marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Space wrap size="middle">
+              <Input
+                placeholder="搜索 IP、设备名称..."
+                prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+                style={{ width: 220, borderRadius: 6 }}
+                allowClear
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+              />
+              <Select placeholder="过滤设备类型" style={{ width: 150 }} allowClear onChange={(val) => setFilterType(val || '')}>
+                <Option value="server">PC 服务器</Option>
+                <Option value="switch">以太网交换机</Option>
+                <Option value="router">核心路由器</Option>
+                <Option value="other">其他硬件</Option>
+              </Select>
+              <Select placeholder="过滤在线状态" style={{ width: 150 }} allowClear onChange={(val) => setFilterStatus(val || '')}>
+                <Option value="online">在线</Option>
+                <Option value="offline">离线</Option>
+                <Option value="unknown">未知</Option>
+              </Select>
+            </Space>
+            <Space wrap size="small">
+              <span style={{ fontSize: 12, color: palette.textSub }}>分组</span>
+              <Segmented
+                value={groupBy}
+                onChange={(v) => setGroupBy(v as 'none' | 'type' | 'status' | 'tag')}
+                options={[
+                  { label: '不分组', value: 'none' },
+                  { label: '类型', value: 'type' },
+                  { label: '状态', value: 'status' },
+                  { label: '标签', value: 'tag' },
+                ]}
+              />
+              <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>导出 CSV</Button>
+            </Space>
+          </div>
+
+          {/* 批量操作条（选中后出现，未分组视图） */}
+          {groupBy === 'none' && selectedRowKeys.length > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${palette.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: palette.text, fontWeight: 600 }}>已选 {selectedRowKeys.length} 项</span>
+              <Button size="small" icon={<CompassOutlined />} onClick={handleBatchPing}>批量探测</Button>
+              <Popconfirm
+                title={`确认删除选中的 ${selectedRowKeys.length} 台资产？`}
+                onConfirm={handleBatchDelete}
+                okText="是" cancelText="否" okButtonProps={{ danger: true }}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />}>批量删除</Button>
+              </Popconfirm>
+              <Button size="small" type="text" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+            </div>
+          )}
+        </div>
+
+        {/* 表格主体 / 分组视图 */}
+        {groupBy === 'none' ? (
+          <div style={{ ...cardStyle, padding: 4 }}>
+            <Table
+              columns={columns}
+              dataSource={assets}
+              rowKey="id"
+              loading={loading}
+              rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
+              pagination={{ pageSize: 8, showSizeChanger: false }}
+              style={{ borderRadius: 8, overflow: 'hidden' }}
             />
-            <Select
-              placeholder="过滤设备类型"
-              style={{ width: 160 }}
-              allowClear
-              onChange={(val) => setFilterType(val || '')}
-            >
-              <Option value="server">PC 服务器</Option>
-              <Option value="switch">以太网交换机</Option>
-              <Option value="router">核心路由器</Option>
-              <Option value="other">其他硬件</Option>
-            </Select>
-            <Select
-              placeholder="过滤在线状态"
-              style={{ width: 160 }}
-              allowClear
-              onChange={(val) => setFilterStatus(val || '')}
-            >
-              <Option value="online">在线</Option>
-              <Option value="offline">离线</Option>
-              <Option value="unknown">未知</Option>
-            </Select>
-          </Space>
-        </div>
-
-        {/* 表格主体 */}
-        <div style={{
-          background: '#ffffff',
-          border: '1px solid #f1f5f9',
-          borderRadius: '8px',
-          padding: '4px',
-          boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)'
-        }}>
-          <Table
-            columns={columns}
-            dataSource={assets}
-            rowKey="id"
-            loading={loading}
-            pagination={{ pageSize: 8, showSizeChanger: false }}
-            style={{ borderRadius: '8px', overflow: 'hidden' }}
-          />
-        </div>
+          </div>
+        ) : (
+          (() => {
+            const groups = groupedAssets();
+            return (
+              <Collapse
+                defaultActiveKey={groups.map(([k]) => k)}
+                items={groups.map(([k, rows]) => ({
+                  key: k,
+                  label: (
+                    <span style={{ fontWeight: 600, color: palette.text }}>
+                      {k} <Tag style={{ marginLeft: 6 }}>{rows.length}</Tag>
+                    </span>
+                  ),
+                  children: (
+                    <Table columns={columns} dataSource={rows} rowKey="id" size="small" pagination={false} />
+                  ),
+                }))}
+              />
+            );
+          })()
+        )}
 
       {/* 手动录入/编辑资产弹窗 */}
       <Modal
@@ -414,7 +586,7 @@ export const Assets: React.FC = () => {
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         width={500}
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit} style={{ marginTop: 16 }}>
@@ -508,14 +680,14 @@ export const Assets: React.FC = () => {
         width={520}
         onClose={() => setDrawerVisible(false)}
         open={drawerVisible}
-        bodyStyle={{ padding: '24px' }}
+        styles={{ body: { padding: '24px' } }}
       >
         {drawerAsset && (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', paddingBottom: '24px' }}>
               
               {/* 头部摘要卡片 */}
-              <Card style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }} bodyStyle={{ padding: '16px' }}>
+              <Card style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }} styles={{ body: { padding: '16px' } }}>
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <Title level={4} style={{ margin: 0, color: '#0f172a' }}>{drawerAsset.name}</Title>
@@ -542,7 +714,7 @@ export const Assets: React.FC = () => {
               </Card>
 
               {/* 基础配置项目 */}
-              <Descriptions title="基本属性" column={1} bordered size="small" labelStyle={{ width: '120px', background: '#f8fafc', color: '#475569' }} contentStyle={{ color: '#1e293b' }}>
+              <Descriptions title="基本属性" column={1} bordered size="small" styles={{ label: { width: '120px', background: '#f8fafc', color: '#475569' }, content: { color: '#1e293b' } }}>
                 <Descriptions.Item label="硬件类型">
                   {drawerAsset.type === 'server' && 'PC 服务器'}
                   {drawerAsset.type === 'switch' && '以太网交换机'}
@@ -556,6 +728,13 @@ export const Assets: React.FC = () => {
                   <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
                     {drawerAsset.os_version || <Text type="secondary">暂无系统信息 (待扫描)</Text>}
                   </span>
+                </Descriptions.Item>
+                <Descriptions.Item label="CPU 架构">
+                  {drawerAsset.arch ? (
+                    <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{drawerAsset.arch}</span>
+                  ) : (
+                    <Text type="secondary">未采集</Text>
+                  )}
                 </Descriptions.Item>
                 <Descriptions.Item label="最后扫描时间">
                   {drawerAsset.last_scanned_at ? (
@@ -575,7 +754,7 @@ export const Assets: React.FC = () => {
               </div>
 
               {/* 关联凭证和备注 */}
-              <Descriptions title="访问凭据与备注" column={1} bordered size="small" labelStyle={{ width: '120px', background: '#f8fafc', color: '#475569' }} contentStyle={{ color: '#1e293b' }}>
+              <Descriptions title="访问凭据与备注" column={1} bordered size="small" styles={{ label: { width: '120px', background: '#f8fafc', color: '#475569' }, content: { color: '#1e293b' } }}>
                 <Descriptions.Item label="关联登录凭证">
                   {drawerAsset.credential_id
                     ? credentials.find((c) => c.id === drawerAsset.credential_id)?.name || `凭证 ID: ${drawerAsset.credential_id}`
@@ -587,6 +766,42 @@ export const Assets: React.FC = () => {
                   </Paragraph>
                 </Descriptions.Item>
               </Descriptions>
+
+              {/* 变更历史 */}
+              <div>
+                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>变更历史</Title>
+                <div style={{ background: '#f8fafc', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  {historyLoading ? (
+                    <div style={{ textAlign: 'center', padding: '12px' }}><Spin /></div>
+                  ) : history.length === 0 ? (
+                    <Text type="secondary">暂无变更记录</Text>
+                  ) : (
+                    <Timeline
+                      items={history.map((h) => ({
+                        key: h.id,
+                        color: 'blue',
+                        children: (
+                          <div style={{ fontSize: '12px' }}>
+                            <div style={{ fontWeight: 600, color: '#334155' }}>{h.field}</div>
+                            <div style={{ color: '#475569', margin: '2px 0' }}>
+                              <Text delete type="secondary" style={{ fontSize: '12px', marginRight: 4 }}>
+                                {h.old_value || '空'}
+                              </Text>
+                              <span style={{ color: '#94a3b8', margin: '0 4px' }}>→</span>
+                              <Text style={{ fontSize: '12px', color: '#0f172a' }}>
+                                {h.new_value || '空'}
+                              </Text>
+                            </div>
+                            <div style={{ color: '#94a3b8' }}>
+                              {h.created_at ? new Date(h.created_at).toLocaleString('zh-CN') : '-'}
+                            </div>
+                          </div>
+                        ),
+                      }))}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* 抽屉底部动作栏 */}

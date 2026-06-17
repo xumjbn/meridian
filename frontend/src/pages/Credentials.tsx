@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Modal, Form, Input, Select, Popconfirm, message } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import { getCredentials, createCredential, updateCredential, deleteCredential, type Credential } from '../services/api';
+import { PlusOutlined, DeleteOutlined, EditOutlined, SafetyCertificateOutlined, ApiOutlined } from '@ant-design/icons';
+import { getCredentials, createCredential, updateCredential, deleteCredential, testCredential, type Credential, type CredTestResult } from '../services/api';
+import { PageHeader } from '../components/PageHeader';
+import { palette, cardStyle } from '../theme';
 const { Option } = Select;
 const { TextArea } = Input;
 
@@ -12,6 +14,36 @@ export const Credentials: React.FC = () => {
   const [editingCred, setEditingCred] = useState<Credential | null>(null);
   const [form] = Form.useForm();
   const [credType, setCredType] = useState<'ssh_password' | 'ssh_key' | 'telnet'>('ssh_password');
+
+  // 连通性测试
+  const [testCred, setTestCred] = useState<Credential | null>(null);
+  const [testHost, setTestHost] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<CredTestResult | null>(null);
+
+  const openTest = (record: Credential) => {
+    setTestCred(record);
+    setTestHost('');
+    setTestResult(null);
+    setTesting(false);
+  };
+
+  const runTest = async () => {
+    if (!testCred?.id || !testHost.trim()) {
+      message.warning('请输入目标主机 IP');
+      return;
+    }
+    try {
+      setTesting(true);
+      setTestResult(null);
+      const res = await testCredential(testCred.id, testHost.trim());
+      setTestResult(res);
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e?.message || '测试请求失败' });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const fetchCredentials = async () => {
     try {
@@ -106,11 +138,20 @@ export const Credentials: React.FC = () => {
       key: 'action',
       render: (_: any, record: Credential) => (
         <Space size="middle">
-          <Button 
-            type="text" 
+          <Button
+            type="link"
             size="small"
-            icon={<EditOutlined style={{ color: '#475569' }} />} 
-            onClick={() => handleOpenEdit(record)} 
+            icon={<ApiOutlined />}
+            onClick={() => openTest(record)}
+            style={{ padding: 0, fontWeight: 500, color: palette.primary }}
+          >
+            测试连接
+          </Button>
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined style={{ color: '#475569' }} />}
+            onClick={() => handleOpenEdit(record)}
             style={{ padding: 0 }}
           />
           <Popconfirm
@@ -134,46 +175,27 @@ export const Credentials: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
-      {/* 顶部大厂 Header */}
-      <div style={{
-        background: '#ffffff',
-        padding: '20px 32px',
-        borderBottom: '1px solid #f1f5f9',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '24px'
-      }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 600, color: '#0f172a' }}>凭据保管箱</h1>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>集中管理服务器或网络设备的 SSH/Telnet 账号与证书，用于自动发现和一键连接</p>
-        </div>
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />} 
-          onClick={handleOpenAdd}
-          style={{ borderRadius: 6 }}
-        >
-          添加登录凭证
-        </Button>
-      </div>
+    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+      <PageHeader
+        title="凭据保管箱"
+        subtitle="集中管理服务器与网络设备的 SSH/Telnet 账号及证书，用于自动发现与一键连接"
+        icon={<SafetyCertificateOutlined />}
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
+            添加登录凭证
+          </Button>
+        }
+      />
 
-      <div style={{ padding: '0 32px 32px 32px' }}>
-        <div style={{
-          background: '#ffffff',
-          border: '1px solid #f1f5f9',
-          borderRadius: '8px',
-          padding: '4px',
-          boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)'
-        }}>
-          <Table 
-            columns={columns} 
-            dataSource={credentials} 
-            rowKey="id" 
+      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
+        <div style={{ ...cardStyle, padding: 4 }}>
+          <Table
+            columns={columns}
+            dataSource={credentials}
+            rowKey="id"
             loading={loading}
             pagination={{ pageSize: 8, showSizeChanger: false }}
-            style={{ borderRadius: '8px', overflow: 'hidden' }}
+            style={{ borderRadius: 8, overflow: 'hidden' }}
           />
         </div>
       </div>
@@ -188,7 +210,7 @@ export const Credentials: React.FC = () => {
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}
@@ -252,6 +274,39 @@ export const Credentials: React.FC = () => {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 凭据连通性测试 */}
+      <Modal
+        title={<span><ApiOutlined style={{ marginRight: 8, color: palette.primary }} />测试凭据连通性</span>}
+        open={!!testCred}
+        onCancel={() => setTestCred(null)}
+        footer={null}
+        destroyOnHidden
+      >
+        <p style={{ color: palette.textSub, fontSize: 13, marginTop: 8 }}>
+          使用凭据 <strong>{testCred?.name}</strong>（{testCred?.username}）尝试连接指定主机，校验账号/端口是否有效。
+        </p>
+        <Space.Compact style={{ width: '100%', marginTop: 8 }}>
+          <Input
+            placeholder="目标主机 IP，如 192.168.1.10"
+            value={testHost}
+            onChange={(e) => setTestHost(e.target.value)}
+            onPressEnter={runTest}
+            autoFocus
+          />
+          <Button type="primary" loading={testing} onClick={runTest}>测试</Button>
+        </Space.Compact>
+        {testResult && (
+          <div style={{
+            marginTop: 16, padding: '12px 14px', borderRadius: 8, fontSize: 13,
+            background: testResult.ok ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${testResult.ok ? '#bbf7d0' : '#fecaca'}`,
+            color: testResult.ok ? '#15803d' : '#b91c1c',
+          }}>
+            {testResult.ok ? '✓ ' : '✕ '}{testResult.message}
+          </div>
+        )}
       </Modal>
     </div>
   );

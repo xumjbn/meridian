@@ -52,6 +52,7 @@ export interface Asset {
   status?: 'online' | 'offline' | 'unknown';
   vendor?: string;
   os_version?: string;
+  arch?: string; // CPU 架构: x86_64 / aarch64 ...（认证采集得到）
   ports?: string; // JSON string e.g. "[22, 80]"
   description?: string;
   credential_id?: number | null;
@@ -64,9 +65,10 @@ export interface ScanTask {
   name: string;
   target_range: string;
   ports: string;
+  kind?: 'discovery' | 'vuln'; // 扫描类型：端口发现 / nuclei 漏扫
   status?: 'idle' | 'running' | 'completed' | 'failed';
   last_run_at?: string;
-  schedule?: string; // cron expression
+  schedule?: string; // "@every 1h" | "daily:HH:MM"
 }
 
 export interface ScanLog {
@@ -119,6 +121,66 @@ export const pingAsset = (id: number): Promise<PingResult> => api.post(`/assets/
 
 // 最近活动日志
 export const getRecentActivity = (): Promise<ActivityLog[]> => api.get('/activity/recent');
+
+// ── 系统配置（Phase 2/3） ─────────────────────────
+export type Settings = Record<string, string>;
+export const getSettings = (): Promise<Settings> => api.get('/settings');
+export const updateSettings = (data: Settings): Promise<{ updated: number }> => api.put('/settings', data);
+
+// ── 凭据连通性测试（Phase 3） ─────────────────────
+export interface CredTestResult {
+  ok: boolean;
+  message: string;
+}
+export const testCredential = (id: number, host: string, port?: number): Promise<CredTestResult> =>
+  api.post(`/credentials/${id}/test`, { host, port: port ?? 0 });
+
+// ── 认证采集（架构 / 系统信息） ─────────────────
+export interface CollectResult {
+  ok: boolean;
+  arch?: string;
+  os?: string;
+  message: string;
+}
+export const collectAsset = (id: number): Promise<CollectResult> => api.post(`/assets/${id}/collect`);
+
+// ── 漏洞发现（nuclei） ─────────────────────────
+export interface VulnFinding {
+  id: number;
+  asset_id: number;
+  target: string;
+  template_id: string;
+  name: string;
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical' | string;
+  matched_at: string;
+  engine: string;
+  created_at: string;
+}
+export const getVulns = (assetId?: number): Promise<VulnFinding[]> =>
+  api.get('/vulns', { params: assetId ? { asset_id: assetId } : {} });
+
+// ── 资产变更历史 ─────────────────────────────
+export interface AssetHistory {
+  id: number;
+  asset_id: number;
+  field: string;
+  old_value: string;
+  new_value: string;
+  created_at: string;
+}
+export const getAssetHistory = (id: number): Promise<AssetHistory[]> => api.get(`/assets/${id}/history`);
+
+// ── 登录 ───────────────────────────────────
+export interface LoginResult {
+  ok: boolean;
+  token: string;
+  username: string;
+}
+export const login = (username: string, password: string): Promise<LoginResult> =>
+  api.post('/login', { username, password });
+
+// ── 扫描日志 SSE 流地址（供 EventSource 使用，走同源 Vite 代理） ──
+export const getScanStreamUrl = (taskId: number): string => `/api/tasks/${taskId}/stream`;
 
 
 

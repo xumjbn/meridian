@@ -13,6 +13,7 @@ type Asset struct {
 	Status        string     `gorm:"size:20;default:'unknown'" json:"status"` // online, offline, unknown
 	Vendor        string     `gorm:"size:100" json:"vendor"` // Cisco, Huawei, Dell, Ubuntu等
 	OSVersion     string     `gorm:"size:100" json:"os_version"`
+	Arch          string     `gorm:"size:30" json:"arch"` // CPU 架构: x86_64 / aarch64 / armv7l（需认证采集）
 	Ports         string     `gorm:"type:text" json:"ports"` // JSON 字符串数组，如 "[22, 80]"
 	Tags          string     `gorm:"type:text" json:"tags"`  // JSON 字符串数组，如 ["生产","DMZ"]
 	Description   string     `gorm:"type:text" json:"description"`
@@ -40,7 +41,8 @@ type ScanTask struct {
 	Name        string     `gorm:"size:100;not null" json:"name"`
 	TargetRange string     `gorm:"size:100;not null" json:"target_range"` // 192.168.1.0/24 或 192.168.1.1-192.168.1.100
 	Ports       string     `gorm:"size:200;default:'22,23,80,443'" json:"ports"` // 逗号分隔的端口
-	Schedule    string     `gorm:"size:50" json:"schedule"`                      // 可选 cron 表达式，如 "0 2 * * *"
+	Kind        string     `gorm:"size:20;default:'discovery'" json:"kind"`      // 扫描类型: discovery（端口发现） | vuln（nuclei 漏扫）
+	Schedule    string     `gorm:"size:50" json:"schedule"`                      // 定时计划: "@every 1h" | "daily:HH:MM"
 	Status      string     `gorm:"size:20;default:'idle'" json:"status"` // idle, running, completed, failed
 	LastRunAt   *time.Time `json:"last_run_at"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -65,4 +67,34 @@ type ActivityLog struct {
 	Message   string    `gorm:"type:text" json:"message"`
 	RefID     uint      `json:"ref_id"` // 关联的资产或任务 ID
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// SystemSetting 系统配置项 (key-value)
+type SystemSetting struct {
+	Key       string    `gorm:"primaryKey;size:100" json:"key"`
+	Value     string    `gorm:"type:text" json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AssetHistory 资产字段变更历史
+type AssetHistory struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	AssetID   uint      `gorm:"index" json:"asset_id"`
+	Field     string    `gorm:"size:50" json:"field"`
+	OldValue  string    `gorm:"type:text" json:"old_value"`
+	NewValue  string    `gorm:"type:text" json:"new_value"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// VulnFinding 漏洞扫描发现项（由 nuclei 引擎产生）
+type VulnFinding struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	AssetID    uint      `gorm:"index" json:"asset_id"` // 关联资产（可能为 0：扫描目标未在 CMDB 中）
+	Target     string    `gorm:"size:100;index" json:"target"`
+	TemplateID string    `gorm:"size:200" json:"template_id"`
+	Name       string    `gorm:"size:255" json:"name"`
+	Severity   string    `gorm:"size:20" json:"severity"` // info | low | medium | high | critical
+	MatchedAt  string    `gorm:"size:255" json:"matched_at"`
+	Engine     string    `gorm:"size:30" json:"engine"` // nuclei
+	CreatedAt  time.Time `json:"created_at"`
 }

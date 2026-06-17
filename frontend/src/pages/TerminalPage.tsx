@@ -1,16 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Modal } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { getAsset, getTerminalWsUrl, type Asset } from '../services/api';
-import { MonitorOutlined, CloseOutlined, CheckCircleOutlined, SyncOutlined } from '@ant-design/icons';
+import { CloseOutlined, CheckCircleOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
+import { LogoMark } from '../components/Logo';
+import { palette } from '../theme';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalPageProps {
   assetId: number;
+  /** 在 App 内部以标签页形式嵌入（填满容器，关闭走回调而非关闭浏览器窗口） */
+  embedded?: boolean;
+  onClose?: () => void;
 }
 
-export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
+export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = false, onClose }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -18,6 +23,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
   const [statusText, setStatusText] = useState('正在加载资产信息...');
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('connecting');
   const [errorDetail, setErrorDetail] = useState<string>('');
+  const [fullscreen, setFullscreen] = useState(false);
   const [form] = Form.useForm();
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -51,6 +57,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
     setStatusText('正在建立 WebSocket 隧道...');
     setErrorDetail('');
 
+    let resizeRaf = 0; // ResizeObserver 的 requestAnimationFrame 句柄
+
     // 创建 WebSocket 实例
     const wsUrl = getTerminalWsUrl(asset.id!);
     const socket = new WebSocket(wsUrl);
@@ -60,6 +68,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
     // 初始化 Xterm
     const term = new Terminal({
       cursorBlink: true,
+      scrollback: 5000, // 回看历史行数
       fontSize: 14,
       fontFamily: 'Fira Code, Menlo, Monaco, Courier New, monospace',
       theme: {
@@ -95,20 +104,22 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
       }, 50);
       term.focus();
 
-      // 监听视口大小变化
+      // 监听容器尺寸变化；用 rAF 把 fit() 推迟到下一帧，
+      // 打断 ResizeObserver「回调里同步改布局 → 再次触发回调」的死循环
       const observer = new ResizeObserver(() => {
-        try {
-          fitAddon.fit();
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: 'resize',
-              cols: term.cols,
-              rows: term.rows
-            }));
+        cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
+          const el = terminalRef.current;
+          if (!el || el.clientWidth === 0 || el.clientHeight === 0) return; // 隐藏(display:none)时跳过
+          try {
+            fitAddon.fit();
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+            }
+          } catch (e) {
+            // ignore
           }
-        } catch (e) {
-          // ignore
-        }
+        });
       });
       observer.observe(terminalRef.current);
       resizeObserverRef.current = observer;
@@ -221,13 +232,33 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
         wsRef.current = null;
       }
       dataListener.dispose();
+      cancelAnimationFrame(resizeRaf);
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
       term.dispose();
     };
-  }, [asset]);
+    // 依赖 asset?.id（稳定主键）而非 asset 对象引用：
+    // 避免资产信息被重复 setAsset（如严格模式重复请求）时误触发重连、把刚弹出的凭据框重置掉
+  }, [asset?.id]);
+
+  // 全屏切换后重新适配终端尺寸并同步给后端
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        fitAddonRef.current?.fit();
+        const ws = wsRef.current;
+        const term = termRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN && term) {
+          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 80);
+    return () => clearTimeout(t);
+  }, [fullscreen]);
 
   const handleAuthSubmit = (values: any) => {
     const activeWs = wsRef.current;
@@ -244,17 +275,24 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
   };
 
   const handleClose = () => {
-    window.close();
+    if (onClose) onClose();
+    else window.close();
   };
 
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '100vh',
       backgroundColor: '#0B0F19', // 终端主体依然保持极客深色
       color: '#F9FAFB',
       overflow: 'hidden',
+      // 内嵌态用绝对定位精确填满（带 position:relative 的）父容器，
+      // 避免 height:100% 在 flex 链上无法解析导致终端被撑到内容高度而裁切
+      ...(fullscreen
+        ? { position: 'fixed' as const, inset: 0, zIndex: 2000, height: '100vh' }
+        : embedded
+        ? { position: 'absolute' as const, inset: 0 }
+        : { height: '100vh' }),
     }}>
       {/* 顶部状态栏 */}
       <div style={{
@@ -268,14 +306,14 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
         zIndex: 5,
       }}>
         <Space size="middle">
-          <MonitorOutlined style={{ fontSize: 18, color: '#2563eb' }} />
-          <span style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
-            远程终端：{asset ? `${asset.name} (${asset.ip})` : '正在加载...'}
+          <LogoMark size={22} />
+          <span style={{ fontWeight: 600, fontSize: 14, color: palette.text }}>
+            Meridian 远程终端：{asset ? `${asset.name} (${asset.ip})` : '正在加载...'}
           </span>
-          
+
           {status === 'connecting' && (
             <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, color: '#475569' }}>
-              <SyncOutlined spin style={{ marginRight: 6, color: '#2563eb' }} /> 连接中
+              <SyncOutlined spin style={{ marginRight: 6, color: palette.primary }} /> 连接中
             </span>
           )}
           {status === 'connected' && (
@@ -292,18 +330,28 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
           )}
         </Space>
         
-        <Button
-          type="text"
-          danger
-          icon={<CloseOutlined />}
-          onClick={handleClose}
-          style={{ color: '#EF4444', display: 'flex', alignItems: 'center' }}
-        >
-          关闭终端
-        </Button>
+        <Space>
+          <Button
+            type="text"
+            icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+            onClick={() => setFullscreen((f) => !f)}
+            style={{ color: '#475569', display: 'flex', alignItems: 'center' }}
+          >
+            {fullscreen ? '退出全屏' : '全屏'}
+          </Button>
+          <Button
+            type="text"
+            danger
+            icon={<CloseOutlined />}
+            onClick={handleClose}
+            style={{ color: '#EF4444', display: 'flex', alignItems: 'center' }}
+          >
+            关闭终端
+          </Button>
+        </Space>
       </div>
 
-      <div style={{ flexGrow: 1, position: 'relative', background: '#0B0F19' }}>
+      <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: '#0B0F19' }}>
         {(connecting || status === 'error' || status === 'disconnected') && (
           <div style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -356,52 +404,35 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId }) => {
           </div>
         )}
 
-        {authRequired && (
-          <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-            display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
-            backgroundColor: 'rgba(255, 255, 255, 0.65)', backdropFilter: 'blur(8px)', zIndex: 10
-          }}>
-            <div style={{
-              width: '100%', maxWidth: '360px', padding: '32px',
-              background: '#ffffff', border: '1px solid #e2e8f0',
-              borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.08)'
-            }}>
-              <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 18, fontWeight: 600, color: '#0f172a', textAlign: 'center' }}>
-                🔑 SSH 登录凭证
-              </h3>
-              <p style={{ margin: '0 0 24px 0', fontSize: 13, color: '#475569', textAlign: 'center', lineHeight: 1.4 }}>
-                该资产未绑定可用凭证，请输入临时登录账号及口令以建立会话
-              </p>
-              <Form form={form} layout="vertical" onFinish={handleAuthSubmit} initialValues={{ username: 'root' }}>
-                <Form.Item
-                  label={<span style={{ color: '#475569', fontWeight: 500, fontSize: 13 }}>用户名</span>}
-                  name="username"
-                  rules={[{ required: true, message: '请输入用户名' }]}
-                  style={{ marginBottom: 16 }}
-                >
-                  <Input style={{ height: 36, borderRadius: 6 }} placeholder="例如: root" />
-                </Form.Item>
-                <Form.Item
-                  label={<span style={{ color: '#475569', fontWeight: 500, fontSize: 13 }}>密码</span>}
-                  name="password"
-                  rules={[{ required: true, message: '请输入密码' }]}
-                  style={{ marginBottom: 24 }}
-                >
-                  <Input.Password style={{ height: 36, borderRadius: 6 }} placeholder="请输入密码" />
-                </Form.Item>
-                <Form.Item style={{ marginBottom: 0 }}>
-                  <Button type="primary" htmlType="submit" block style={{ height: 38, borderRadius: 6, fontWeight: 500 }}>
-                    立即连接
-                  </Button>
-                  <Button type="text" onClick={handleClose} block style={{ marginTop: 8, color: '#64748b' }}>
-                    取消并关闭
-                  </Button>
-                </Form.Item>
-              </Form>
-            </div>
-          </div>
-        )}
+        <Modal
+          open={authRequired}
+          onCancel={handleClose}
+          footer={null}
+          closable={false}
+          maskClosable={false}
+          centered
+          width={400}
+          destroyOnHidden
+          title={<span style={{ fontSize: 16, fontWeight: 600 }}>🔑 SSH 登录凭证</span>}
+        >
+          <p style={{ margin: '0 0 20px 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+            资产 <strong>{asset?.name}</strong> 未绑定可用凭证，请输入临时登录账号及口令以建立会话。
+          </p>
+          <Form form={form} layout="vertical" onFinish={handleAuthSubmit} initialValues={{ username: 'root' }}>
+            <Form.Item label="用户名" name="username" rules={[{ required: true, message: '请输入用户名' }]}>
+              <Input placeholder="例如: root" />
+            </Form.Item>
+            <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码' }]}>
+              <Input.Password placeholder="请输入密码" />
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 0, marginTop: 8 }}>
+              <Button type="primary" htmlType="submit" block>立即连接</Button>
+              <Button type="text" onClick={handleClose} block style={{ marginTop: 8, color: '#64748b' }}>
+                取消并关闭
+              </Button>
+            </Form.Item>
+          </Form>
+        </Modal>
 
         <div
           ref={terminalRef}
