@@ -7,7 +7,6 @@ import {
   RadarChartOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
-  BugOutlined,
   GithubOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -45,15 +44,14 @@ const navItems = [
   { key: '/', icon: <DashboardOutlined style={{ fontSize: 16 }} />, label: '控制台' },
   { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 16 }} />, label: '资产清单 (CMDB)' },
   { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 16 }} />, label: '自动发现' },
-  { key: '/vulns', icon: <BugOutlined style={{ fontSize: 16 }} />, label: '漏洞发现' },
   { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 16 }} />, label: '凭据保管箱' },
   { key: '/settings', icon: <SettingOutlined style={{ fontSize: 16 }} />, label: '系统设置' },
 ];
 
 const groupedItems: MenuProps['items'] = [
   { type: 'group', label: '概览', children: [navItems[0]] },
-  { type: 'group', label: '资产中心', children: [navItems[1], navItems[2], navItems[3]] },
-  { type: 'group', label: '接入与系统', children: [navItems[4], navItems[5]] },
+  { type: 'group', label: '资产中心', children: [navItems[1], navItems[2]] },
+  { type: 'group', label: '接入与系统', children: [navItems[3], navItems[4]] },
 ];
 
 const AppLayout: React.FC = () => {
