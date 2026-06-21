@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"backend/internal/handler"
 	"backend/internal/scheduler"
@@ -103,10 +104,15 @@ func main() {
 		api.GET("/ws/terminal/:id", handler.ConnectTerminal)
 	}
 
-	// 5. 启动服务，监听 8080 端口
+	// 5. 启动服务：默认仅监听本机 127.0.0.1:8080；容器部署时由 LISTEN_ADDR
+	//    设为 0.0.0.0:8080 以便 nginx 反向代理接入
+	addr := os.Getenv("LISTEN_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:8080"
+	}
 	log.Println("Meridian · 子午 — 网络资产发现与统一接入平台")
-	log.Println("Meridian backend is running on http://localhost:8080")
-	if err := r.Run("127.0.0.1:8080"); err != nil {
+	log.Printf("Meridian backend is running on http://%s", addr)
+	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to run server: %v", err)
 	}
 }

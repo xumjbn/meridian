@@ -1,0 +1,50 @@
+# Meridian · 子午 —— Docker 编排
+# 默认基础镜像走国内镜像(DaoCloud 透明代理 Docker Hub)，可整体覆盖：
+#   REGISTRY=registry.example.com docker compose build
+# 启动：  docker compose up -d --build
+# 访问：  http://<宿主机IP>:8088   默认登录 admin / admin
+name: meridian
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        REGISTRY: ${REGISTRY:-docker.m.daocloud.io}
+    image: meridian-backend:latest
+    restart: unless-stopped
+    environment:
+      - LISTEN_ADDR=0.0.0.0:8080
+      - MERIDIAN_DB=/data/assets.db
+      - TZ=Asia/Shanghai
+    volumes:
+      - meridian-data:/data
+    networks:
+      - meridian
+    # 后端默认不直接对外，仅供内网 nginx 反代。
+    # 如需本机直连调试，取消下面注释（注意会暴露无鉴权的 API）：
+    # ports:
+    #   - "8080:8080"
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        REGISTRY: ${REGISTRY:-docker.m.daocloud.io}
+    image: meridian-web:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8088:80"
+    networks:
+      - meridian
+
+volumes:
+  meridian-data:
+
+networks:
+  meridian:
+    driver: bridge

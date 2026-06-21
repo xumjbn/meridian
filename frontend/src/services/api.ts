@@ -187,21 +187,14 @@ export const getScanStreamUrl = (taskId: number): string => `/api/tasks/${taskId
 
 // WebSocket URL 辅助函数
 export const getTerminalWsUrl = (assetId: number): string => {
-  const isHttps = window.location.protocol === 'https:';
-  const protocol = isHttps ? 'wss:' : 'ws:';
-  
-  // 如果是 HTTPS，必须走同源代理以避免 Mixed Content 拦截以及 WSS 握手失败
-  if (isHttps) {
-    const host = window.location.host;
-    return `${protocol}//${host}/api/ws/terminal/${assetId}`;
-  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-  // 如果是 HTTP 且处于本地开发模式下（localhost/127.0.0.1），直连后端 8080 端口，避开 Vite 代理且强制走 127.0.0.1
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  // 仅在 Vite 开发模式下直连后端 8080，绕开 dev server 偶发的 ws 代理问题；
+  // 生产 / 容器部署（vite build）一律走同源，由 nginx 反向代理到后端，
+  // 这样无论用 localhost、内网 IP 还是域名访问，终端 WebSocket 都能正常握手
+  if (import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     return `${protocol}//127.0.0.1:8080/api/ws/terminal/${assetId}`;
   }
 
-  // 生产环境或其他主机名，默认走同源代理
-  const host = window.location.host;
-  return `${protocol}//${host}/api/ws/terminal/${assetId}`;
+  return `${protocol}//${window.location.host}/api/ws/terminal/${assetId}`;
 };

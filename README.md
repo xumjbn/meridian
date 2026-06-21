@@ -67,6 +67,17 @@ cd backend  && GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-mod=mod go build ./cmd/s
 cd frontend && npm run build
 ```
 
+## Docker 部署（国内镜像）
+
+一条命令起一套（Go 后端 + nginx 托管前端并反代 `/api`，含终端 WebSocket）：
+
+```bash
+docker compose up -d --build
+# 访问 http://<宿主机IP>:8088   默认 admin / admin
+```
+
+基础镜像 / Go 模块 / npm 依赖 / Alpine 源**全部走国内镜像**，详见 [DEPLOY.md](DEPLOY.md)。
+
 ## 文档
 
 - [架构设计](docs/architecture.md)

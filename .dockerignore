@@ -1,0 +1,19 @@
+# 构建上下文瘦身：避免把巨大的 node_modules(且为 Windows junction)、
+# 产物、二进制、数据库与 git 历史拷进镜像
+.git
+.gitignore
+**/node_modules
+frontend/dist
+frontend/node_modules
+backend/server
+backend/meridian-server.exe
+**/*.exe
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.log
+.vscode
+.idea
+docs
+*.md
+!README.md

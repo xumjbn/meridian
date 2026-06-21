@@ -19,7 +19,11 @@ var DB *gorm.Model
 var GlobalDB *gorm.DB
 
 func InitDB() *gorm.DB {
-	dbFile := "assets.db"
+	// 数据库文件路径可由 MERIDIAN_DB 覆盖（容器部署时指向挂载卷，如 /data/assets.db）
+	dbFile := os.Getenv("MERIDIAN_DB")
+	if dbFile == "" {
+		dbFile = "assets.db"
+	}
 	// 纯 Go 驱动（modernc）使用 _pragma 语法设置 busy_timeout
 	dbPath := dbFile + "?_pragma=busy_timeout(5000)"
 
