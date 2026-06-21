@@ -58,6 +58,9 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     setErrorDetail('');
 
     let resizeRaf = 0; // ResizeObserver 的 requestAnimationFrame 句柄
+    let onMouseUp: (() => void) | null = null;       // 选中即复制
+    let onContextMenu: ((e: MouseEvent) => void) | null = null; // 右键粘贴
+    const containerEl = terminalRef.current;
 
     // 创建 WebSocket 实例
     const wsUrl = getTerminalWsUrl(asset.id!);
@@ -92,17 +95,59 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     fitAddonRef.current = fitAddon;
     term.loadAddon(fitAddon);
 
+    // 键盘复制/粘贴：Ctrl+Shift+C 复制选区，Ctrl+Shift+V 粘贴（不与终端内 Ctrl+C 中断信号冲突）
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown') return true;
+      const key = e.key.toLowerCase();
+      if (e.ctrlKey && e.shiftKey && key === 'c') {
+        const sel = term.getSelection();
+        if (sel) navigator.clipboard?.writeText(sel).catch(() => {});
+        return false;
+      }
+      if (e.ctrlKey && e.shiftKey && key === 'v') {
+        navigator.clipboard?.readText().then((t) => { if (t) term.paste(t); }).catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
     // 挂载 DOM
     if (terminalRef.current) {
       term.open(terminalRef.current);
-      setTimeout(() => {
+
+      // 首屏多次适配尺寸：rAF + 延时 + 等 Web 字体（Fira Code）加载完成后再校正一次，
+      // 防止字体晚加载导致行高变化、最后一行被裁掉一半
+      const fitSafe = () => {
+        const el = terminalRef.current;
+        if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         try {
           fitAddon.fit();
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+          }
         } catch (e) {
-          console.warn('Xterm fit failed on mount:', e);
+          console.warn('Xterm fit failed:', e);
         }
-      }, 50);
+      };
+      requestAnimationFrame(fitSafe);
+      setTimeout(fitSafe, 80);
+      setTimeout(fitSafe, 300);
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => fitSafe()).catch(() => {});
+      }
       term.focus();
+
+      // 鼠标复制/粘贴：选中文本松开即复制；右键把剪贴板内容粘贴进终端
+      onMouseUp = () => {
+        const sel = term.getSelection();
+        if (sel && sel.length > 0) navigator.clipboard?.writeText(sel).catch(() => {});
+      };
+      onContextMenu = (e: MouseEvent) => {
+        e.preventDefault();
+        navigator.clipboard?.readText().then((t) => { if (t) term.paste(t); }).catch(() => {});
+      };
+      terminalRef.current.addEventListener('mouseup', onMouseUp);
+      terminalRef.current.addEventListener('contextmenu', onContextMenu);
 
       // 监听容器尺寸变化；用 rAF 把 fit() 推迟到下一帧，
       // 打断 ResizeObserver「回调里同步改布局 → 再次触发回调」的死循环
@@ -237,6 +282,10 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
+      if (containerEl) {
+        if (onMouseUp) containerEl.removeEventListener('mouseup', onMouseUp);
+        if (onContextMenu) containerEl.removeEventListener('contextmenu', onContextMenu);
+      }
       term.dispose();
     };
     // 依赖 asset?.id（稳定主键）而非 asset 对象引用：
@@ -331,6 +380,9 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         </Space>
         
         <Space>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>
+            选中复制 · 右键粘贴 · Ctrl+Shift+C / V
+          </span>
           <Button
             type="text"
             icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
