@@ -3,7 +3,7 @@ import { Form, Input, Button, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { brand, palette, cardStyle } from '../theme';
-import { login } from '../services/api';
+import { login, registerUser } from '../services/api';
 
 interface LoginProps {
   onSuccess: () => void;
@@ -12,20 +12,31 @@ interface LoginProps {
 interface LoginValues {
   username: string;
   password: string;
+  confirm?: string;
 }
 
 export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [form] = Form.useForm<LoginValues>();
 
   const handleFinish = async (values: LoginValues) => {
     setLoading(true);
     try {
+      if (mode === 'register') {
+        await registerUser(values.username, values.password);
+        message.success('注册成功，请使用新账号登录');
+        setMode('login');
+        form.setFieldsValue({ password: '', confirm: '' });
+        return;
+      }
       const res = await login(values.username, values.password);
       localStorage.setItem('mrd-auth', '1');
       localStorage.setItem('mrd-user', res.username || values.username);
+      localStorage.setItem('mrd-role', res.role || 'admin');
       onSuccess();
-    } catch {
-      message.error('用户名或密码错误');
+    } catch (e: any) {
+      message.error(e?.message || (mode === 'register' ? '注册失败' : '用户名或密码错误'));
     } finally {
       setLoading(false);
     }
@@ -75,15 +86,19 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
         </div>
 
         <Form<LoginValues>
+          form={form}
           layout="vertical"
           requiredMark={false}
-          initialValues={{ username: 'admin' }}
+          initialValues={{ username: mode === 'login' ? 'admin' : '' }}
           onFinish={handleFinish}
         >
           <Form.Item
             label="用户名"
             name="username"
-            rules={[{ required: true, message: '请输入用户名' }]}
+            rules={[
+              { required: true, message: '请输入用户名' },
+              ...(mode === 'register' ? [{ min: 3, max: 32, message: '用户名长度需为 3–32 个字符' }] : []),
+            ]}
           >
             <Input prefix={<UserOutlined style={{ color: '#94a3b8' }} />} placeholder="用户名" size="large" autoComplete="username" />
           </Form.Item>
@@ -91,25 +106,73 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
           <Form.Item
             label="密码"
             name="password"
-            rules={[{ required: true, message: '请输入密码' }]}
+            rules={[
+              { required: true, message: '请输入密码' },
+              ...(mode === 'register' ? [{ min: 6, max: 64, message: '密码长度需为 6–64 个字符' }] : []),
+            ]}
           >
             <Input.Password
               prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
               placeholder="密码"
               size="large"
-              autoComplete="current-password"
+              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
             />
           </Form.Item>
 
+          {mode === 'register' && (
+            <Form.Item
+              label="确认密码"
+              name="confirm"
+              dependencies={['password']}
+              rules={[
+                { required: true, message: '请再次输入密码' },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue('password') === value) return Promise.resolve();
+                    return Promise.reject(new Error('两次输入的密码不一致'));
+                  },
+                }),
+              ]}
+            >
+              <Input.Password
+                prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
+                placeholder="确认密码"
+                size="large"
+                autoComplete="new-password"
+              />
+            </Form.Item>
+          )}
+
           <Form.Item style={{ marginBottom: 12 }}>
             <Button type="primary" htmlType="submit" size="large" block loading={loading}>
-              登录
+              {mode === 'register' ? '注册' : '登录'}
             </Button>
           </Form.Item>
         </Form>
 
         <div style={{ textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>
-          默认账号 admin / admin
+          {mode === 'login' ? (
+            <>
+              还没有账号？
+              <a
+                onClick={() => { setMode('register'); form.setFieldsValue({ username: '', password: '', confirm: '' }); }}
+                style={{ color: palette.primary, fontWeight: 500 }}
+              >
+                注册新账号
+              </a>
+              <div style={{ marginTop: 6 }}>默认账号 admin / admin</div>
+            </>
+          ) : (
+            <>
+              已有账号？
+              <a
+                onClick={() => { setMode('login'); form.setFieldsValue({ username: 'admin', password: '', confirm: '' }); }}
+                style={{ color: palette.primary, fontWeight: 500 }}
+              >
+                返回登录
+              </a>
+            </>
+          )}
         </div>
       </div>
     </div>

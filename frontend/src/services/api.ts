@@ -193,9 +193,37 @@ export interface LoginResult {
   ok: boolean;
   token: string;
   username: string;
+  role?: 'admin' | 'user' | string;
 }
 export const login = (username: string, password: string): Promise<LoginResult> =>
   api.post('/login', { username, password });
+
+// ── 用户管理 ─────────────────────────────────
+export interface User {
+  id: number;
+  username: string;
+  role: 'admin' | 'user' | string;
+  status: 'active' | 'disabled' | string;
+  created_at?: string;
+}
+
+// 开放注册（创建普通用户）
+export const registerUser = (username: string, password: string): Promise<{ id: number; username: string }> =>
+  api.post('/register', { username, password });
+
+// 用户列表（管理员）
+export const getUsers = (): Promise<User[]> => api.get('/users');
+// 管理员新增用户
+export const createUser = (data: { username: string; password: string; role?: string }): Promise<{ id: number }> =>
+  api.post('/users', data);
+// 管理员更新用户（改角色 / 启禁用 / 重置密码）
+export const updateUser = (id: number, data: { role?: string; status?: string; password?: string }): Promise<void> =>
+  api.put(`/users/${id}`, data);
+// 删除用户
+export const deleteUser = (id: number): Promise<void> => api.delete(`/users/${id}`);
+// 修改本人密码
+export const changePassword = (username: string, oldPassword: string, newPassword: string): Promise<{ ok: boolean }> =>
+  api.post('/users/change-password', { username, old_password: oldPassword, new_password: newPassword });
 
 // ── 扫描日志 SSE 流地址（供 EventSource 使用，走同源 Vite 代理） ──
 export const getScanStreamUrl = (taskId: number): string => `/api/tasks/${taskId}/stream`;

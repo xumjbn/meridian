@@ -7,6 +7,7 @@ import {
   RadarChartOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
+  TeamOutlined,
   GithubOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -27,6 +28,7 @@ const ScanTasks = lazy(() => import('./pages/ScanTasks').then((m) => ({ default:
 const Vulns = lazy(() => import('./pages/Vulns').then((m) => ({ default: m.Vulns })));
 const Credentials = lazy(() => import('./pages/Credentials').then((m) => ({ default: m.Credentials })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const Users = lazy(() => import('./pages/Users').then((m) => ({ default: m.Users })));
 const TerminalPage = lazy(() => import('./pages/TerminalPage').then((m) => ({ default: m.TerminalPage })));
 
 const { Sider, Content } = Layout;
@@ -40,25 +42,36 @@ const PageFallback: React.FC = () => (
 const EXPANDED = 224;
 const COLLAPSED = 76;
 
+// 完整导航项（含仅管理员可见的「用户管理」），用于路由高亮与标题解析
 const navItems = [
   { key: '/', icon: <DashboardOutlined style={{ fontSize: 16 }} />, label: '控制台' },
   { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 16 }} />, label: '资产清单 (CMDB)' },
   { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 16 }} />, label: '自动发现' },
   { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 16 }} />, label: '凭据保管箱' },
+  { key: '/users', icon: <TeamOutlined style={{ fontSize: 16 }} />, label: '用户管理' },
   { key: '/settings', icon: <SettingOutlined style={{ fontSize: 16 }} />, label: '系统设置' },
 ];
 
-const groupedItems: MenuProps['items'] = [
-  { type: 'group', label: '概览', children: [navItems[0]] },
-  { type: 'group', label: '资产中心', children: [navItems[1], navItems[2]] },
-  { type: 'group', label: '接入与系统', children: [navItems[3], navItems[4]] },
-];
+// 按角色过滤侧边栏：普通用户隐藏「用户管理」
+const buildMenu = (isAdmin: boolean) => {
+  const flat = isAdmin ? navItems : navItems.filter((i) => i.key !== '/users');
+  const sysKeys = ['/credentials', '/users', '/settings'];
+  const grouped: MenuProps['items'] = [
+    { type: 'group', label: '概览', children: [navItems[0]] },
+    { type: 'group', label: '资产中心', children: [navItems[1], navItems[2]] },
+    { type: 'group', label: '接入与系统', children: flat.filter((i) => sysKeys.includes(i.key)) },
+  ];
+  return { flat, grouped };
+};
 
 const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const { sessions, activeId, close, setActive } = useTerminals();
+
+  const isAdmin = (localStorage.getItem('mrd-role') || 'admin') === 'admin';
+  const { flat: menuNavItems, grouped: groupedItems } = buildMenu(isAdmin);
 
   const selectedKey = (() => {
     const path = location.pathname;
@@ -174,7 +187,7 @@ const AppLayout: React.FC = () => {
                 mode="inline"
                 inlineCollapsed={collapsed}
                 selectedKeys={[selectedKey]}
-                items={collapsed ? navItems : groupedItems}
+                items={collapsed ? menuNavItems : groupedItems}
                 onClick={(info) => navigate(info.key)}
                 style={{ background: 'transparent', borderRight: 0 }}
               />
@@ -245,6 +258,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/tasks" element={<ScanTasks />} />
                   <Route path="/vulns" element={<Vulns />} />
                   <Route path="/credentials" element={<Credentials />} />
+                  {isAdmin && <Route path="/users" element={<Users />} />}
                   <Route path="/settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

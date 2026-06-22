@@ -106,6 +106,14 @@ func main() {
 		// 登录校验
 		api.POST("/login", handler.Login)
 
+		// 用户管理（注册 / 列表 / 增删改 / 修改密码）
+		api.POST("/register", handler.Register)
+		api.GET("/users", handler.ListUsers)
+		api.POST("/users", handler.CreateUser)
+		api.POST("/users/change-password", handler.ChangePassword)
+		api.PUT("/users/:id", handler.UpdateUser)
+		api.DELETE("/users/:id", handler.DeleteUser)
+
 		// 最近活动日志
 		api.GET("/activity/recent", handler.GetRecentActivity)
 
