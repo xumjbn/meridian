@@ -218,38 +218,84 @@ func CreateAsset(c *gin.Context) {
 		return
 	}
 
+	asset.IP = strings.TrimSpace(asset.IP)
+	asset.Name = strings.TrimSpace(asset.Name)
 	if asset.Name == "" || asset.IP == "" {
 		SendError(c, 400, "名称和IP地址不能为空")
 		return
 	}
 
-	// 校验 IP 格式（服务端兜底，避免非法 IP 入库后扫描/探测报错）
-	if net.ParseIP(strings.TrimSpace(asset.IP)) == nil {
-		SendError(c, 400, "IP 地址格式不合法")
+	// 解析 IP 或 IP 范围（支持 192.168.2.21-23 简写范围及 CIDR）
+	ips, err := scanner.ParseIPRange(asset.IP)
+	if err != nil {
+		SendError(c, 400, "IP地址或范围不合法: "+err.Error())
 		return
 	}
 
-	// 检查 IP 唯一性
-	var count int64
-	db.Model(&model.Asset{}).Where("ip = ?", asset.IP).Count(&count)
-	if count > 0 {
-		SendError(c, 400, "该 IP 地址已存在")
+	if len(ips) == 0 {
+		SendError(c, 400, "未解析出任何有效的 IP 地址")
 		return
 	}
 
-	asset.Status = "unknown"
-	if err := db.Create(&asset).Error; err != nil {
-		SendError(c, 500, err.Error())
+	tx := db.Begin()
+	var createdAssets []model.Asset
+	var existIPs []string
+
+	for _, ip := range ips {
+		var count int64
+		tx.Model(&model.Asset{}).Where("ip = ?", ip).Count(&count)
+		if count > 0 {
+			existIPs = append(existIPs, ip)
+			continue
+		}
+
+		name := asset.Name
+		if len(ips) > 1 {
+			name = fmt.Sprintf("%s-%s", asset.Name, ip)
+		}
+
+		newAsset := model.Asset{
+			Name:           name,
+			IP:             ip,
+			Type:           asset.Type,
+			Status:         "unknown",
+			Vendor:         asset.Vendor,
+			OSVersion:      asset.OSVersion,
+			Arch:           asset.Arch,
+			Virtualization: asset.Virtualization,
+			Ports:          asset.Ports,
+			Tags:           asset.Tags,
+			Description:    asset.Description,
+			CredentialID:   asset.CredentialID,
+		}
+
+		if err := tx.Create(&newAsset).Error; err != nil {
+			tx.Rollback()
+			SendError(c, 500, "批量创建资产失败: "+err.Error())
+			return
+		}
+		createdAssets = append(createdAssets, newAsset)
+	}
+	tx.Commit()
+
+	if len(createdAssets) == 0 {
+		SendError(c, 400, "录入失败，所有输入的 IP 地址在系统中均已存在")
 		return
 	}
 
-	db.Create(&model.ActivityLog{
-		Type:    "asset_created",
-		Message: fmt.Sprintf("资产 %s (%s) 已创建", asset.Name, asset.IP),
-		RefID:   asset.ID,
-	})
+	// 异步写入操作日志
+	go func(items []model.Asset) {
+		for _, item := range items {
+			db.Create(&model.ActivityLog{
+				Type:    "asset_created",
+				Message: fmt.Sprintf("资产 %s (%s) 已手动录入", item.Name, item.IP),
+				RefID:   item.ID,
+			})
+		}
+	}(createdAssets)
 
-	SendSuccess(c, asset)
+	// 回传创建的第一个 Asset，确保与前端原有 Promise<Asset> 接收结构完美兼容
+	SendSuccess(c, createdAssets[0])
 }
 
 func UpdateAsset(c *gin.Context) {

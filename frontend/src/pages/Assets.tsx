@@ -886,11 +886,7 @@ export const Assets: React.FC = () => {
             label="管理 IP 地址"
             name="ip"
             rules={[
-              { required: true, message: '请输入有效的 IP 地址' },
-              {
-                pattern: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-                message: '请输入合法的 IPv4 地址',
-              },
+              { required: true, message: '请输入有效的 IP 地址或范围' }
             ]}
           >
             <Input placeholder="例如: 192.168.1.100" disabled={!!editingAsset} />
