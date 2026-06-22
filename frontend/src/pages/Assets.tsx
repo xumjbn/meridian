@@ -506,7 +506,12 @@ export const Assets: React.FC = () => {
       else if (groupBy === 'status') keys = [statusLabelMap[a.status || 'unknown'] || '未知'];
       else if (groupBy === 'tag') {
         let tags: string[] = [];
-        try { tags = a.tags ? JSON.parse(a.tags) : []; } catch (e) { tags = []; }
+        try {
+          const parsed = a.tags ? JSON.parse(a.tags) : [];
+          tags = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          tags = [];
+        }
         keys = tags.length ? tags : ['未打标签'];
       }
       keys.forEach((k) => {
