@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Slider, Typography, Divider, Tag, Space, Button, message, Spin } from 'antd';
+import { Slider, Typography, Divider, Tag, Space, Button, message, Spin, Select, Input, Switch } from 'antd';
 import {
   SettingOutlined,
   GithubOutlined,
   SafetyOutlined,
   ThunderboltOutlined,
   SaveOutlined,
+  BellOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '../components/PageHeader';
 import { palette, brand } from '../theme';
-import { getSettings, updateSettings } from '../services/api';
+import { getSettings, updateSettings, testNotify } from '../services/api';
 
 const { Text, Link } = Typography;
 
@@ -65,12 +67,21 @@ export const Settings: React.FC = () => {
   const [portTimeout, setPortTimeout] = useState(2);
   const [sshTimeout, setSshTimeout] = useState(10);
 
+  // 告警通知
+  const [notifyType, setNotifyType] = useState('none');
+  const [notifyUrl, setNotifyUrl] = useState('');
+  const [notifyOnScan, setNotifyOnScan] = useState(true);
+  const [testing, setTesting] = useState(false);
+
   useEffect(() => {
     getSettings()
       .then((s) => {
         if (s.scan_concurrency) setConcurrency(Number(s.scan_concurrency));
         if (s.scan_timeout) setPortTimeout(Number(s.scan_timeout));
         if (s.ssh_timeout) setSshTimeout(Number(s.ssh_timeout));
+        if (s.notify_type) setNotifyType(s.notify_type);
+        if (s.notify_url) setNotifyUrl(s.notify_url);
+        if (s.notify_on_scan) setNotifyOnScan(s.notify_on_scan === 'true');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -83,12 +94,35 @@ export const Settings: React.FC = () => {
         scan_concurrency: String(concurrency),
         scan_timeout: String(portTimeout),
         ssh_timeout: String(sshTimeout),
+        notify_type: notifyType,
+        notify_url: notifyUrl,
+        notify_on_scan: String(notifyOnScan),
       });
-      message.success('扫描引擎配置已保存');
+      message.success('配置已保存');
     } catch (e) {
       message.error('保存失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestNotify = async () => {
+    if (notifyType === 'none') {
+      message.warning('请先选择一个通知渠道');
+      return;
+    }
+    if (!notifyUrl.trim()) {
+      message.warning('请先填写 Webhook 地址');
+      return;
+    }
+    try {
+      setTesting(true);
+      await testNotify(notifyType, notifyUrl.trim());
+      message.success('测试通知已发送，请查看对应群/渠道');
+    } catch (e: any) {
+      message.error(e?.message || '发送失败');
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -161,6 +195,44 @@ export const Settings: React.FC = () => {
               </div>
               </>
               )}
+            </SettingCard>
+
+            {/* 告警通知 */}
+            <SettingCard
+              icon={<BellOutlined style={{ fontSize: 16 }} />}
+              title="告警通知"
+              description="扫描任务完成/失败时，向企业微信、钉钉群机器人或自定义 Webhook 推送通知"
+            >
+              <SettingRow label="通知渠道" hint="选择群机器人类型，或使用通用 Webhook（POST JSON）">
+                <Select value={notifyType} onChange={setNotifyType} style={{ width: 200 }}>
+                  <Select.Option value="none">不启用</Select.Option>
+                  <Select.Option value="wecom">企业微信群机器人</Select.Option>
+                  <Select.Option value="dingtalk">钉钉群机器人</Select.Option>
+                  <Select.Option value="webhook">通用 Webhook</Select.Option>
+                </Select>
+              </SettingRow>
+              <SettingRow label="Webhook 地址" hint="群机器人的 Webhook URL，或自定义接收地址">
+                <Input
+                  value={notifyUrl}
+                  onChange={(e) => setNotifyUrl(e.target.value)}
+                  placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+                  style={{ width: 360 }}
+                  disabled={notifyType === 'none'}
+                />
+              </SettingRow>
+              <SettingRow label="扫描完成时通知" hint="扫描任务结束（成功或失败）时推送结果摘要">
+                <Switch checked={notifyOnScan} onChange={setNotifyOnScan} disabled={notifyType === 'none'} />
+              </SettingRow>
+              <div style={{ marginTop: 12, textAlign: 'right' }}>
+                <Button icon={<SendOutlined />} loading={testing} onClick={handleTestNotify} disabled={notifyType === 'none'}>
+                  发送测试通知
+                </Button>
+              </div>
+              <div style={{ marginTop: 12, padding: '10px 14px', background: '#eff6ff', borderRadius: 6, border: '1px solid #bfdbfe' }}>
+                <Text style={{ fontSize: 12, color: '#1d4ed8' }}>
+                  提示：配置后请点击右上角「保存配置」持久化；测试按钮使用当前编辑中的地址即时发送。
+                </Text>
+              </div>
             </SettingCard>
 
             {/* 安全 */}
