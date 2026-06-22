@@ -18,7 +18,8 @@ import {
   Segmented,
   Collapse,
   Timeline,
-  Spin
+  Spin,
+  Upload
 } from 'antd';
 import {
   SearchOutlined,
@@ -32,6 +33,7 @@ import {
   DatabaseOutlined,
   DownloadOutlined,
   CloudDownloadOutlined,
+  UploadOutlined,
   TagOutlined
 } from '@ant-design/icons';
 import {
@@ -48,6 +50,7 @@ import {
   deleteTag,
   collectAsset,
   getAssetHistory,
+  importAssets,
   type Asset,
   type Credential,
   type AssetHistory,
@@ -532,6 +535,33 @@ export const Assets: React.FC = () => {
     message.success(`已导出 ${assets.length} 台资产`);
   };
 
+  const handleImportCSV = async (file: File) => {
+    message.loading({ content: '正在导入资产...', key: 'import', duration: 0 });
+    try {
+      const res = await importAssets(file);
+      message.success({
+        content: `导入完成：新增 ${res.created}，更新 ${res.updated}，失败 ${res.failed}`,
+        key: 'import',
+      });
+      if (res.failed > 0 && res.errors?.length) {
+        Modal.warning({
+          title: `${res.failed} 行未导入`,
+          width: 520,
+          content: (
+            <div style={{ maxHeight: 320, overflowY: 'auto', fontSize: 13 }}>
+              {res.errors.map((e, i) => (
+                <div key={i} style={{ padding: '2px 0', color: '#b45309' }}>{e}</div>
+              ))}
+            </div>
+          ),
+        });
+      }
+      fetchAssets();
+    } catch (e: any) {
+      message.error({ content: e?.message || '导入失败', key: 'import' });
+    }
+  };
+
   const typeLabelMap: Record<string, string> = {
     server: 'PC 服务器', switch: '以太网交换机', router: '核心路由器', other: '其他硬件',
   };
@@ -807,6 +837,16 @@ export const Assets: React.FC = () => {
                 ]}
               />
               <Button icon={<TagOutlined />} onClick={() => setIsTagModalOpen(true)}>标签管理</Button>
+              <Upload
+                accept=".csv"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  handleImportCSV(file as File);
+                  return false; // 阻止 antd 自动上传，改由我们手动调用接口
+                }}
+              >
+                <Button icon={<UploadOutlined />}>导入 CSV</Button>
+              </Upload>
               <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>导出 CSV</Button>
             </Space>
           </div>
