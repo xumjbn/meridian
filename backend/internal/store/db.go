@@ -46,6 +46,7 @@ func InitDB() *gorm.DB {
 	// 自动迁移表结构
 	err = db.AutoMigrate(
 		&model.User{},
+		&model.AuditLog{},
 		&model.Asset{},
 		&model.Credential{},
 		&model.ScanTask{},
