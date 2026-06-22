@@ -3,7 +3,7 @@ import { Dropdown, Avatar, Modal, Form, Input, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { UserOutlined, LogoutOutlined, KeyOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
-import { changePassword } from '../services/api';
+import { changePassword, logout } from '../services/api';
 
 interface ChangePasswordValues {
   oldPassword: string;
@@ -18,8 +18,14 @@ export const UserMenu: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ChangePasswordValues>();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logout(); // 通知后端使会话 token 失效（尽力而为）
+    } catch {
+      // 忽略：即使后端不可达也要完成本地登出
+    }
     localStorage.removeItem('mrd-auth');
+    localStorage.removeItem('mrd-token');
     localStorage.removeItem('mrd-user');
     localStorage.removeItem('mrd-role');
     window.location.reload(); // 重新加载后登录门禁会拦截到登录页

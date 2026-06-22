@@ -51,6 +51,22 @@ func main() {
 	// 4. 路由定义
 	api := r.Group("/api")
 	{
+		// ── 公开路由（无需登录）──────────────────
+		api.POST("/login", handler.Login)
+		api.POST("/register", handler.Register)
+
+		// ── 以下全部需要登录（会话 token 校验）──────
+		api.Use(handler.AuthMiddleware())
+
+		api.POST("/logout", handler.Logout)
+		// 本人修改密码（任意已登录用户）
+		api.POST("/users/change-password", handler.ChangePassword)
+		// 用户管理（仅管理员）
+		api.GET("/users", handler.AdminMiddleware(), handler.ListUsers)
+		api.POST("/users", handler.AdminMiddleware(), handler.CreateUser)
+		api.PUT("/users/:id", handler.AdminMiddleware(), handler.UpdateUser)
+		api.DELETE("/users/:id", handler.AdminMiddleware(), handler.DeleteUser)
+
 		// 仪表盘
 		api.GET("/dashboard/stats", handler.GetDashboardStats)
 
@@ -102,17 +118,6 @@ func main() {
 
 		// 漏洞发现列表
 		api.GET("/vulns", handler.GetVulnFindings)
-
-		// 登录校验
-		api.POST("/login", handler.Login)
-
-		// 用户管理（注册 / 列表 / 增删改 / 修改密码）
-		api.POST("/register", handler.Register)
-		api.GET("/users", handler.ListUsers)
-		api.POST("/users", handler.CreateUser)
-		api.POST("/users/change-password", handler.ChangePassword)
-		api.PUT("/users/:id", handler.UpdateUser)
-		api.DELETE("/users/:id", handler.DeleteUser)
 
 		// 最近活动日志
 		api.GET("/activity/recent", handler.GetRecentActivity)
