@@ -52,6 +52,7 @@ func InitDB() *gorm.DB {
 		&model.SystemSetting{},
 		&model.VulnFinding{},
 		&model.AssetHistory{},
+		&model.Tag{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)

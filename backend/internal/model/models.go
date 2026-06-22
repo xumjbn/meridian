@@ -99,3 +99,13 @@ type VulnFinding struct {
 	Engine     string    `gorm:"size:30" json:"engine"` // nuclei
 	CreatedAt  time.Time `json:"created_at"`
 }
+
+// Tag 代表全局资产标签
+type Tag struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"size:50;not null;uniqueIndex" json:"name"`
+	Color     string    `gorm:"size:20;default:'#1890ff'" json:"color"` // 预设 AntD 默认蓝色
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
