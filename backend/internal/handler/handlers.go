@@ -1084,6 +1084,7 @@ func Login(c *gin.Context) {
 		SendError(c, 400, "参数错误")
 		return
 	}
+	c.Set("audit_actor", req.Username) // 供审计中间件记录登录尝试用户名
 
 	// 优先校验 users 表（多用户体系，bcrypt 哈希）
 	var u model.User

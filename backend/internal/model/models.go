@@ -15,6 +15,17 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// AuditLog 记录每一次状态变更请求（谁、何时、做了什么、从哪、结果如何）
+type AuditLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Actor     string    `gorm:"size:50;index" json:"actor"`   // 操作用户名（未登录为空）
+	Action    string    `gorm:"size:10" json:"action"`        // HTTP 方法: POST / PUT / DELETE
+	Path      string    `gorm:"size:200" json:"path"`         // 请求路径
+	Status    int       `json:"status"`                       // 业务返回 code（200 成功，4xx 失败）
+	IP        string    `gorm:"size:50" json:"ip"`            // 客户端 IP
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+}
+
 // Asset 代表资产 (服务器/交换机/路由器等)
 type Asset struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`
