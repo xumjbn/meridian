@@ -45,6 +45,7 @@ type Asset struct {
 	IP            string     `gorm:"size:50;not null;uniqueIndex" json:"ip"`
 	Type          string     `gorm:"size:20;default:'other'" json:"type"` // server, switch, router, other
 	Status        string     `gorm:"size:20;default:'unknown'" json:"status"` // online, offline, unknown
+	SSHPort       int        `gorm:"default:22" json:"ssh_port"` // SSH/SFTP 连接端口（默认 22，支持非标端口）
 	Vendor        string     `gorm:"size:100" json:"vendor"` // Cisco, Huawei, Dell, Ubuntu等
 	OSVersion     string     `gorm:"size:100" json:"os_version"`
 	Arch          string     `gorm:"size:30" json:"arch"` // CPU 架构: x86_64 / aarch64 / armv7l（需认证采集）
@@ -57,6 +58,14 @@ type Asset struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	OwnerName     string     `gorm:"-" json:"owner_name"` // 非持久化：归属用户名（仅展示）
+}
+
+// ResolvedSSHPort 返回有效 SSH 端口（未设置时回退默认 22）
+func (a *Asset) ResolvedSSHPort() int {
+	if a.SSHPort > 0 {
+		return a.SSHPort
+	}
+	return 22
 }
 
 // Credential 代表登录凭证

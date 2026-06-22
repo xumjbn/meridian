@@ -102,7 +102,7 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 		sshConfig.Auth = []ssh.AuthMethod{ssh.Password(password)}
 	}
 
-	sshClient, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", asset.IP), sshConfig)
+	sshClient, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", asset.IP, asset.ResolvedSSHPort()), sshConfig)
 	if err != nil {
 		errStatus, _ := json.Marshal(WSMessage{
 			Type:    "status",
