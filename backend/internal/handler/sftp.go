@@ -274,6 +274,150 @@ func SftpUpload(c *gin.Context) {
 	SendSuccess(c, gin.H{"path": target, "size": n})
 }
 
+// SftpMkdir 在远端创建目录（含父级）
+func SftpMkdir(c *gin.Context) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	req.Path = strings.TrimSpace(req.Path)
+
+	asset, cred, ok := resolveSFTPAsset(c, "MKDIR", req.Path)
+	if !ok {
+		return
+	}
+	if req.Path == "" {
+		auditSftp(c, asset.ID, "MKDIR", req.Path, 400)
+		SendError(c, 400, "缺少目录路径")
+		return
+	}
+
+	sshc, sc, err := openSFTP(asset, cred)
+	if err != nil {
+		auditSftp(c, asset.ID, "MKDIR", req.Path, 400)
+		SendError(c, 400, err.Error())
+		return
+	}
+	defer sshc.Close()
+	defer sc.Close()
+
+	if err := sc.MkdirAll(req.Path); err != nil {
+		auditSftp(c, asset.ID, "MKDIR", req.Path, 400)
+		SendError(c, 400, "创建目录失败: "+err.Error())
+		return
+	}
+	auditSftp(c, asset.ID, "MKDIR", req.Path, 200)
+	SendSuccess(c, gin.H{"ok": true, "path": req.Path})
+}
+
+// SftpRemove 删除远端文件或目录（目录递归删除）
+func SftpRemove(c *gin.Context) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	req.Path = strings.TrimSpace(req.Path)
+
+	asset, cred, ok := resolveSFTPAsset(c, "DELETE", req.Path)
+	if !ok {
+		return
+	}
+	// 安全：禁止删除空路径或根目录
+	if req.Path == "" || req.Path == "/" {
+		auditSftp(c, asset.ID, "DELETE", req.Path, 400)
+		SendError(c, 400, "路径非法，拒绝删除")
+		return
+	}
+
+	sshc, sc, err := openSFTP(asset, cred)
+	if err != nil {
+		auditSftp(c, asset.ID, "DELETE", req.Path, 400)
+		SendError(c, 400, err.Error())
+		return
+	}
+	defer sshc.Close()
+	defer sc.Close()
+
+	fi, err := sc.Stat(req.Path)
+	if err != nil {
+		auditSftp(c, asset.ID, "DELETE", req.Path, 400)
+		SendError(c, 400, "目标不存在: "+err.Error())
+		return
+	}
+	if fi.IsDir() {
+		err = sftpRemoveAll(sc, req.Path)
+	} else {
+		err = sc.Remove(req.Path)
+	}
+	if err != nil {
+		auditSftp(c, asset.ID, "DELETE", req.Path, 500)
+		SendError(c, 500, "删除失败: "+err.Error())
+		return
+	}
+	auditSftp(c, asset.ID, "DELETE", req.Path, 200)
+	SendSuccess(c, gin.H{"ok": true})
+}
+
+// SftpRename 重命名/移动远端文件或目录
+func SftpRename(c *gin.Context) {
+	var req struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	req.From = strings.TrimSpace(req.From)
+	req.To = strings.TrimSpace(req.To)
+	detail := req.From + " → " + req.To
+
+	asset, cred, ok := resolveSFTPAsset(c, "RENAME", detail)
+	if !ok {
+		return
+	}
+	if req.From == "" || req.To == "" || req.From == "/" {
+		auditSftp(c, asset.ID, "RENAME", detail, 400)
+		SendError(c, 400, "源路径或目标路径非法")
+		return
+	}
+
+	sshc, sc, err := openSFTP(asset, cred)
+	if err != nil {
+		auditSftp(c, asset.ID, "RENAME", detail, 400)
+		SendError(c, 400, err.Error())
+		return
+	}
+	defer sshc.Close()
+	defer sc.Close()
+
+	if err := sc.Rename(req.From, req.To); err != nil {
+		auditSftp(c, asset.ID, "RENAME", detail, 400)
+		SendError(c, 400, "重命名失败: "+err.Error())
+		return
+	}
+	auditSftp(c, asset.ID, "RENAME", detail, 200)
+	SendSuccess(c, gin.H{"ok": true, "path": req.To})
+}
+
+// sftpRemoveAll 递归删除目录及其内容
+func sftpRemoveAll(sc *sftp.Client, p string) error {
+	fi, err := sc.Stat(p)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return sc.Remove(p)
+	}
+	entries, err := sc.ReadDir(p)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := sftpRemoveAll(sc, path.Join(p, e.Name())); err != nil {
+			return err
+		}
+	}
+	return sc.RemoveDirectory(p)
+}
+
 // sanitizeHeaderValue 去除可能导致响应头注入的字符
 func sanitizeHeaderValue(s string) string {
 	s = strings.ReplaceAll(s, "\r", "")

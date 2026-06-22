@@ -123,6 +123,9 @@ func main() {
 		api.GET("/assets/:id/sftp/list", handler.SftpList)
 		api.GET("/assets/:id/sftp/download", handler.SftpDownload)
 		api.POST("/assets/:id/sftp/upload", handler.SftpUpload)
+		api.POST("/assets/:id/sftp/mkdir", handler.SftpMkdir)
+		api.POST("/assets/:id/sftp/remove", handler.SftpRemove)
+		api.POST("/assets/:id/sftp/rename", handler.SftpRename)
 
 		// 全局标签管理
 		api.GET("/tags", handler.ListTags)

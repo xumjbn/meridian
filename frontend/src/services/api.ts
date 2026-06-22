@@ -213,6 +213,13 @@ export const sftpUpload = (assetId: number, dir: string, file: File): Promise<{ 
   return api.post(`/assets/${assetId}/sftp/upload`, fd, { headers: { 'Content-Type': undefined } as never });
 };
 
+export const sftpMkdir = (assetId: number, path: string): Promise<{ ok: boolean }> =>
+  api.post(`/assets/${assetId}/sftp/mkdir`, { path });
+export const sftpRemove = (assetId: number, path: string): Promise<{ ok: boolean }> =>
+  api.post(`/assets/${assetId}/sftp/remove`, { path });
+export const sftpRename = (assetId: number, from: string, to: string): Promise<{ ok: boolean }> =>
+  api.post(`/assets/${assetId}/sftp/rename`, { from, to });
+
 // 下载用原生 fetch（携带 token），区分二进制流与 JSON 错误响应
 export const sftpDownload = async (assetId: number, filePath: string): Promise<void> => {
   const token = localStorage.getItem('mrd-token') || '';

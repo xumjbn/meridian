@@ -40,6 +40,9 @@ const describeAction = (action: string, rawPath: string): string => {
     [action === 'LIST', `列目录 ${p}`],
     [action === 'DOWNLOAD', `下载文件 ${p}`],
     [action === 'UPLOAD', `上传文件 ${p}`],
+    [action === 'MKDIR', `新建目录 ${p}`],
+    [action === 'RENAME', `重命名 ${p}`],
+    [action === 'DELETE' && p.startsWith('资产#'), `删除文件/目录 ${p}`],
   ];
   const hit = rules.find(([cond]) => cond);
   return hit ? hit[1] : `${action} ${p}`;
@@ -48,6 +51,7 @@ const describeAction = (action: string, rawPath: string): string => {
 const methodColor: Record<string, string> = {
   POST: 'green', PUT: 'blue', DELETE: 'red',
   DOWNLOAD: 'geekblue', UPLOAD: 'cyan', LIST: 'default',
+  MKDIR: 'purple', RENAME: 'gold',
 };
 
 export const Audit: React.FC = () => {
