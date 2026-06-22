@@ -34,6 +34,7 @@ import {
   DownloadOutlined,
   CloudDownloadOutlined,
   UploadOutlined,
+  FolderOpenOutlined,
   TagOutlined
 } from '@ant-design/icons';
 import {
@@ -59,6 +60,7 @@ import {
   type Tag as GlobalTag
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
+import { SftpDrawer } from '../components/SftpDrawer';
 import { palette, cardStyle } from '../theme';
 import { useTerminals } from '../terminalSessions';
 
@@ -95,6 +97,9 @@ export const Assets: React.FC = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   // 抽屉内的可用性（近 24h）
   const [uptime, setUptime] = useState<AssetUptime | null>(null);
+  // SFTP 文件管理抽屉
+  const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
+  const [sftpOpen, setSftpOpen] = useState(false);
 
   // 常用功能：批量选择 / 分组
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -760,6 +765,15 @@ export const Assets: React.FC = () => {
           <Button
             type="link"
             size="small"
+            icon={<FolderOpenOutlined />}
+            onClick={() => { setSftpAsset(record); setSftpOpen(true); }}
+            style={{ padding: 0, fontWeight: 500, color: '#f59e0b' }}
+          >
+            文件
+          </Button>
+          <Button
+            type="link"
+            size="small"
             icon={pingingIds[record.id!] ? <SyncOutlined spin /> : <CompassOutlined />}
             loading={pingingIds[record.id!]}
             onClick={() => handlePing(record.id!)}
@@ -1277,6 +1291,9 @@ export const Assets: React.FC = () => {
           size="small"
         />
       </Modal>
+
+      {/* SFTP 文件管理抽屉 */}
+      <SftpDrawer asset={sftpAsset} open={sftpOpen} onClose={() => setSftpOpen(false)} />
       </div>
     </div>
   );
