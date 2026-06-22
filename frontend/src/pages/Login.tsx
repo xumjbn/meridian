@@ -32,6 +32,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
       }
       const res = await login(values.username, values.password);
       localStorage.setItem('mrd-auth', '1');
+      localStorage.setItem('mrd-token', res.token || '');
       localStorage.setItem('mrd-user', res.username || values.username);
       localStorage.setItem('mrd-role', res.role || 'admin');
       onSuccess();
