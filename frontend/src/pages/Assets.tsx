@@ -51,9 +51,11 @@ import {
   collectAsset,
   getAssetHistory,
   importAssets,
+  getAssetUptime,
   type Asset,
   type Credential,
   type AssetHistory,
+  type AssetUptime,
   type Tag as GlobalTag
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
@@ -91,6 +93,8 @@ export const Assets: React.FC = () => {
   // 抽屉内的变更历史
   const [history, setHistory] = useState<AssetHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // 抽屉内的可用性（近 24h）
+  const [uptime, setUptime] = useState<AssetUptime | null>(null);
 
   // 常用功能：批量选择 / 分组
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -347,10 +351,11 @@ export const Assets: React.FC = () => {
     }
   }, [groupBy, assets]);
 
-  // 抽屉打开时拉取该资产的变更历史
+  // 抽屉打开时拉取该资产的变更历史与可用性
   useEffect(() => {
     if (!drawerVisible || !drawerAsset?.id) {
       setHistory([]);
+      setUptime(null);
       return;
     }
     let cancelled = false;
@@ -365,6 +370,13 @@ export const Assets: React.FC = () => {
       })
       .finally(() => {
         if (!cancelled) setHistoryLoading(false);
+      });
+    getAssetUptime(id, 24)
+      .then((data) => {
+        if (!cancelled) setUptime(data);
+      })
+      .catch(() => {
+        if (!cancelled) setUptime(null);
       });
     return () => {
       cancelled = true;
@@ -1104,6 +1116,32 @@ export const Assets: React.FC = () => {
                   </Paragraph>
                 </Descriptions.Item>
               </Descriptions>
+
+              {/* 可用性（近 24h） */}
+              <div>
+                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>可用性（近 24 小时）</Title>
+                <div style={{ background: '#f8fafc', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  {!uptime || uptime.total === 0 ? (
+                    <Text type="secondary">暂无监控数据（请在「系统设置 → 可用性监控」开启定时探测）</Text>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{
+                          fontSize: 26, fontWeight: 700,
+                          color: uptime.uptime_percent >= 99 ? '#16a34a' : uptime.uptime_percent >= 90 ? '#d97706' : '#dc2626',
+                        }}>
+                          {uptime.uptime_percent.toFixed(1)}%
+                        </div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>在线率</div>
+                      </div>
+                      <div style={{ fontSize: 13, color: '#475569' }}>
+                        共探测 <b>{uptime.total}</b> 次，在线 <b style={{ color: '#16a34a' }}>{uptime.online}</b> 次，
+                        离线 <b style={{ color: '#dc2626' }}>{uptime.total - uptime.online}</b> 次
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* 变更历史 */}
               <div>

@@ -18,6 +18,14 @@ type User struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
+// AssetCheck 记录一次资产可用性探测结果（用于在线率统计与离线告警）
+type AssetCheck struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	AssetID   uint      `gorm:"index" json:"asset_id"`
+	Status    string    `gorm:"size:20" json:"status"` // online | offline
+	CheckedAt time.Time `gorm:"index" json:"checked_at"`
+}
+
 // AuditLog 记录每一次状态变更请求（谁、何时、做了什么、从哪、结果如何）
 type AuditLog struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
