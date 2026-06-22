@@ -60,6 +60,21 @@ func ScanFinished(taskName, status, summary string) {
 	}
 }
 
+// AssetStatusChanged 在资产在线状态切换时调用（受 notify_on_offline 控制）
+func AssetStatusChanged(name, ip, newStatus string) {
+	if settingValue("notify_on_offline", "true") != "true" {
+		return
+	}
+	cfg := loadConfig()
+	title, text := "✅ 资产恢复在线", fmt.Sprintf("资产：%s（%s）已恢复在线", name, ip)
+	if newStatus == "offline" {
+		title, text = "⚠️ 资产离线告警", fmt.Sprintf("资产：%s（%s）已离线", name, ip)
+	}
+	if err := dispatch(cfg.Type, cfg.URL, title, text); err != nil {
+		log.Printf("notifier: 资产状态通知失败: %v", err)
+	}
+}
+
 // SendTest 供「测试」按钮使用，使用显式配置并把错误返回给调用方
 func SendTest(typ, url string) error {
 	return dispatch(typ, url, "Meridian 测试通知", "这是一条来自 Meridian · 子午 的测试告警，配置已生效 🎉")

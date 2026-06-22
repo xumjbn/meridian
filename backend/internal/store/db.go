@@ -47,6 +47,7 @@ func InitDB() *gorm.DB {
 	err = db.AutoMigrate(
 		&model.User{},
 		&model.AuditLog{},
+		&model.AssetCheck{},
 		&model.Asset{},
 		&model.Credential{},
 		&model.ScanTask{},
@@ -75,9 +76,12 @@ func seedDefaultSettings(db *gorm.DB) {
 		"ssh_timeout":      "10",    // SSH 连接超时（秒）
 		"auth_username":    "admin", // 登录用户名（默认 admin）
 		"auth_password":    "admin", // 登录密码（默认 admin）
-		"notify_type":      "none",  // 告警渠道: none | wecom | dingtalk | webhook
-		"notify_url":       "",      // Webhook 地址
-		"notify_on_scan":   "true",  // 扫描任务完成/失败时通知
+		"notify_type":       "none",  // 告警渠道: none | wecom | dingtalk | webhook
+		"notify_url":        "",      // Webhook 地址
+		"notify_on_scan":    "true",  // 扫描任务完成/失败时通知
+		"notify_on_offline": "true",  // 资产离线/恢复时通知
+		"monitor_enabled":   "false", // 是否开启资产可用性定时监控
+		"monitor_interval":  "5",     // 监控探测间隔（分钟）
 	}
 	for k, v := range defaults {
 		var count int64

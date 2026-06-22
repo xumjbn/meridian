@@ -188,6 +188,23 @@ export const updateSettings = (data: Settings): Promise<{ updated: number }> => 
 export const testNotify = (type: string, url: string): Promise<{ ok: boolean }> =>
   api.post('/notify/test', { type, url });
 
+// ── 资产可用性 ───────────────────────────────
+export interface AssetCheck {
+  id: number;
+  asset_id: number;
+  status: 'online' | 'offline' | string;
+  checked_at: string;
+}
+export interface AssetUptime {
+  hours: number;
+  total: number;
+  online: number;
+  uptime_percent: number;
+  checks: AssetCheck[];
+}
+export const getAssetUptime = (id: number, hours = 24): Promise<AssetUptime> =>
+  api.get(`/assets/${id}/uptime`, { params: { hours } });
+
 // ── 凭据连通性测试（Phase 3） ─────────────────────
 export interface CredTestResult {
   ok: boolean;

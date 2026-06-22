@@ -8,6 +8,7 @@ import {
   SaveOutlined,
   BellOutlined,
   SendOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '../components/PageHeader';
 import { palette, brand } from '../theme';
@@ -71,7 +72,12 @@ export const Settings: React.FC = () => {
   const [notifyType, setNotifyType] = useState('none');
   const [notifyUrl, setNotifyUrl] = useState('');
   const [notifyOnScan, setNotifyOnScan] = useState(true);
+  const [notifyOnOffline, setNotifyOnOffline] = useState(true);
   const [testing, setTesting] = useState(false);
+
+  // 可用性监控
+  const [monitorEnabled, setMonitorEnabled] = useState(false);
+  const [monitorInterval, setMonitorInterval] = useState(5);
 
   useEffect(() => {
     getSettings()
@@ -82,6 +88,9 @@ export const Settings: React.FC = () => {
         if (s.notify_type) setNotifyType(s.notify_type);
         if (s.notify_url) setNotifyUrl(s.notify_url);
         if (s.notify_on_scan) setNotifyOnScan(s.notify_on_scan === 'true');
+        if (s.notify_on_offline) setNotifyOnOffline(s.notify_on_offline === 'true');
+        if (s.monitor_enabled) setMonitorEnabled(s.monitor_enabled === 'true');
+        if (s.monitor_interval) setMonitorInterval(Number(s.monitor_interval));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -97,6 +106,9 @@ export const Settings: React.FC = () => {
         notify_type: notifyType,
         notify_url: notifyUrl,
         notify_on_scan: String(notifyOnScan),
+        notify_on_offline: String(notifyOnOffline),
+        monitor_enabled: String(monitorEnabled),
+        monitor_interval: String(monitorInterval),
       });
       message.success('配置已保存');
     } catch (e) {
@@ -223,6 +235,9 @@ export const Settings: React.FC = () => {
               <SettingRow label="扫描完成时通知" hint="扫描任务结束（成功或失败）时推送结果摘要">
                 <Switch checked={notifyOnScan} onChange={setNotifyOnScan} disabled={notifyType === 'none'} />
               </SettingRow>
+              <SettingRow label="资产离线时通知" hint="可用性监控发现资产离线或恢复在线时推送">
+                <Switch checked={notifyOnOffline} onChange={setNotifyOnOffline} disabled={notifyType === 'none'} />
+              </SettingRow>
               <div style={{ marginTop: 12, textAlign: 'right' }}>
                 <Button icon={<SendOutlined />} loading={testing} onClick={handleTestNotify} disabled={notifyType === 'none'}>
                   发送测试通知
@@ -231,6 +246,32 @@ export const Settings: React.FC = () => {
               <div style={{ marginTop: 12, padding: '10px 14px', background: '#eff6ff', borderRadius: 6, border: '1px solid #bfdbfe' }}>
                 <Text style={{ fontSize: 12, color: '#1d4ed8' }}>
                   提示：配置后请点击右上角「保存配置」持久化；测试按钮使用当前编辑中的地址即时发送。
+                </Text>
+              </div>
+            </SettingCard>
+
+            {/* 可用性监控 */}
+            <SettingCard
+              icon={<DashboardOutlined style={{ fontSize: 16 }} />}
+              title="可用性监控"
+              description="定时探测全部资产在线状态，记录在线率历史，并在离线时触发告警"
+            >
+              <SettingRow label="启用可用性监控" hint="开启后后台按下方间隔自动探测所有资产并记录历史">
+                <Switch checked={monitorEnabled} onChange={setMonitorEnabled} />
+              </SettingRow>
+              <SettingRow label="探测间隔" hint="每隔多少分钟探测一轮，建议 5–30 分钟">
+                <div style={{ width: 220 }}>
+                  <Slider
+                    min={1} max={60} value={monitorInterval} onChange={setMonitorInterval}
+                    marks={{ 1: '1', 5: '5', 30: '30', 60: '60' }}
+                    tooltip={{ formatter: (v) => `${v} 分钟` }}
+                    disabled={!monitorEnabled}
+                  />
+                </div>
+              </SettingRow>
+              <div style={{ marginTop: 12, padding: '10px 14px', background: '#f0fdf4', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                <Text style={{ fontSize: 12, color: '#15803d' }}>
+                  在资产详情中可查看各资产近 24 小时在线率；状态从在线变为离线时会按「告警通知」配置推送。
                 </Text>
               </div>
             </SettingCard>

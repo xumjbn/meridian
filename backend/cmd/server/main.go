@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"backend/internal/handler"
+	"backend/internal/monitor"
 	"backend/internal/scheduler"
 	"backend/internal/store"
 	"github.com/gin-gonic/gin"
@@ -41,6 +42,9 @@ func main() {
 
 	// 启动定时扫描调度器
 	scheduler.Start(db)
+
+	// 启动资产可用性监控（是否探测由 monitor_enabled 设置控制）
+	monitor.Start(db)
 
 	// 2. 初始化 Gin 引擎
 	r := gin.Default()
@@ -110,6 +114,9 @@ func main() {
 		// 资产在线探测
 		api.POST("/assets/:id/ping", handler.PingAsset)
 		api.POST("/assets/batch-ping", handler.BatchPingAssets)
+
+		// 资产可用性历史与在线率
+		api.GET("/assets/:id/uptime", handler.GetAssetUptime)
 
 		// 全局标签管理
 		api.GET("/tags", handler.ListTags)
