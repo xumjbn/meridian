@@ -89,7 +89,7 @@ func openSFTP(asset *model.Asset, cred *model.Credential) (*ssh.Client, *sftp.Cl
 		cfg.Auth = []ssh.AuthMethod{ssh.Password(cred.Password)}
 	}
 
-	client, err := ssh.Dial("tcp", net.JoinHostPort(asset.IP, "22"), cfg)
+	client, err := ssh.Dial("tcp", net.JoinHostPort(asset.IP, strconv.Itoa(asset.ResolvedSSHPort())), cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("SSH 连接失败: %v", err)
 	}
