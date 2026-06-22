@@ -4,6 +4,17 @@ import (
 	"time"
 )
 
+// User 代表平台登录账户（用于后台管理系统的认证与授权）
+type User struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Username  string    `gorm:"size:50;not null;uniqueIndex" json:"username"`
+	Password  string    `gorm:"size:255;not null" json:"-"`            // bcrypt 哈希，绝不随接口返回
+	Role      string    `gorm:"size:20;default:'user'" json:"role"`    // admin | user
+	Status    string    `gorm:"size:20;default:'active'" json:"status"` // active | disabled
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Asset 代表资产 (服务器/交换机/路由器等)
 type Asset struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`

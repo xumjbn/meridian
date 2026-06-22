@@ -7,6 +7,7 @@ import (
 
 	"backend/internal/model"
 	"github.com/glebarez/sqlite" // 纯 Go SQLite 驱动（无需 cgo / gcc）
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -44,6 +45,7 @@ func InitDB() *gorm.DB {
 
 	// 自动迁移表结构
 	err = db.AutoMigrate(
+		&model.User{},
 		&model.Asset{},
 		&model.Credential{},
 		&model.ScanTask{},
@@ -60,6 +62,7 @@ func InitDB() *gorm.DB {
 
 	GlobalDB = db
 	seedDefaultSettings(db)
+	seedDefaultUser(db)
 	return db
 }
 
@@ -79,4 +82,42 @@ func seedDefaultSettings(db *gorm.DB) {
 			db.Create(&model.SystemSetting{Key: k, Value: v})
 		}
 	}
+}
+
+// seedDefaultUser 首次启动且 users 表为空时，依据旧版单账号配置
+// （auth_username / auth_password，默认 admin/admin）创建首位管理员，
+// 保证升级到多用户体系后历史账号仍可登录。
+func seedDefaultUser(db *gorm.DB) {
+	var count int64
+	db.Model(&model.User{}).Count(&count)
+	if count > 0 {
+		return
+	}
+	username := settingValue(db, "auth_username", "admin")
+	password := settingValue(db, "auth_password", "admin")
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("seedDefaultUser: 密码哈希失败: %v", err)
+		return
+	}
+	admin := model.User{
+		Username: username,
+		Password: string(hash),
+		Role:     "admin",
+		Status:   "active",
+	}
+	if err := db.Create(&admin).Error; err != nil {
+		log.Printf("seedDefaultUser: 创建默认管理员失败: %v", err)
+		return
+	}
+	log.Printf("已创建默认管理员账号: %s（请尽快登录后修改密码）", username)
+}
+
+// settingValue 读取系统配置项，缺省时返回 def
+func settingValue(db *gorm.DB, key, def string) string {
+	var s model.SystemSetting
+	if err := db.First(&s, "key = ?", key).Error; err == nil && s.Value != "" {
+		return s.Value
+	}
+	return def
 }

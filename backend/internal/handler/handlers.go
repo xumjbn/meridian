@@ -1084,10 +1084,27 @@ func Login(c *gin.Context) {
 		SendError(c, 400, "参数错误")
 		return
 	}
+
+	// 优先校验 users 表（多用户体系，bcrypt 哈希）
+	var u model.User
+	if err := db.Where("username = ?", req.Username).First(&u).Error; err == nil {
+		if u.Status == "disabled" {
+			SendError(c, 403, "账号已被禁用，请联系管理员")
+			return
+		}
+		if checkPassword(u.Password, req.Password) {
+			SendSuccess(c, gin.H{"ok": true, "token": "meridian-session", "username": u.Username, "role": u.Role})
+			return
+		}
+		SendError(c, 401, "用户名或密码错误")
+		return
+	}
+
+	// 兼容旧版：users 表无该用户时回退到 system_settings 单账号
 	user := getSettingValue(db, "auth_username", "admin")
 	pass := getSettingValue(db, "auth_password", "admin")
 	if req.Username == user && req.Password == pass {
-		SendSuccess(c, gin.H{"ok": true, "token": "meridian-session", "username": user})
+		SendSuccess(c, gin.H{"ok": true, "token": "meridian-session", "username": user, "role": "admin"})
 		return
 	}
 	SendError(c, 401, "用户名或密码错误")
