@@ -190,6 +190,51 @@ export const updateSettings = (data: Settings): Promise<{ updated: number }> => 
 export const testNotify = (type: string, url: string): Promise<{ ok: boolean }> =>
   api.post('/notify/test', { type, url });
 
+// ── SFTP 文件传输 ─────────────────────────────
+export interface SftpEntry {
+  name: string;
+  path: string;
+  size: number;
+  is_dir: boolean;
+  mode: string;
+  mod_time: number;
+}
+export interface SftpListResult {
+  path: string;
+  entries: SftpEntry[];
+}
+export const sftpList = (assetId: number, path: string): Promise<SftpListResult> =>
+  api.get(`/assets/${assetId}/sftp/list`, { params: { path } });
+
+export const sftpUpload = (assetId: number, dir: string, file: File): Promise<{ path: string; size: number }> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('path', dir);
+  return api.post(`/assets/${assetId}/sftp/upload`, fd, { headers: { 'Content-Type': undefined } as never });
+};
+
+// 下载用原生 fetch（携带 token），区分二进制流与 JSON 错误响应
+export const sftpDownload = async (assetId: number, filePath: string): Promise<void> => {
+  const token = localStorage.getItem('mrd-token') || '';
+  const res = await fetch(`/api/assets/${assetId}/sftp/download?path=${encodeURIComponent(filePath)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const ct = res.headers.get('content-type') || '';
+  if (!res.ok || ct.includes('application/json')) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { message?: string })?.message || '下载失败');
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filePath.split('/').pop() || 'download';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
 // ── 资产可用性 ───────────────────────────────
 export interface AssetCheck {
   id: number;

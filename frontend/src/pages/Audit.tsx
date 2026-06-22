@@ -37,12 +37,18 @@ const describeAction = (action: string, rawPath: string): string => {
     [action === 'PUT' && /^\/tags\/\d+$/.test(p), '更新标签'],
     [action === 'DELETE' && /^\/tags\/\d+$/.test(p), '删除标签'],
     [action === 'PUT' && p === '/settings', '更新系统设置'],
+    [action === 'LIST', `列目录 ${p}`],
+    [action === 'DOWNLOAD', `下载文件 ${p}`],
+    [action === 'UPLOAD', `上传文件 ${p}`],
   ];
   const hit = rules.find(([cond]) => cond);
   return hit ? hit[1] : `${action} ${p}`;
 };
 
-const methodColor: Record<string, string> = { POST: 'green', PUT: 'blue', DELETE: 'red' };
+const methodColor: Record<string, string> = {
+  POST: 'green', PUT: 'blue', DELETE: 'red',
+  DOWNLOAD: 'geekblue', UPLOAD: 'cyan', LIST: 'default',
+};
 
 export const Audit: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);

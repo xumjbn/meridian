@@ -119,6 +119,11 @@ func main() {
 		// 资产可用性历史与在线率
 		api.GET("/assets/:id/uptime", handler.GetAssetUptime)
 
+		// SFTP 文件传输（权限隔离 + 审计；仅 SSH 凭据可用）
+		api.GET("/assets/:id/sftp/list", handler.SftpList)
+		api.GET("/assets/:id/sftp/download", handler.SftpDownload)
+		api.POST("/assets/:id/sftp/upload", handler.SftpUpload)
+
 		// 全局标签管理
 		api.GET("/tags", handler.ListTags)
 		api.POST("/tags", handler.CreateTag)
