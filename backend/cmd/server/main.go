@@ -86,12 +86,12 @@ func main() {
 		api.DELETE("/credentials/:id", handler.DeleteCredential)
 		api.POST("/credentials/:id/test", handler.TestCredential)
 
-		// 系统配置
-		api.GET("/settings", handler.GetSettings)
-		api.PUT("/settings", handler.UpdateSettings)
+		// 系统配置（平台级，仅管理员；含 webhook 地址等敏感项）
+		api.GET("/settings", handler.AdminMiddleware(), handler.GetSettings)
+		api.PUT("/settings", handler.AdminMiddleware(), handler.UpdateSettings)
 
-		// 告警通知测试
-		api.POST("/notify/test", handler.TestNotify)
+		// 告警通知测试（仅管理员）
+		api.POST("/notify/test", handler.AdminMiddleware(), handler.TestNotify)
 
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)

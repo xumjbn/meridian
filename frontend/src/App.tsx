@@ -56,8 +56,8 @@ const navItems = [
   { key: '/settings', icon: <SettingOutlined style={{ fontSize: 16 }} />, label: '系统设置' },
 ];
 
-// 仅管理员可见的菜单项（自动发现涉及全网扫描与资产创建，亦限管理员）
-const adminOnlyKeys = ['/tasks', '/users', '/audit'];
+// 仅管理员可见的菜单项（自动发现涉及全网扫描；系统设置含平台级敏感配置）
+const adminOnlyKeys = ['/tasks', '/users', '/audit', '/settings'];
 
 // 按角色过滤侧边栏：普通用户隐藏管理员专属项（分组子项亦随之过滤）
 const buildMenu = (isAdmin: boolean) => {
@@ -267,7 +267,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/credentials" element={<Credentials />} />
                   {isAdmin && <Route path="/users" element={<Users />} />}
                   {isAdmin && <Route path="/audit" element={<Audit />} />}
-                  <Route path="/settings" element={<Settings />} />
+                  {isAdmin && <Route path="/settings" element={<Settings />} />}
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Suspense>

@@ -843,8 +843,19 @@ func BatchPingAssets(c *gin.Context) {
 
 func GetRecentActivity(c *gin.Context) {
 	db := store.GlobalDB
+	q := db.Order("id desc").Limit(20)
+	// 数据隔离：非管理员仅展示与本人资产相关的活动
+	if !isAdmin(c) {
+		var ownedIDs []uint
+		db.Model(&model.Asset{}).Where("owner_id = ?", currentUserID(c)).Pluck("id", &ownedIDs)
+		if len(ownedIDs) == 0 {
+			SendSuccess(c, []model.ActivityLog{})
+			return
+		}
+		q = q.Where("type LIKE ? AND ref_id IN ?", "asset%", ownedIDs)
+	}
 	var logs []model.ActivityLog
-	if err := db.Order("id desc").Limit(20).Find(&logs).Error; err != nil {
+	if err := q.Find(&logs).Error; err != nil {
 		SendError(c, 500, err.Error())
 		return
 	}
@@ -906,6 +917,10 @@ func TestCredential(c *gin.Context) {
 	var cred model.Credential
 	if err := db.First(&cred, id).Error; err != nil {
 		SendError(c, 404, "凭据不存在")
+		return
+	}
+	if !canAccess(c, cred.OwnerID) {
+		SendError(c, 403, "无权操作该凭据")
 		return
 	}
 
