@@ -4,6 +4,7 @@ import {
   Button,
   Space,
   Input,
+  InputNumber,
   Select,
   Drawer,
   Form,
@@ -951,7 +952,7 @@ export const Assets: React.FC = () => {
         destroyOnHidden
         width={500}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit} style={{ marginTop: 16 }}>
+        <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ ssh_port: 22 }} style={{ marginTop: 16 }}>
           <Form.Item
             label="资产显示名称"
             name="name"
@@ -1021,6 +1022,14 @@ export const Assets: React.FC = () => {
                 </Option>
               ))}
             </Select>
+          </Form.Item>
+
+          <Form.Item
+            label="SSH 端口"
+            name="ssh_port"
+            tooltip="终端连接、SFTP 文件传输与认证采集使用的 SSH 端口，支持非标端口，默认 22"
+          >
+            <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="默认 22" />
           </Form.Item>
 
           {isAdmin && (
@@ -1139,6 +1148,9 @@ export const Assets: React.FC = () => {
                   {drawerAsset.owner_name
                     ? <Tag color="blue" style={{ borderRadius: 4 }}>{drawerAsset.owner_name}</Tag>
                     : <Text type="secondary">未归属</Text>}
+                </Descriptions.Item>
+                <Descriptions.Item label="SSH 端口">
+                  <span style={{ fontFamily: 'monospace' }}>{drawerAsset.ssh_port || 22}</span>
                 </Descriptions.Item>
               </Descriptions>
 

@@ -341,6 +341,7 @@ func CreateAsset(c *gin.Context) {
 			IP:             ip,
 			Type:           asset.Type,
 			Status:         "unknown",
+			SSHPort:        asset.SSHPort, // 0 时由 gorm 默认 22
 			Vendor:         asset.Vendor,
 			OSVersion:      asset.OSVersion,
 			Arch:           asset.Arch,
@@ -412,6 +413,9 @@ func UpdateAsset(c *gin.Context) {
 	asset.CredentialID = req.CredentialID
 	if req.Status != "" {
 		asset.Status = req.Status
+	}
+	if req.SSHPort > 0 {
+		asset.SSHPort = req.SSHPort
 	}
 	// 仅管理员可改变资产归属（分配给其他用户）
 	if isAdmin(c) && req.OwnerID != 0 {
@@ -1005,7 +1009,7 @@ func CollectAsset(c *gin.Context) {
 		sshConfig.Auth = []ssh.AuthMethod{ssh.Password(cred.Password)}
 	}
 
-	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", asset.IP), sshConfig)
+	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", asset.IP, asset.ResolvedSSHPort()), sshConfig)
 	if err != nil {
 		SendSuccess(c, gin.H{"ok": false, "message": fmt.Sprintf("SSH 连接失败: %v", err)})
 		return

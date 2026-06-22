@@ -75,6 +75,7 @@ export interface Asset {
   ip: string;
   type: 'server' | 'switch' | 'router' | 'other';
   status?: 'online' | 'offline' | 'unknown';
+  ssh_port?: number; // SSH/SFTP 连接端口（默认 22）
   vendor?: string;
   os_version?: string;
   arch?: string; // CPU 架构: x86_64 / aarch64 ...（认证采集得到）
