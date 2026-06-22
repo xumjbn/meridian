@@ -31,7 +31,8 @@ import {
   SyncOutlined,
   DatabaseOutlined,
   DownloadOutlined,
-  CloudDownloadOutlined
+  CloudDownloadOutlined,
+  TagOutlined
 } from '@ant-design/icons';
 import {
   getAssets,
@@ -41,11 +42,16 @@ import {
   getCredentials,
   pingAsset,
   batchPingAssets,
+  getTags,
+  createTag,
+  updateTag,
+  deleteTag,
   collectAsset,
   getAssetHistory,
   type Asset,
   type Credential,
-  type AssetHistory
+  type AssetHistory,
+  type Tag as GlobalTag
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
 import { palette, cardStyle } from '../theme';
@@ -87,6 +93,179 @@ export const Assets: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [groupBy, setGroupBy] = useState<'none' | 'type' | 'status' | 'tag'>('none');
 
+  // 全局标签列表与管理 Modal 状态
+  const [globalTags, setGlobalTags] = useState<GlobalTag[]>([]);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+
+  const fetchGlobalTags = async () => {
+    try {
+      const data = await getTags();
+      setGlobalTags(data);
+    } catch (e) {
+      console.error('获取标签列表失败:', e);
+    }
+  };
+
+  // 标签管理内部状态与处理方法
+  const [editingTagId, setEditingTagId] = useState<number | null>(null);
+  const [editingTagName, setEditingTagName] = useState('');
+  const [editingTagColor, setEditingTagColor] = useState('#1890ff');
+
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#1890ff');
+
+  const presetColors = ['#1890ff', '#52c41a', '#f5222d', '#fa8c16', '#722ed1', '#13c2c2', '#eb2f96', '#2f54eb', '#faad14', '#3f51b5', '#607d8b'];
+
+  const getTagColor = (tagName: string) => {
+    const found = globalTags.find(t => t.name === tagName);
+    return found ? found.color : '#1890ff';
+  };
+
+  const handleCreateTag = async () => {
+    const name = newTagName.trim();
+    if (!name) {
+      message.error('标签名字不能为空');
+      return;
+    }
+    if (globalTags.some(t => t.name === name)) {
+      message.error('该标签已存在');
+      return;
+    }
+    try {
+      await createTag({ name, color: newTagColor });
+      message.success('标签创建成功');
+      setNewTagName('');
+      fetchGlobalTags();
+      fetchAssets();
+    } catch (e: any) {
+      message.error(e.message || '创建标签失败');
+    }
+  };
+
+  const handleSaveTag = async (id: number) => {
+    const name = editingTagName.trim();
+    if (!name) {
+      message.error('标签名字不能为空');
+      return;
+    }
+    if (globalTags.some(t => t.name === name && t.id !== id)) {
+      message.error('标签名字已存在');
+      return;
+    }
+    try {
+      await updateTag(id, { name, color: editingTagColor });
+      message.success('标签修改成功');
+      setEditingTagId(null);
+      fetchGlobalTags();
+      fetchAssets();
+    } catch (e: any) {
+      message.error(e.message || '更新标签失败');
+    }
+  };
+
+  const handleDeleteTag = async (id: number) => {
+    try {
+      await deleteTag(id);
+      message.success('标签删除成功');
+      fetchGlobalTags();
+      fetchAssets();
+    } catch (e: any) {
+      message.error(e.message || '删除标签失败');
+    }
+  };
+
+  const tagColumns = [
+    {
+      title: '标签名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text: string, record: GlobalTag) => {
+        if (editingTagId === record.id) {
+          return (
+            <Input 
+              value={editingTagName} 
+              onChange={e => setEditingTagName(e.target.value)} 
+              size="small" 
+              style={{ width: 120 }}
+            />
+          );
+        }
+        return <Tag color={record.color} style={{ borderRadius: '4px', fontWeight: 500 }}>{text}</Tag>;
+      }
+    },
+    {
+      title: '颜色值',
+      dataIndex: 'color',
+      key: 'color',
+      render: (color: string, record: GlobalTag) => {
+        if (editingTagId === record.id) {
+          return (
+            <Space wrap size={4}>
+              {presetColors.map(c => (
+                <div 
+                  key={c}
+                  onClick={() => setEditingTagColor(c)}
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    backgroundColor: c,
+                    cursor: 'pointer',
+                    border: editingTagColor === c ? '2px solid #000' : '1px solid #ddd',
+                    boxShadow: editingTagColor === c ? '0 0 2px rgba(0,0,0,0.5)' : 'none'
+                  }}
+                />
+              ))}
+            </Space>
+          );
+        }
+        return (
+          <Space>
+            <span style={{ 
+              display: 'inline-block', 
+              width: 12, 
+              height: 12, 
+              borderRadius: '50%', 
+              backgroundColor: color 
+            }} />
+            <Text code>{color}</Text>
+          </Space>
+        );
+      }
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: GlobalTag) => {
+        if (editingTagId === record.id) {
+          return (
+            <Space size="middle">
+              <Button type="link" size="small" onClick={() => handleSaveTag(record.id!)}>保存</Button>
+              <Button type="link" size="small" onClick={() => setEditingTagId(null)}>取消</Button>
+            </Space>
+          );
+        }
+        return (
+          <Space size="middle">
+            <Button type="link" size="small" onClick={() => {
+              setEditingTagId(record.id!);
+              setEditingTagName(record.name);
+              setEditingTagColor(record.color);
+            }}>编辑</Button>
+            <Popconfirm
+              title="确定删除此标签？这会自动将其从所有关联的资产中移除！"
+              onConfirm={() => handleDeleteTag(record.id!)}
+              okText="是" cancelText="否" okButtonProps={{ danger: true }}
+            >
+              <Button type="link" danger size="small">删除</Button>
+            </Popconfirm>
+          </Space>
+        );
+      }
+    }
+  ];
+
+
   const fetchAssets = async () => {
     try {
       setLoading(true);
@@ -121,6 +300,7 @@ export const Assets: React.FC = () => {
   useEffect(() => {
     fetchAssets();
     fetchCredentials();
+    fetchGlobalTags();
   }, [searchKey, filterType, filterStatus]);
 
   // 抽屉打开时拉取该资产的变更历史
@@ -186,6 +366,21 @@ export const Assets: React.FC = () => {
         payload.tags = JSON.stringify(values.tags);
       } else {
         payload.tags = JSON.stringify([]);
+      }
+
+      // 自动注册未在 globalTags 中保存的新添加标签
+      if (Array.isArray(values.tags)) {
+        const newTags = values.tags.filter((t: string) => !globalTags.some(gt => gt.name === t));
+        for (const nt of newTags) {
+          try {
+            await createTag({ name: nt, color: '#1890ff' });
+          } catch (e) {
+            console.error('自动创建标签失败:', e);
+          }
+        }
+        if (newTags.length > 0) {
+          fetchGlobalTags();
+        }
       }
 
       if (editingAsset && editingAsset.id) {
@@ -381,11 +576,18 @@ export const Assets: React.FC = () => {
       if (!Array.isArray(tags) || tags.length === 0) return null;
       return (
         <Space size={[0, 4]} wrap>
-          {tags.map((tag) => (
-            <Tag key={tag} style={{ backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569', borderRadius: '4px' }}>
-              {tag}
-            </Tag>
-          ))}
+          {tags.map((tag) => {
+            const hexColor = getTagColor(tag);
+            return (
+              <Tag 
+                key={tag} 
+                color={hexColor} 
+                style={{ borderRadius: '4px', fontWeight: 500 }}
+              >
+                {tag}
+              </Tag>
+            );
+          })}
         </Space>
       );
     } catch (e) {
@@ -558,6 +760,7 @@ export const Assets: React.FC = () => {
                   { label: '标签', value: 'tag' },
                 ]}
               />
+              <Button icon={<TagOutlined />} onClick={() => setIsTagModalOpen(true)}>标签管理</Button>
               <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>导出 CSV</Button>
             </Space>
           </div>
@@ -668,7 +871,22 @@ export const Assets: React.FC = () => {
               style={{ width: '100%' }}
               placeholder="输入或选择标签，按回车键新增"
               tokenSeparators={[',', ' ']}
-            />
+            >
+              {globalTags.map(gt => (
+                <Option value={gt.name} key={gt.id || gt.name}>
+                  <Space>
+                    <span style={{ 
+                      display: 'inline-block', 
+                      width: 8, 
+                      height: 8, 
+                      borderRadius: '50%', 
+                      backgroundColor: gt.color 
+                    }} />
+                    {gt.name}
+                  </Space>
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
 
           <Form.Item
@@ -876,6 +1094,63 @@ export const Assets: React.FC = () => {
           </div>
         )}
       </Drawer>
+
+      <Modal
+        title={
+          <Space>
+            <TagOutlined style={{ color: palette.primary }} />
+            <span style={{ fontWeight: 600 }}>全局标签管理</span>
+          </Space>
+        }
+        open={isTagModalOpen}
+        onCancel={() => setIsTagModalOpen(false)}
+        footer={null}
+        width={600}
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 20, padding: '16px 20px', backgroundColor: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+          <Title level={5} style={{ marginTop: 0, marginBottom: 12, fontSize: 14, color: '#1e293b' }}>新建标签</Title>
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Space style={{ width: '100%' }}>
+              <Input 
+                placeholder="标签名称，如：生产环境" 
+                value={newTagName}
+                onChange={e => setNewTagName(e.target.value)}
+                style={{ width: 220, borderRadius: 6 }}
+              />
+              <Button type="primary" onClick={handleCreateTag} style={{ borderRadius: 6 }}>创建标签</Button>
+            </Space>
+            <Space align="center" size="small" wrap>
+              <span style={{ fontSize: 13, color: '#64748b' }}>选择颜色：</span>
+              {presetColors.map(c => (
+                <div 
+                  key={c}
+                  onClick={() => setNewTagColor(c)}
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    backgroundColor: c,
+                    cursor: 'pointer',
+                    border: newTagColor === c ? '2.5px solid #0f172a' : '1px solid #cbd5e1',
+                    boxShadow: newTagColor === c ? '0 0 3px rgba(0,0,0,0.3)' : 'none',
+                    transform: newTagColor === c ? 'scale(1.15)' : 'none',
+                    transition: 'all 0.15s'
+                  }}
+                />
+              ))}
+            </Space>
+          </Space>
+        </div>
+
+        <Table 
+          dataSource={globalTags} 
+          columns={tagColumns} 
+          rowKey="id" 
+          pagination={{ pageSize: 5 }} 
+          size="small"
+        />
+      </Modal>
       </div>
     </div>
   );
