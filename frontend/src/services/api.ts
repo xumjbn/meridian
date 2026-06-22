@@ -120,6 +120,10 @@ export interface PingResult {
 // 单资产在线探测
 export const pingAsset = (id: number): Promise<PingResult> => api.post(`/assets/${id}/ping`);
 
+// 批量资产在线探测
+export const batchPingAssets = (ids: number[]): Promise<{ processed: number }> => api.post('/assets/batch-ping', { ids });
+
+
 // 最近活动日志
 export const getRecentActivity = (): Promise<ActivityLog[]> => api.get('/activity/recent');
 

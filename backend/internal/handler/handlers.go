@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
 
 	"backend/internal/model"
 	"backend/internal/scanner"
@@ -581,6 +583,92 @@ func PingAsset(c *gin.Context) {
 
 	SendSuccess(c, gin.H{"status": newStatus, "ip": asset.IP})
 }
+
+// ==========================================
+// 6.5 BatchPingAssets — 批量资产在线探测
+// ==========================================
+
+type BatchPingRequest struct {
+	IDs []uint `json:"ids" binding:"required"`
+}
+
+func BatchPingAssets(c *gin.Context) {
+	db := store.GlobalDB
+	var req BatchPingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		SendError(c, 400, "参数格式错误")
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		SendSuccess(c, gin.H{"processed": 0})
+		return
+	}
+
+	var assets []model.Asset
+	if err := db.Where("id IN ?", req.IDs).Find(&assets).Error; err != nil {
+		SendError(c, 500, "查询资产失败: "+err.Error())
+		return
+	}
+
+	// 协程并发控制限制为 50-100 (默认为 50)
+	limit := 50
+	if len(assets) < limit {
+		limit = len(assets)
+	}
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+
+	type pingResult struct {
+		id     uint
+		status string
+	}
+	results := make(chan pingResult, len(assets))
+
+	probePorts := []string{"22", "23", "80", "443", "8080", "3389"}
+
+	for _, asset := range assets {
+		wg.Add(1)
+		go func(a model.Asset) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			online := false
+			for _, port := range probePorts {
+				conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%s", a.IP, port), 2*time.Second)
+				if err == nil {
+					conn.Close()
+					online = true
+					break
+				}
+			}
+
+			status := "offline"
+			if online {
+				status = "online"
+			}
+			results <- pingResult{id: a.ID, status: status}
+		}(asset)
+	}
+
+	wg.Wait()
+	close(results)
+
+	// 收集探测结果，批量在主线程写入数据库，防止 SQLite 并发写入产生锁冲突
+	now := time.Now()
+	tx := db.Begin()
+	for res := range results {
+		tx.Model(&model.Asset{}).Where("id = ?", res.id).Updates(map[string]interface{}{
+			"status":          res.status,
+			"last_scanned_at": &now,
+		})
+	}
+	tx.Commit()
+
+	SendSuccess(c, gin.H{"processed": len(assets)})
+}
+
 
 // ==========================================
 // 7. GetRecentActivity — 最近操作活动日志

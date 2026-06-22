@@ -71,7 +71,7 @@ func CancelScanTask(taskID uint) bool {
 // appendDetailLog 向数据库中追加详细文本日志行
 func appendDetailLog(db *gorm.DB, scanLog *model.ScanLog, format string, args ...interface{}) {
 	msg := fmt.Sprintf("[%s] ", time.Now().Format("15:04:05")) + fmt.Sprintf(format, args...) + "\n"
-	db.Model(scanLog).Update("detail", gorm.Expr("detail || ?", msg))
+	db.Model(scanLog).Update("detail", gorm.Expr("coalesce(detail, '') || ?", msg))
 }
 
 // runDiscoveryScan 执行后台端口发现扫描任务并更新数据库（原 StartScanTask 主体，逻辑保持不变）
@@ -138,6 +138,20 @@ func runDiscoveryScan(db *gorm.DB, taskID uint) {
 	appendDetailLog(db, &scanLog, "目标探测范围: %s，探测端口: %v", task.TargetRange, ports)
 	appendDetailLog(db, &scanLog, "扫描参数设置：并发度=%d，拨号超时=%v，限流速率=%d IP/秒", 
 		concurrency, timeout, rateLimit)
+
+	// 3.5 探测本地代理/VPN劫持与防火墙阻断端口
+	appendDetailLog(db, &scanLog, "分析本地网络环境，检测是否存在端口拦截、代答与阻断...")
+	hijackedPorts, testedOffline := detectHijackedPorts(task.TargetRange, ports, timeout)
+	if len(hijackedPorts) > 0 {
+		var hList []string
+		for p := range hijackedPorts {
+			hList = append(hList, strconv.Itoa(p))
+		}
+		appendDetailLog(db, &scanLog, "⚠️ 警告：检测到本地环境存在对端口 [%s] 的全局代理劫持或代拒阻断！扫描引擎将对这些端口启用应用层深度握手校验，以防止所有主机被误判为存活在线。", strings.Join(hList, ", "))
+	} else {
+		appendDetailLog(db, &scanLog, "本地网络环境检查完毕，未发现端口劫持或阻断。")
+	}
+
 	appendDetailLog(db, &scanLog, "开始执行扫描，共解析出 %d 个 IP...", len(ips))
 
 	// 4. 并发扫描与增量写入
@@ -158,7 +172,7 @@ func runDiscoveryScan(db *gorm.DB, taskID uint) {
 					if !ok {
 						return
 					}
-					res := scanHost(ip, ports, timeout)
+					res := scanHost(ip, ports, timeout, hijackedPorts, testedOffline)
 					select {
 					case <-ctx.Done():
 						return
@@ -278,11 +292,12 @@ LoopEnd:
 func finishTask(db *gorm.DB, task *model.ScanTask, scanLog *model.ScanLog, status string, summary string) {
 	endTime := time.Now()
 	
-	// 更新日志
-	scanLog.Status = status
-	scanLog.FinishedAt = endTime
-	scanLog.Summary = summary
-	db.Save(scanLog)
+	// 更新日志 (仅更新指定列，避免 Save 覆盖 detail 详志)
+	db.Model(scanLog).Updates(map[string]interface{}{
+		"status":      status,
+		"finished_at": endTime,
+		"summary":     summary,
+	})
 
 	// 更新任务状态
 	task.Status = status
@@ -309,8 +324,177 @@ func parsePorts(portsStr string) []int {
 	return ports
 }
 
+// detectHijackedPorts 探测目标网段中是否存在被本地代理/VPN劫持或异常阻断的端口
+func detectHijackedPorts(targetRange string, ports []int, timeout time.Duration) (map[int]bool, map[string]map[int]bool) {
+	hijacked := make(map[int]bool)
+	testedOffline := make(map[string]map[int]bool)
+	
+	ips, err := ParseIPRange(targetRange)
+	if err != nil || len(ips) < 10 {
+		return hijacked, testedOffline
+	}
+
+	// 随机挑选 3 个在网段内不同位置的测试 IP
+	var testIPs []string
+	if len(ips) >= 100 {
+		testIPs = []string{
+			ips[len(ips)*5/10], // 50% 处
+			ips[len(ips)*8/10], // 80% 处
+			ips[len(ips)*9/10], // 90% 处
+		}
+	} else {
+		// IP 较少时，直接取后几个
+		testIPs = []string{
+			ips[len(ips)-1],
+		}
+		if len(ips) > 2 {
+			testIPs = append(testIPs, ips[len(ips)-2])
+		}
+		if len(ips) > 3 {
+			testIPs = append(testIPs, ips[len(ips)-3])
+		}
+	}
+
+	// 初始化 testedOffline 映射
+	for _, ip := range testIPs {
+		testedOffline[ip] = make(map[int]bool)
+	}
+
+	// 统计每个端口在 testIPs 上的非超时响应情况（包括 Dial 成功和 Connection Refused）
+	portOnlineCount := make(map[int]int)
+	for _, ip := range testIPs {
+		for _, port := range ports {
+			_, online := checkPortWithoutBanner(ip, port, timeout)
+			if online {
+				portOnlineCount[port]++
+			} else {
+				// 记录该 IP 该端口已经探测过且是不在线状态
+				testedOffline[ip][port] = true
+			}
+		}
+	}
+
+	// 如果某个端口在绝大多数 (>=2 或全部) 测试 IP 上都返回了在线响应，判定该端口被全局劫持或异常阻断
+	threshold := 2
+	if len(testIPs) < 2 {
+		threshold = len(testIPs)
+	}
+	for port, count := range portOnlineCount {
+		if count >= threshold {
+			hijacked[port] = true
+		}
+	}
+
+	// 如果某个端口被判定为全局劫持，我们必须在实际扫描中对其进行深度校验，而不能直接跳过。
+	// 所以，只有当 hijacked[port] 为 false 时，我们才在 testedOffline 中保留测试 IP 该端口的跳过标记。
+	for _, ip := range testIPs {
+		for port := range testedOffline[ip] {
+			if hijacked[port] {
+				delete(testedOffline[ip], port)
+			}
+		}
+	}
+
+	return hijacked, testedOffline
+}
+
+// deepVerifyPort 进行深度协议握手验证，识别是否为虚假的劫持端口
+func deepVerifyPort(ip string, port int, timeout time.Duration) bool {
+	address := fmt.Sprintf("%s:%d", ip, port)
+
+	// 根据端口特征进行短路探测优化，避免对不存在的 IP 串行执行多种协议超时，导致扫描速度暴跌
+	
+	// 1. SSH / Telnet 端口：它们是主动推 Banner 的协议
+	if port == 22 || port == 23 {
+		conn, err := net.DialTimeout("tcp", address, timeout)
+		if err != nil {
+			return false
+		}
+		defer conn.Close()
+		
+		_ = conn.SetReadDeadline(time.Now().Add(1000 * time.Millisecond))
+		buf := make([]byte, 256)
+		n, err := conn.Read(buf)
+		if err == nil && n > 0 {
+			respStr := string(buf[:n])
+			if port == 22 && strings.HasPrefix(respStr, "SSH-") {
+				return true
+			}
+			if port == 23 && buf[0] == 0xff {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 2. HTTPS 端口：只进行 TLS 握手
+	if port == 443 {
+		conn, err := net.DialTimeout("tcp", address, timeout)
+		if err != nil {
+			return false
+		}
+		defer conn.Close()
+
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+		})
+		_ = tlsConn.SetDeadline(time.Now().Add(1500 * time.Millisecond))
+		err = tlsConn.Handshake()
+		if err == nil {
+			return true
+		}
+		return false
+	}
+
+	// 3. HTTP 端口 (80, 8080) 或其他自定义未知端口：发送 HTTP 请求校验
+	// （大部分劫持服务都是代答 HTTP，这里作为通用校验兜底）
+	conn, err := net.DialTimeout("tcp", address, timeout)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	_ = conn.SetWriteDeadline(time.Now().Add(800 * time.Millisecond))
+	_, err = conn.Write([]byte("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"))
+	if err != nil {
+		return false
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(1000 * time.Millisecond))
+	buf := make([]byte, 512)
+	n, err := conn.Read(buf)
+	if err == nil && n > 0 {
+		respStr := strings.ToLower(string(buf[:n]))
+		if strings.Contains(respStr, "http/1.") || strings.Contains(respStr, "http/2.") {
+			if strings.Contains(respStr, "502") || strings.Contains(respStr, "504") || strings.Contains(respStr, "503") {
+				return false
+			}
+			return true
+		}
+		// 其他非空数据，如果不是代理错误，也判定为有真实服务
+		return true
+	}
+
+	return false
+}
+
+// checkPortWithoutBanner 原始的最快 TCP 连接校验函数，不含劫持和 Banner 逻辑
+func checkPortWithoutBanner(ip string, port int, timeout time.Duration) (bool, bool) {
+	address := fmt.Sprintf("%s:%d", ip, port)
+	conn, err := net.DialTimeout("tcp", address, timeout)
+	if err != nil {
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "connection refused") {
+			return false, true
+		}
+		return false, false
+	}
+	conn.Close()
+	return true, true
+}
+
 // scanHost 扫描单个主机的所有目标端口，探测存活并识别指纹
-func scanHost(ip string, ports []int, timeout time.Duration) ScanResult {
+func scanHost(ip string, ports []int, timeout time.Duration, hijackedPorts map[int]bool, testedOffline map[string]map[int]bool) ScanResult {
 	var openPorts []int
 	result := ScanResult{
 		IP:     ip,
@@ -331,7 +515,14 @@ func scanHost(ip string, ports []int, timeout time.Duration) ScanResult {
 		pwg.Add(1)
 		go func(p int) {
 			defer pwg.Done()
-			open, online := checkPort(ip, p, timeout)
+			
+			// 获取该 IP 该端口是否在初始化阶段已被证明为不在线
+			isTestedOffline := false
+			if offlinePorts, exists := testedOffline[ip]; exists {
+				isTestedOffline = offlinePorts[p]
+			}
+			
+			open, online := checkPort(ip, p, timeout, hijackedPorts[p], isTestedOffline)
 			portChan <- portRes{port: p, open: open, online: online}
 		}(port)
 	}
@@ -361,17 +552,35 @@ func scanHost(ip string, ports []int, timeout time.Duration) ScanResult {
 	return result
 }
 
-func checkPort(ip string, port int, timeout time.Duration) (bool, bool) {
+func checkPort(ip string, port int, timeout time.Duration, isHijacked bool, isTestedOffline bool) (bool, bool) {
+	// 如果在初始化环境探测时，该 IP 已经被检验为在该端口上完全不通且没被劫持，为了避免 ARP 缓存冲突误判，快速跳过
+	if isTestedOffline {
+		return false, false
+	}
+
 	address := fmt.Sprintf("%s:%d", ip, port)
 	conn, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		errStr := strings.ToLower(err.Error())
 		if strings.Contains(errStr, "connection refused") {
+			// 如果该端口本身被判定为全局劫持/异常，那么本地网络直接返回的 connection refused 不能作为主机存活的依据
+			if isHijacked {
+				return false, false
+			}
 			return false, true // 端口关闭但主机存活
 		}
 		return false, false
 	}
 	conn.Close()
+
+	// 如果该端口检测到本地劫持/异常，执行深度协议握手校验
+	if isHijacked {
+		if deepVerifyPort(ip, port, timeout) {
+			return true, true
+		}
+		return false, false
+	}
+
 	return true, true // 端口开放且主机存活
 }
 

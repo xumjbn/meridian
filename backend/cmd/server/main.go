@@ -84,6 +84,8 @@ func main() {
 
 		// 资产在线探测
 		api.POST("/assets/:id/ping", handler.PingAsset)
+		api.POST("/assets/batch-ping", handler.BatchPingAssets)
+
 
 		// 认证采集（架构/系统信息）
 		api.POST("/assets/:id/collect", handler.CollectAsset)

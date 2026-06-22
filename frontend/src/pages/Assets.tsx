@@ -40,6 +40,7 @@ import {
   deleteAsset,
   getCredentials,
   pingAsset,
+  batchPingAssets,
   collectAsset,
   getAssetHistory,
   type Asset,
@@ -256,11 +257,16 @@ export const Assets: React.FC = () => {
     const ids = selectedRowKeys.map(Number);
     if (ids.length === 0) return;
     message.loading({ content: `正在批量探测 ${ids.length} 台资产...`, key: 'batch_ping', duration: 0 });
-    await Promise.allSettled(ids.map((id) => pingAsset(id)));
-    message.success({ content: `已完成 ${ids.length} 台资产探测`, key: 'batch_ping' });
+    try {
+      await batchPingAssets(ids);
+      message.success({ content: `已完成 ${ids.length} 台资产探测`, key: 'batch_ping' });
+    } catch (e: any) {
+      message.error({ content: `批量探测失败: ${e.message || '网络连接超时'}`, key: 'batch_ping' });
+    }
     setSelectedRowKeys([]);
     fetchAssets();
   };
+
 
   const handleBatchDelete = async () => {
     const ids = selectedRowKeys.map(Number);
