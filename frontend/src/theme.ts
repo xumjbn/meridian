@@ -8,7 +8,7 @@ export const brand = {
   name: 'Meridian',
   zh: '子午',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v3.0',
+  version: 'v0.17',
   repo: 'https://github.com/',
 } as const;
 
