@@ -1062,13 +1062,14 @@ func getSettingValue(db *gorm.DB, key, def string) string {
 // ListTags 获取所有全局标签
 func ListTags(c *gin.Context) {
 	db := store.GlobalDB
-	var tags []model.Tag
+	tags := []model.Tag{}
 	if err := db.Order("id desc").Find(&tags).Error; err != nil {
 		SendError(c, 500, "查询标签失败: "+err.Error())
 		return
 	}
 	SendSuccess(c, tags)
 }
+
 
 // CreateTag 创建新标签
 func CreateTag(c *gin.Context) {
