@@ -9,12 +9,37 @@ export const api = axios.create({
   },
 });
 
+// 清理本地会话并跳回登录页
+const clearSession = () => {
+  localStorage.removeItem('mrd-auth');
+  localStorage.removeItem('mrd-token');
+  localStorage.removeItem('mrd-user');
+  localStorage.removeItem('mrd-role');
+};
+
+// 请求拦截：附带会话 token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('mrd-token');
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // 响应拦截，统一返回结果里的 data
 api.interceptors.response.use(
   (response) => {
     const res = response.data;
     if (res.code === 200) {
       return res.data;
+    }
+    // 会话失效 / 未登录：清理本地状态并回到登录页
+    if (res.code === 401) {
+      clearSession();
+      if (!window.location.pathname.startsWith('/terminal/')) {
+        window.location.reload();
+      }
     }
     return Promise.reject(new Error(res.message || 'Error'));
   },
@@ -198,6 +223,9 @@ export interface LoginResult {
 export const login = (username: string, password: string): Promise<LoginResult> =>
   api.post('/login', { username, password });
 
+// 注销当前会话（后端使 token 失效）
+export const logout = (): Promise<{ ok: boolean }> => api.post('/logout');
+
 // ── 用户管理 ─────────────────────────────────
 export interface User {
   id: number;
@@ -226,20 +254,27 @@ export const changePassword = (username: string, oldPassword: string, newPasswor
   api.post('/users/change-password', { username, old_password: oldPassword, new_password: newPassword });
 
 // ── 扫描日志 SSE 流地址（供 EventSource 使用，走同源 Vite 代理） ──
-export const getScanStreamUrl = (taskId: number): string => `/api/tasks/${taskId}/stream`;
+// EventSource 无法设置请求头，故 token 通过查询参数传递
+export const getScanStreamUrl = (taskId: number): string => {
+  const token = localStorage.getItem('mrd-token') || '';
+  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `/api/tasks/${taskId}/stream${q}`;
+};
 
 
 
-// WebSocket URL 辅助函数
+// WebSocket URL 辅助函数（浏览器 WebSocket 无法设置请求头，token 走查询参数）
 export const getTerminalWsUrl = (assetId: number): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const token = localStorage.getItem('mrd-token') || '';
+  const q = token ? `?token=${encodeURIComponent(token)}` : '';
 
   // 仅在 Vite 开发模式下直连后端 8080，绕开 dev server 偶发的 ws 代理问题；
   // 生产 / 容器部署（vite build）一律走同源，由 nginx 反向代理到后端，
   // 这样无论用 localhost、内网 IP 还是域名访问，终端 WebSocket 都能正常握手
   if (import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return `${protocol}//127.0.0.1:8080/api/ws/terminal/${assetId}`;
+    return `${protocol}//127.0.0.1:8080/api/ws/terminal/${assetId}${q}`;
   }
 
-  return `${protocol}//${window.location.host}/api/ws/terminal/${assetId}`;
+  return `${protocol}//${window.location.host}/api/ws/terminal/${assetId}${q}`;
 };

@@ -234,6 +234,13 @@ func UpdateUser(c *gin.Context) {
 		SendError(c, 500, err.Error())
 		return
 	}
+	// 禁用、改密或降级后，强制使该用户已有会话失效
+	if _, ok := updates["password"]; ok {
+		revokeUserSessions(u.Username)
+	}
+	if st, ok := updates["status"]; ok && st == "disabled" {
+		revokeUserSessions(u.Username)
+	}
 	logActivity(db, "user_updated", "更新用户: "+u.Username, u.ID)
 	SendSuccess(c, gin.H{"ok": true})
 }
@@ -261,6 +268,7 @@ func DeleteUser(c *gin.Context) {
 		SendError(c, 500, err.Error())
 		return
 	}
+	revokeUserSessions(u.Username)
 	logActivity(db, "user_deleted", "删除用户: "+u.Username, u.ID)
 	SendSuccess(c, gin.H{"ok": true})
 }

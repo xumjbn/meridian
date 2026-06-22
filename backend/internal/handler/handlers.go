@@ -1093,7 +1093,8 @@ func Login(c *gin.Context) {
 			return
 		}
 		if checkPassword(u.Password, req.Password) {
-			SendSuccess(c, gin.H{"ok": true, "token": "meridian-session", "username": u.Username, "role": u.Role})
+			token := issueToken(u.Username, u.Role)
+			SendSuccess(c, gin.H{"ok": true, "token": token, "username": u.Username, "role": u.Role})
 			return
 		}
 		SendError(c, 401, "用户名或密码错误")
@@ -1104,7 +1105,8 @@ func Login(c *gin.Context) {
 	user := getSettingValue(db, "auth_username", "admin")
 	pass := getSettingValue(db, "auth_password", "admin")
 	if req.Username == user && req.Password == pass {
-		SendSuccess(c, gin.H{"ok": true, "token": "meridian-session", "username": user, "role": "admin"})
+		token := issueToken(user, "admin")
+		SendSuccess(c, gin.H{"ok": true, "token": token, "username": user, "role": "admin"})
 		return
 	}
 	SendError(c, 401, "用户名或密码错误")
