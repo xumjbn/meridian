@@ -237,6 +237,7 @@ export interface LoginResult {
   token: string;
   username: string;
   role?: 'admin' | 'user' | string;
+  must_change_password?: boolean;
 }
 export const login = (username: string, password: string): Promise<LoginResult> =>
   api.post('/login', { username, password });
@@ -250,6 +251,9 @@ export interface User {
   username: string;
   role: 'admin' | 'user' | string;
   status: 'active' | 'disabled' | string;
+  must_change_password?: boolean;
+  last_login_at?: string | null;
+  last_login_ip?: string;
   created_at?: string;
 }
 

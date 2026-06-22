@@ -114,6 +114,66 @@ func AdminMiddleware() gin.HandlerFunc {
 	}
 }
 
+// ==========================================
+// 登录失败锁定 — 连续失败 N 次锁定一段时间
+// ==========================================
+
+const (
+	maxLoginFails   = 5
+	loginLockWindow = 10 * time.Minute
+)
+
+type loginAttempt struct {
+	fails       int
+	lockedUntil time.Time
+}
+
+var (
+	loginMu       sync.Mutex
+	loginAttempts = map[string]*loginAttempt{}
+)
+
+// loginLocked 返回该用户名是否处于锁定中，以及剩余时长
+func loginLocked(username string) (bool, time.Duration) {
+	loginMu.Lock()
+	defer loginMu.Unlock()
+	a := loginAttempts[username]
+	if a == nil {
+		return false, 0
+	}
+	if !a.lockedUntil.IsZero() && time.Now().Before(a.lockedUntil) {
+		return true, time.Until(a.lockedUntil)
+	}
+	// 锁定已过期：清零，给予新的尝试窗口
+	if !a.lockedUntil.IsZero() {
+		a.fails = 0
+		a.lockedUntil = time.Time{}
+	}
+	return false, 0
+}
+
+// recordLoginFail 登记一次失败，达到阈值则锁定
+func recordLoginFail(username string) {
+	loginMu.Lock()
+	defer loginMu.Unlock()
+	a := loginAttempts[username]
+	if a == nil {
+		a = &loginAttempt{}
+		loginAttempts[username] = a
+	}
+	a.fails++
+	if a.fails >= maxLoginFails {
+		a.lockedUntil = time.Now().Add(loginLockWindow)
+	}
+}
+
+// resetLoginFails 登录成功后清除失败计数
+func resetLoginFails(username string) {
+	loginMu.Lock()
+	delete(loginAttempts, username)
+	loginMu.Unlock()
+}
+
 // currentUsername 读取当前登录用户名（中间件已注入）
 func currentUsername(c *gin.Context) string {
 	if v, ok := c.Get("username"); ok {

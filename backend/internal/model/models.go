@@ -6,13 +6,16 @@ import (
 
 // User 代表平台登录账户（用于后台管理系统的认证与授权）
 type User struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Username  string    `gorm:"size:50;not null;uniqueIndex" json:"username"`
-	Password  string    `gorm:"size:255;not null" json:"-"`            // bcrypt 哈希，绝不随接口返回
-	Role      string    `gorm:"size:20;default:'user'" json:"role"`    // admin | user
-	Status    string    `gorm:"size:20;default:'active'" json:"status"` // active | disabled
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                 uint       `gorm:"primaryKey" json:"id"`
+	Username           string     `gorm:"size:50;not null;uniqueIndex" json:"username"`
+	Password           string     `gorm:"size:255;not null" json:"-"`             // bcrypt 哈希，绝不随接口返回
+	Role               string     `gorm:"size:20;default:'user'" json:"role"`     // admin | user
+	Status             string     `gorm:"size:20;default:'active'" json:"status"` // active | disabled
+	MustChangePassword bool       `gorm:"default:false" json:"must_change_password"` // 首次登录须改密（默认账号）
+	LastLoginAt        *time.Time `json:"last_login_at"`                          // 上次成功登录时间
+	LastLoginIP        string     `gorm:"size:50" json:"last_login_ip"`           // 上次登录来源 IP
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // AuditLog 记录每一次状态变更请求（谁、何时、做了什么、从哪、结果如何）
