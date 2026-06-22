@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"backend/internal/model"
 	"backend/internal/store"
@@ -31,6 +32,11 @@ func AuditMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		m := c.Request.Method
 		if m != "POST" && m != "PUT" && m != "DELETE" {
+			c.Next()
+			return
+		}
+		// SFTP 操作由各自处理器显式审计（含路径/资产明细），此处跳过避免重复记录
+		if strings.Contains(c.Request.URL.Path, "/sftp/") {
 			c.Next()
 			return
 		}
