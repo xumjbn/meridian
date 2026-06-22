@@ -51,6 +51,9 @@ func main() {
 	// 4. 路由定义
 	api := r.Group("/api")
 	{
+		// 审计中间件挂在最外层，覆盖含登录/注册在内的所有写操作
+		api.Use(handler.AuditMiddleware())
+
 		// ── 公开路由（无需登录）──────────────────
 		api.POST("/login", handler.Login)
 		api.POST("/register", handler.Register)
@@ -66,6 +69,8 @@ func main() {
 		api.POST("/users", handler.AdminMiddleware(), handler.CreateUser)
 		api.PUT("/users/:id", handler.AdminMiddleware(), handler.UpdateUser)
 		api.DELETE("/users/:id", handler.AdminMiddleware(), handler.DeleteUser)
+		// 审计日志查询（仅管理员）
+		api.GET("/audit", handler.AdminMiddleware(), handler.GetAuditLogs)
 
 		// 仪表盘
 		api.GET("/dashboard/stats", handler.GetDashboardStats)

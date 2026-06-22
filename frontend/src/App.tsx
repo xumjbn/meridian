@@ -8,6 +8,7 @@ import {
   SafetyCertificateOutlined,
   SettingOutlined,
   TeamOutlined,
+  FileSearchOutlined,
   GithubOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -29,6 +30,7 @@ const Vulns = lazy(() => import('./pages/Vulns').then((m) => ({ default: m.Vulns
 const Credentials = lazy(() => import('./pages/Credentials').then((m) => ({ default: m.Credentials })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const Users = lazy(() => import('./pages/Users').then((m) => ({ default: m.Users })));
+const Audit = lazy(() => import('./pages/Audit').then((m) => ({ default: m.Audit })));
 const TerminalPage = lazy(() => import('./pages/TerminalPage').then((m) => ({ default: m.TerminalPage })));
 
 const { Sider, Content } = Layout;
@@ -49,13 +51,17 @@ const navItems = [
   { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 16 }} />, label: '自动发现' },
   { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 16 }} />, label: '凭据保管箱' },
   { key: '/users', icon: <TeamOutlined style={{ fontSize: 16 }} />, label: '用户管理' },
+  { key: '/audit', icon: <FileSearchOutlined style={{ fontSize: 16 }} />, label: '审计日志' },
   { key: '/settings', icon: <SettingOutlined style={{ fontSize: 16 }} />, label: '系统设置' },
 ];
 
-// 按角色过滤侧边栏：普通用户隐藏「用户管理」
+// 仅管理员可见的菜单项
+const adminOnlyKeys = ['/users', '/audit'];
+
+// 按角色过滤侧边栏：普通用户隐藏管理员专属项
 const buildMenu = (isAdmin: boolean) => {
-  const flat = isAdmin ? navItems : navItems.filter((i) => i.key !== '/users');
-  const sysKeys = ['/credentials', '/users', '/settings'];
+  const flat = isAdmin ? navItems : navItems.filter((i) => !adminOnlyKeys.includes(i.key));
+  const sysKeys = ['/credentials', '/users', '/audit', '/settings'];
   const grouped: MenuProps['items'] = [
     { type: 'group', label: '概览', children: [navItems[0]] },
     { type: 'group', label: '资产中心', children: [navItems[1], navItems[2]] },
@@ -259,6 +265,7 @@ const AppLayout: React.FC = () => {
                   <Route path="/vulns" element={<Vulns />} />
                   <Route path="/credentials" element={<Credentials />} />
                   {isAdmin && <Route path="/users" element={<Users />} />}
+                  {isAdmin && <Route path="/audit" element={<Audit />} />}
                   <Route path="/settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

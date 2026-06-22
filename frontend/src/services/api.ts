@@ -253,6 +253,19 @@ export const deleteUser = (id: number): Promise<void> => api.delete(`/users/${id
 export const changePassword = (username: string, oldPassword: string, newPassword: string): Promise<{ ok: boolean }> =>
   api.post('/users/change-password', { username, old_password: oldPassword, new_password: newPassword });
 
+// ── 审计日志（管理员）─────────────────────────
+export interface AuditLog {
+  id: number;
+  actor: string;
+  action: 'POST' | 'PUT' | 'DELETE' | string;
+  path: string;
+  status: number; // 业务 code：200 成功
+  ip: string;
+  created_at: string;
+}
+export const getAuditLogs = (params?: { actor?: string; action?: string; limit?: number }): Promise<AuditLog[]> =>
+  api.get('/audit', { params });
+
 // ── 扫描日志 SSE 流地址（供 EventSource 使用，走同源 Vite 代理） ──
 // EventSource 无法设置请求头，故 token 通过查询参数传递
 export const getScanStreamUrl = (taskId: number): string => {

@@ -66,6 +66,7 @@ func Register(c *gin.Context) {
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
+	c.Set("audit_actor", req.Username) // 供审计中间件记录注册用户名
 	if msg := validateUsername(req.Username); msg != "" {
 		SendError(c, 400, msg)
 		return
