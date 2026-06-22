@@ -1086,6 +1086,12 @@ func Login(c *gin.Context) {
 	}
 	c.Set("audit_actor", req.Username) // 供审计中间件记录登录尝试用户名
 
+	// 登录失败锁定校验
+	if locked, remain := loginLocked(req.Username); locked {
+		SendError(c, 423, fmt.Sprintf("登录失败次数过多，账号已锁定，请 %d 分钟后再试", int(remain.Minutes())+1))
+		return
+	}
+
 	// 优先校验 users 表（多用户体系，bcrypt 哈希）
 	var u model.User
 	if err := db.Where("username = ?", req.Username).First(&u).Error; err == nil {
@@ -1094,10 +1100,17 @@ func Login(c *gin.Context) {
 			return
 		}
 		if checkPassword(u.Password, req.Password) {
+			resetLoginFails(req.Username)
+			now := time.Now()
+			db.Model(&u).Updates(map[string]interface{}{"last_login_at": &now, "last_login_ip": c.ClientIP()})
 			token := issueToken(u.Username, u.Role)
-			SendSuccess(c, gin.H{"ok": true, "token": token, "username": u.Username, "role": u.Role})
+			SendSuccess(c, gin.H{
+				"ok": true, "token": token, "username": u.Username, "role": u.Role,
+				"must_change_password": u.MustChangePassword,
+			})
 			return
 		}
+		recordLoginFail(req.Username)
 		SendError(c, 401, "用户名或密码错误")
 		return
 	}
@@ -1106,10 +1119,12 @@ func Login(c *gin.Context) {
 	user := getSettingValue(db, "auth_username", "admin")
 	pass := getSettingValue(db, "auth_password", "admin")
 	if req.Username == user && req.Password == pass {
+		resetLoginFails(req.Username)
 		token := issueToken(user, "admin")
-		SendSuccess(c, gin.H{"ok": true, "token": token, "username": user, "role": "admin"})
+		SendSuccess(c, gin.H{"ok": true, "token": token, "username": user, "role": "admin", "must_change_password": false})
 		return
 	}
+	recordLoginFail(req.Username)
 	SendError(c, 401, "用户名或密码错误")
 }
 

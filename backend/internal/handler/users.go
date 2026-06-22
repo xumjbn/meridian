@@ -289,16 +289,24 @@ func ChangePassword(c *gin.Context) {
 		SendError(c, 400, "参数格式错误")
 		return
 	}
-	req.Username = strings.TrimSpace(req.Username)
+
+	// 只能修改当前登录用户自己的密码（以会话身份为准，忽略请求体用户名）
+	username := currentUsername(c)
+	if username == "" {
+		username = strings.TrimSpace(req.Username)
+	}
 
 	var u model.User
-	if err := db.Where("username = ?", req.Username).First(&u).Error; err != nil {
+	if err := db.Where("username = ?", username).First(&u).Error; err != nil {
 		SendError(c, 404, "用户不存在")
 		return
 	}
-	if !checkPassword(u.Password, req.OldPassword) {
-		SendError(c, 400, "原密码错误")
-		return
+	// 首次登录强制改密场景（MustChangePassword）下免校验原密码；其余必须校验
+	if !u.MustChangePassword {
+		if !checkPassword(u.Password, req.OldPassword) {
+			SendError(c, 400, "原密码错误")
+			return
+		}
 	}
 	if msg := validatePassword(req.NewPassword); msg != "" {
 		SendError(c, 400, msg)
@@ -309,7 +317,7 @@ func ChangePassword(c *gin.Context) {
 		SendError(c, 500, "密码加密失败")
 		return
 	}
-	if err := db.Model(&u).Update("password", hash).Error; err != nil {
+	if err := db.Model(&u).Updates(map[string]interface{}{"password": hash, "must_change_password": false}).Error; err != nil {
 		SendError(c, 500, err.Error())
 		return
 	}

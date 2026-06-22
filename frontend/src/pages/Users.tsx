@@ -132,6 +132,19 @@ export const Users: React.FC = () => {
         ),
     },
     {
+      title: '上次登录',
+      key: 'last_login',
+      render: (_: unknown, r: User) =>
+        r.last_login_at ? (
+          <span style={{ fontSize: 12 }}>
+            {new Date(r.last_login_at).toLocaleString()}
+            {r.last_login_ip && <span style={{ color: '#94a3b8', marginLeft: 6 }}>({r.last_login_ip})</span>}
+          </span>
+        ) : (
+          <span style={{ color: '#cbd5e1' }}>从未登录</span>
+        ),
+    },
+    {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
