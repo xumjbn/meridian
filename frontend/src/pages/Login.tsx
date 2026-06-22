@@ -35,6 +35,11 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
       localStorage.setItem('mrd-token', res.token || '');
       localStorage.setItem('mrd-user', res.username || values.username);
       localStorage.setItem('mrd-role', res.role || 'admin');
+      if (res.must_change_password) {
+        localStorage.setItem('mrd-must-change', '1');
+      } else {
+        localStorage.removeItem('mrd-must-change');
+      }
       onSuccess();
     } catch (e: any) {
       message.error(e?.message || (mode === 'register' ? '注册失败' : '用户名或密码错误'));

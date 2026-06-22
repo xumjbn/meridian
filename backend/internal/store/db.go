@@ -105,10 +105,11 @@ func seedDefaultUser(db *gorm.DB) {
 		return
 	}
 	admin := model.User{
-		Username: username,
-		Password: string(hash),
-		Role:     "admin",
-		Status:   "active",
+		Username:           username,
+		Password:           string(hash),
+		Role:               "admin",
+		Status:             "active",
+		MustChangePassword: true, // 默认 admin/admin，首次登录强制改密
 	}
 	if err := db.Create(&admin).Error; err != nil {
 		log.Printf("seedDefaultUser: 创建默认管理员失败: %v", err)

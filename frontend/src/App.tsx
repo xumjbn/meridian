@@ -21,6 +21,7 @@ import { TerminalProvider, useTerminals } from './terminalSessions';
 import { brand, palette, antdLightToken } from './theme';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const ForcePasswordChange = lazy(() => import('./pages/ForcePasswordChange').then((m) => ({ default: m.ForcePasswordChange })));
 
 // 按路由懒加载页面，重型依赖（xterm.js）不再进入首屏主包
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
@@ -292,6 +293,7 @@ const AppLayout: React.FC = () => {
 
 export const App: React.FC = () => {
   const [authed, setAuthed] = useState(localStorage.getItem('mrd-auth') === '1');
+  const [mustChange, setMustChange] = useState(localStorage.getItem('mrd-must-change') === '1');
 
   // 独立标签页打开的全屏终端模式
   const isTerminalView = window.location.pathname.startsWith('/terminal/');
@@ -312,7 +314,23 @@ export const App: React.FC = () => {
     return (
       <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken }}>
         <Suspense fallback={<PageFallback />}>
-          <Login onSuccess={() => setAuthed(true)} />
+          <Login
+            onSuccess={() => {
+              setMustChange(localStorage.getItem('mrd-must-change') === '1');
+              setAuthed(true);
+            }}
+          />
+        </Suspense>
+      </ConfigProvider>
+    );
+  }
+
+  // 首次登录强制改密：改密完成前无法进入系统（刷新也会拦截）
+  if (mustChange) {
+    return (
+      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken }}>
+        <Suspense fallback={<PageFallback />}>
+          <ForcePasswordChange onDone={() => setMustChange(false)} />
         </Suspense>
       </ConfigProvider>
     );
