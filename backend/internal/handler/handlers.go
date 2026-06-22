@@ -312,6 +312,12 @@ func CreateAsset(c *gin.Context) {
 		return
 	}
 
+	// 归属：默认创建者；管理员可在表单指定 owner_id 代为分配
+	ownerID := currentUserID(c)
+	if isAdmin(c) && asset.OwnerID != 0 {
+		ownerID = asset.OwnerID
+	}
+
 	tx := db.Begin()
 	var createdAssets []model.Asset
 	var existIPs []string
@@ -330,7 +336,7 @@ func CreateAsset(c *gin.Context) {
 		}
 
 		newAsset := model.Asset{
-			OwnerID:        currentUserID(c), // 归属创建者
+			OwnerID:        ownerID,
 			Name:           name,
 			IP:             ip,
 			Type:           asset.Type,
@@ -406,6 +412,10 @@ func UpdateAsset(c *gin.Context) {
 	asset.CredentialID = req.CredentialID
 	if req.Status != "" {
 		asset.Status = req.Status
+	}
+	// 仅管理员可改变资产归属（分配给其他用户）
+	if isAdmin(c) && req.OwnerID != 0 {
+		asset.OwnerID = req.OwnerID
 	}
 
 	if err := db.Save(&asset).Error; err != nil {
