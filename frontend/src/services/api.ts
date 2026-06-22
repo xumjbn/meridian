@@ -118,6 +118,20 @@ export const getAssets = (params?: { q?: string; type?: string; status?: string 
   api.get('/assets', { params });
 export const getAsset = (id: number): Promise<Asset> => api.get(`/assets/${id}`);
 export const createAsset = (data: Asset): Promise<Asset> => api.post('/assets', data);
+
+// CSV 批量导入（按 IP upsert）
+export interface ImportResult {
+  created: number;
+  updated: number;
+  failed: number;
+  errors: string[];
+}
+export const importAssets = (file: File): Promise<ImportResult> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  // 置空 Content-Type，让浏览器自动带上 multipart boundary
+  return api.post('/assets/import', fd, { headers: { 'Content-Type': undefined } as never });
+};
 export const updateAsset = (id: number, data: Asset): Promise<Asset> => api.put(`/assets/${id}`, data);
 export const deleteAsset = (id: number): Promise<void> => api.delete(`/assets/${id}`);
 

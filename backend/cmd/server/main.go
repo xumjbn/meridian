@@ -88,6 +88,7 @@ func main() {
 
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)
+		api.POST("/assets/import", handler.ImportAssets) // CSV 批量导入（须在 :id 之前的静态路由）
 		api.GET("/assets/:id", handler.GetAsset)
 		api.POST("/assets", handler.CreateAsset)
 		api.PUT("/assets/:id", handler.UpdateAsset)
