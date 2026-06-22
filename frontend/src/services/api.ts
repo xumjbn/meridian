@@ -84,6 +84,8 @@ export interface Asset {
   credential_id?: number | null;
   last_scanned_at?: string;
   tags?: string; // JSON array string e.g. '["生产","DMZ"]'
+  owner_id?: number;
+  owner_name?: string; // 归属用户名（后端展示用，非持久化）
 }
 
 export interface ScanTask {
@@ -267,7 +269,7 @@ export interface User {
   id: number;
   username: string;
   role: 'admin' | 'user' | string;
-  status: 'active' | 'disabled' | string;
+  status: 'active' | 'disabled' | 'pending' | string;
   must_change_password?: boolean;
   last_login_at?: string | null;
   last_login_ip?: string;

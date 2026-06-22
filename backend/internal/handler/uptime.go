@@ -13,6 +13,17 @@ import (
 func GetAssetUptime(c *gin.Context) {
 	db := store.GlobalDB
 	id, _ := strconv.Atoi(c.Param("id"))
+
+	var asset model.Asset
+	if err := db.First(&asset, id).Error; err != nil {
+		SendError(c, 404, "资产不存在")
+		return
+	}
+	if !canAccess(c, asset.OwnerID) {
+		SendError(c, 403, "无权访问该资产")
+		return
+	}
+
 	hours, _ := strconv.Atoi(c.DefaultQuery("hours", "24"))
 	if hours <= 0 || hours > 720 {
 		hours = 24

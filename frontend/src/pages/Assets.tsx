@@ -1093,6 +1093,11 @@ export const Assets: React.FC = () => {
                     <Text type="secondary">从未扫描</Text>
                   )}
                 </Descriptions.Item>
+                <Descriptions.Item label="负责人">
+                  {drawerAsset.owner_name
+                    ? <Tag color="blue" style={{ borderRadius: 4 }}>{drawerAsset.owner_name}</Tag>
+                    : <Text type="secondary">未归属</Text>}
+                </Descriptions.Item>
               </Descriptions>
 
               {/* 开放端口 */}
