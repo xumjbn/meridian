@@ -184,6 +184,10 @@ export type Settings = Record<string, string>;
 export const getSettings = (): Promise<Settings> => api.get('/settings');
 export const updateSettings = (data: Settings): Promise<{ updated: number }> => api.put('/settings', data);
 
+// ── 告警通知 ─────────────────────────────────
+export const testNotify = (type: string, url: string): Promise<{ ok: boolean }> =>
+  api.post('/notify/test', { type, url });
+
 // ── 凭据连通性测试（Phase 3） ─────────────────────
 export interface CredTestResult {
   ok: boolean;

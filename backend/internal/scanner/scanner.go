@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"backend/internal/model"
+	"backend/internal/notifier"
 	"gorm.io/gorm"
 )
 
@@ -303,6 +304,9 @@ func finishTask(db *gorm.DB, task *model.ScanTask, scanLog *model.ScanLog, statu
 	task.Status = status
 	db.Save(task)
 	log.Printf("Scanner: Task %d finished with status: %s. Summary: %s", task.ID, status, summary)
+
+	// 异步推送告警通知（失败不影响扫描主流程）
+	go notifier.ScanFinished(task.Name, status, summary)
 }
 
 func parsePorts(portsStr string) []int {

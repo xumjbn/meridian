@@ -86,6 +86,9 @@ func main() {
 		api.GET("/settings", handler.GetSettings)
 		api.PUT("/settings", handler.UpdateSettings)
 
+		// 告警通知测试
+		api.POST("/notify/test", handler.TestNotify)
+
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)
 		api.POST("/assets/import", handler.ImportAssets) // CSV 批量导入（须在 :id 之前的静态路由）
