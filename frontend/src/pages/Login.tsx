@@ -25,7 +25,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
     try {
       if (mode === 'register') {
         await registerUser(values.username, values.password);
-        message.success('注册成功，请使用新账号登录');
+        message.success({ content: '注册成功，请等待管理员审批后再登录', duration: 5 });
         setMode('login');
         form.setFieldsValue({ password: '', confirm: '' });
         return;

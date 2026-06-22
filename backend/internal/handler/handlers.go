@@ -67,21 +67,35 @@ func logActivity(db *gorm.DB, actType, message string, refID uint) {
 
 func GetDashboardStats(c *gin.Context) {
 	db := store.GlobalDB
+	admin := isAdmin(c)
+	uid := currentUserID(c)
+
+	// 数据隔离：非管理员仅统计本人资产
+	scoped := func() *gorm.DB {
+		q := db.Model(&model.Asset{})
+		if !admin {
+			q = q.Where("owner_id = ?", uid)
+		}
+		return q
+	}
 
 	var totalAssets, servers, switches, routers, other int64
 	var onlineAssets, offlineAssets, runningTasks int64
 
-	db.Model(&model.Asset{}).Count(&totalAssets)
-	db.Model(&model.Asset{}).Where("type = ?", "server").Count(&servers)
-	db.Model(&model.Asset{}).Where("type = ?", "switch").Count(&switches)
-	db.Model(&model.Asset{}).Where("type = ?", "router").Count(&routers)
+	scoped().Count(&totalAssets)
+	scoped().Where("type = ?", "server").Count(&servers)
+	scoped().Where("type = ?", "switch").Count(&switches)
+	scoped().Where("type = ?", "router").Count(&routers)
 	// “其他”涵盖除服务器/交换机/路由器外的全部类型（如指纹识别得到的 camera、unknown 等），
 	// 保证 servers+switches+routers+other == total_assets，前端分布饼图不会漏计。
-	db.Model(&model.Asset{}).Where("type NOT IN ?", []string{"server", "switch", "router"}).Count(&other)
+	scoped().Where("type NOT IN ?", []string{"server", "switch", "router"}).Count(&other)
 
-	db.Model(&model.Asset{}).Where("status = ?", "online").Count(&onlineAssets)
-	db.Model(&model.Asset{}).Where("status = ?", "offline").Count(&offlineAssets)
-	db.Model(&model.ScanTask{}).Where("status = ?", "running").Count(&runningTasks)
+	scoped().Where("status = ?", "online").Count(&onlineAssets)
+	scoped().Where("status = ?", "offline").Count(&offlineAssets)
+	// 扫描任务为管理员功能，普通用户恒为 0
+	if admin {
+		db.Model(&model.ScanTask{}).Where("status = ?", "running").Count(&runningTasks)
+	}
 
 	SendSuccess(c, gin.H{
 		"total_assets":   totalAssets,
@@ -102,7 +116,11 @@ func GetDashboardStats(c *gin.Context) {
 func ListCredentials(c *gin.Context) {
 	db := store.GlobalDB
 	var creds []model.Credential
-	if err := db.Order("id desc").Find(&creds).Error; err != nil {
+	query := db.Order("id desc")
+	if !isAdmin(c) {
+		query = query.Where("owner_id = ?", currentUserID(c))
+	}
+	if err := query.Find(&creds).Error; err != nil {
 		SendError(c, 500, err.Error())
 		return
 	}
@@ -122,6 +140,7 @@ func CreateCredential(c *gin.Context) {
 		return
 	}
 
+	cred.OwnerID = currentUserID(c) // 归属创建者
 	if err := db.Create(&cred).Error; err != nil {
 		SendError(c, 500, err.Error())
 		return
@@ -139,11 +158,18 @@ func UpdateCredential(c *gin.Context) {
 		SendError(c, 404, "凭据不存在")
 		return
 	}
+	if !canAccess(c, cred.OwnerID) {
+		SendError(c, 403, "无权操作该凭据")
+		return
+	}
+	owner := cred.OwnerID // 保留归属，避免被请求体覆盖
 
 	if err := c.ShouldBindJSON(&cred); err != nil {
 		SendError(c, 400, err.Error())
 		return
 	}
+	cred.ID = uint(id)
+	cred.OwnerID = owner
 
 	if err := db.Save(&cred).Error; err != nil {
 		SendError(c, 500, err.Error())
@@ -157,6 +183,15 @@ func DeleteCredential(c *gin.Context) {
 	idStr := c.Param("id")
 	id, _ := strconv.Atoi(idStr)
 
+	var cred model.Credential
+	if err := db.First(&cred, id).Error; err != nil {
+		SendError(c, 404, "凭据不存在")
+		return
+	}
+	if !canAccess(c, cred.OwnerID) {
+		SendError(c, 403, "无权操作该凭据")
+		return
+	}
 	if err := db.Delete(&model.Credential{}, id).Error; err != nil {
 		SendError(c, 500, err.Error())
 		return
@@ -179,6 +214,9 @@ func ListAssets(c *gin.Context) {
 	status := c.Query("status")
 
 	query := db.Model(&model.Asset{})
+	if !isAdmin(c) {
+		query = query.Where("owner_id = ?", currentUserID(c)) // 数据隔离：仅本人资产
+	}
 	if q != "" {
 		query = query.Where("name LIKE ? OR ip LIKE ?", "%"+q+"%", "%"+q+"%")
 	}
@@ -193,7 +231,34 @@ func ListAssets(c *gin.Context) {
 		SendError(c, 500, err.Error())
 		return
 	}
+	populateOwnerNames(db, assets)
 	SendSuccess(c, assets)
+}
+
+// populateOwnerNames 批量填充资产归属用户名（非持久化展示字段）
+func populateOwnerNames(db *gorm.DB, assets []model.Asset) {
+	idSet := map[uint]bool{}
+	for _, a := range assets {
+		if a.OwnerID != 0 {
+			idSet[a.OwnerID] = true
+		}
+	}
+	if len(idSet) == 0 {
+		return
+	}
+	ids := make([]uint, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	var users []model.User
+	db.Where("id IN ?", ids).Find(&users)
+	nameByID := map[uint]string{}
+	for _, u := range users {
+		nameByID[u.ID] = u.Username
+	}
+	for i := range assets {
+		assets[i].OwnerName = nameByID[assets[i].OwnerID]
+	}
 }
 
 // GetAsset 获取单个资产详情
@@ -206,6 +271,16 @@ func GetAsset(c *gin.Context) {
 	if err := db.First(&asset, id).Error; err != nil {
 		SendError(c, 404, "资产不存在")
 		return
+	}
+	if !canAccess(c, asset.OwnerID) {
+		SendError(c, 403, "无权访问该资产")
+		return
+	}
+	if asset.OwnerID != 0 {
+		var owner model.User
+		if db.First(&owner, asset.OwnerID).Error == nil {
+			asset.OwnerName = owner.Username
+		}
 	}
 	SendSuccess(c, asset)
 }
@@ -255,6 +330,7 @@ func CreateAsset(c *gin.Context) {
 		}
 
 		newAsset := model.Asset{
+			OwnerID:        currentUserID(c), // 归属创建者
 			Name:           name,
 			IP:             ip,
 			Type:           asset.Type,
@@ -306,6 +382,10 @@ func UpdateAsset(c *gin.Context) {
 	var asset model.Asset
 	if err := db.First(&asset, id).Error; err != nil {
 		SendError(c, 404, "资产不存在")
+		return
+	}
+	if !canAccess(c, asset.OwnerID) {
+		SendError(c, 403, "无权操作该资产")
 		return
 	}
 
@@ -369,6 +449,15 @@ func credIDStr(p *uint) string {
 func GetAssetHistory(c *gin.Context) {
 	db := store.GlobalDB
 	id, _ := strconv.Atoi(c.Param("id"))
+	var asset model.Asset
+	if err := db.First(&asset, id).Error; err != nil {
+		SendError(c, 404, "资产不存在")
+		return
+	}
+	if !canAccess(c, asset.OwnerID) {
+		SendError(c, 403, "无权访问该资产")
+		return
+	}
 	var hist []model.AssetHistory
 	if err := db.Where("asset_id = ?", id).Order("id desc").Limit(100).Find(&hist).Error; err != nil {
 		SendError(c, 500, err.Error())
@@ -385,6 +474,10 @@ func DeleteAsset(c *gin.Context) {
 	var asset model.Asset
 	if err := db.First(&asset, id).Error; err != nil {
 		SendError(c, 404, "资产不存在")
+		return
+	}
+	if !canAccess(c, asset.OwnerID) {
+		SendError(c, 403, "无权操作该资产")
 		return
 	}
 
@@ -565,6 +658,11 @@ func ConnectTerminal(c *gin.Context) {
 		c.String(http.StatusNotFound, "资产不存在")
 		return
 	}
+	// 数据隔离：禁止连接他人资产的终端（安全关键）
+	if !canAccess(c, asset.OwnerID) {
+		c.String(http.StatusForbidden, "无权连接该资产的终端")
+		return
+	}
 
 	// 查找关联凭证 (如果有)
 	var cred model.Credential
@@ -602,6 +700,10 @@ func PingAsset(c *gin.Context) {
 	var asset model.Asset
 	if err := db.First(&asset, id).Error; err != nil {
 		SendError(c, 404, "资产不存在")
+		return
+	}
+	if !canAccess(c, asset.OwnerID) {
+		SendError(c, 403, "无权操作该资产")
 		return
 	}
 
@@ -652,8 +754,12 @@ func BatchPingAssets(c *gin.Context) {
 		return
 	}
 
+	assetQuery := db.Where("id IN ?", req.IDs)
+	if !isAdmin(c) {
+		assetQuery = assetQuery.Where("owner_id = ?", currentUserID(c)) // 仅探测本人资产
+	}
 	var assets []model.Asset
-	if err := db.Where("id IN ?", req.IDs).Find(&assets).Error; err != nil {
+	if err := assetQuery.Find(&assets).Error; err != nil {
 		SendError(c, 500, "查询资产失败: "+err.Error())
 		return
 	}
@@ -853,6 +959,10 @@ func CollectAsset(c *gin.Context) {
 	var asset model.Asset
 	if err := db.First(&asset, id).Error; err != nil {
 		SendError(c, 404, "资产不存在")
+		return
+	}
+	if !canAccess(c, asset.OwnerID) {
+		SendError(c, 403, "无权操作该资产")
 		return
 	}
 	if asset.CredentialID == nil {
@@ -1095,6 +1205,10 @@ func Login(c *gin.Context) {
 	// 优先校验 users 表（多用户体系，bcrypt 哈希）
 	var u model.User
 	if err := db.Where("username = ?", req.Username).First(&u).Error; err == nil {
+		if u.Status == "pending" {
+			SendError(c, 403, "账号待管理员审批，暂时无法登录")
+			return
+		}
 		if u.Status == "disabled" {
 			SendError(c, 403, "账号已被禁用，请联系管理员")
 			return
@@ -1103,7 +1217,7 @@ func Login(c *gin.Context) {
 			resetLoginFails(req.Username)
 			now := time.Now()
 			db.Model(&u).Updates(map[string]interface{}{"last_login_at": &now, "last_login_ip": c.ClientIP()})
-			token := issueToken(u.Username, u.Role)
+			token := issueToken(u.ID, u.Username, u.Role)
 			SendSuccess(c, gin.H{
 				"ok": true, "token": token, "username": u.Username, "role": u.Role,
 				"must_change_password": u.MustChangePassword,
@@ -1120,7 +1234,7 @@ func Login(c *gin.Context) {
 	pass := getSettingValue(db, "auth_password", "admin")
 	if req.Username == user && req.Password == pass {
 		resetLoginFails(req.Username)
-		token := issueToken(user, "admin")
+		token := issueToken(0, user, "admin")
 		SendSuccess(c, gin.H{"ok": true, "token": token, "username": user, "role": "admin", "must_change_password": false})
 		return
 	}

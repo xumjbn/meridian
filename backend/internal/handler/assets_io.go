@@ -213,6 +213,12 @@ func ImportAssets(c *gin.Context) {
 
 		var existing model.Asset
 		if err := db.Where("ip = ?", ip).First(&existing).Error; err == nil {
+			// 数据隔离：非管理员不能更新他人资产
+			if !canAccess(c, existing.OwnerID) {
+				failed++
+				errs = append(errs, fmt.Sprintf("第 %d 行（%s）：该 IP 已属于他人资产，无权更新", lineNo, ip))
+				continue
+			}
 			// 更新：仅写入 CSV 提供的列
 			if len(fields) > 0 {
 				if err := db.Model(&existing).Updates(fields).Error; err != nil {
@@ -223,8 +229,8 @@ func ImportAssets(c *gin.Context) {
 			}
 			updated++
 		} else {
-			// 新建：名称缺省用 IP，类型缺省 other
-			asset := model.Asset{IP: ip, Name: ip, Type: "other", Status: "unknown"}
+			// 新建：名称缺省用 IP，类型缺省 other，归属导入者
+			asset := model.Asset{IP: ip, Name: ip, Type: "other", Status: "unknown", OwnerID: currentUserID(c)}
 			if v, ok := fields["name"].(string); ok && v != "" {
 				asset.Name = v
 			}

@@ -88,13 +88,14 @@ func Register(c *gin.Context) {
 		SendError(c, 500, "密码加密失败")
 		return
 	}
-	u := model.User{Username: req.Username, Password: hash, Role: "user", Status: "active"}
+	// 自助注册账号默认 pending，需管理员审批后方可登录
+	u := model.User{Username: req.Username, Password: hash, Role: "user", Status: "pending"}
 	if err := db.Create(&u).Error; err != nil {
 		SendError(c, 500, err.Error())
 		return
 	}
-	logActivity(db, "user_registered", "新用户注册: "+u.Username, u.ID)
-	SendSuccess(c, gin.H{"id": u.ID, "username": u.Username})
+	logActivity(db, "user_registered", "新用户注册（待审批）: "+u.Username, u.ID)
+	SendSuccess(c, gin.H{"id": u.ID, "username": u.Username, "status": "pending", "message": "注册成功，请等待管理员审批后登录"})
 }
 
 // ── 列表 ────────────────────────────────────────

@@ -40,6 +40,7 @@ type AuditLog struct {
 // Asset 代表资产 (服务器/交换机/路由器等)
 type Asset struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`
+	OwnerID       uint       `gorm:"index" json:"owner_id"` // 归属用户ID（数据隔离：user 仅可见自己的）
 	Name          string     `gorm:"size:100;not null" json:"name"`
 	IP            string     `gorm:"size:50;not null;uniqueIndex" json:"ip"`
 	Type          string     `gorm:"size:20;default:'other'" json:"type"` // server, switch, router, other
@@ -55,11 +56,13 @@ type Asset struct {
 	LastScannedAt *time.Time `json:"last_scanned_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	OwnerName     string     `gorm:"-" json:"owner_name"` // 非持久化：归属用户名（仅展示）
 }
 
 // Credential 代表登录凭证
 type Credential struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
+	OwnerID    uint      `gorm:"index" json:"owner_id"` // 归属用户ID（数据隔离）
 	Name       string    `gorm:"size:100;not null" json:"name"`
 	Type       string    `gorm:"size:20;not null" json:"type"` // ssh_password, ssh_key, telnet
 	Username   string    `gorm:"size:100" json:"username"`

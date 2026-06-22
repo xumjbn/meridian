@@ -101,15 +101,16 @@ func main() {
 		api.PUT("/assets/:id", handler.UpdateAsset)
 		api.DELETE("/assets/:id", handler.DeleteAsset)
 
-		// 自动发现扫描任务
-		api.GET("/tasks", handler.ListScanTasks)
-		api.POST("/tasks", handler.CreateScanTask)
-		api.PUT("/tasks/:id", handler.UpdateScanTask)
-		api.DELETE("/tasks/:id", handler.DeleteScanTask)
-		api.POST("/tasks/:id/run", handler.RunScanTask)
-		api.POST("/tasks/:id/stop", handler.StopScanTask)
-		api.GET("/tasks/:id/logs", handler.GetScanLogs)
-		api.GET("/tasks/:id/stream", handler.StreamScanLog)
+		// 自动发现扫描任务（涉及全网探测与资产创建，仅管理员）
+		adminScan := handler.AdminMiddleware()
+		api.GET("/tasks", adminScan, handler.ListScanTasks)
+		api.POST("/tasks", adminScan, handler.CreateScanTask)
+		api.PUT("/tasks/:id", adminScan, handler.UpdateScanTask)
+		api.DELETE("/tasks/:id", adminScan, handler.DeleteScanTask)
+		api.POST("/tasks/:id/run", adminScan, handler.RunScanTask)
+		api.POST("/tasks/:id/stop", adminScan, handler.StopScanTask)
+		api.GET("/tasks/:id/logs", adminScan, handler.GetScanLogs)
+		api.GET("/tasks/:id/stream", adminScan, handler.StreamScanLog)
 
 		// 资产在线探测
 		api.POST("/assets/:id/ping", handler.PingAsset)
@@ -132,8 +133,8 @@ func main() {
 		// 资产变更历史
 		api.GET("/assets/:id/history", handler.GetAssetHistory)
 
-		// 漏洞发现列表
-		api.GET("/vulns", handler.GetVulnFindings)
+		// 漏洞发现列表（仅管理员）
+		api.GET("/vulns", handler.AdminMiddleware(), handler.GetVulnFindings)
 
 		// 最近活动日志
 		api.GET("/activity/recent", handler.GetRecentActivity)
