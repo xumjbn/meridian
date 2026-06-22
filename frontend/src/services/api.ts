@@ -123,6 +123,19 @@ export const pingAsset = (id: number): Promise<PingResult> => api.post(`/assets/
 // 批量资产在线探测
 export const batchPingAssets = (ids: number[]): Promise<{ processed: number }> => api.post('/assets/batch-ping', { ids });
 
+export interface Tag {
+  id?: number;
+  name: string;
+  color: string;
+}
+
+// 全局标签管理
+export const getTags = (): Promise<Tag[]> => api.get('/tags');
+export const createTag = (data: Tag): Promise<Tag> => api.post('/tags', data);
+export const updateTag = (id: number, data: Tag): Promise<Tag> => api.put(`/tags/${id}`, data);
+export const deleteTag = (id: number): Promise<void> => api.delete(`/tags/${id}`);
+
+
 
 // 最近活动日志
 export const getRecentActivity = (): Promise<ActivityLog[]> => api.get('/activity/recent');

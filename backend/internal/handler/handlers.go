@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -1053,3 +1054,179 @@ func getSettingValue(db *gorm.DB, key, def string) string {
 	}
 	return def
 }
+
+// ==========================================
+// 14. 标签管理 — CRUD & 资产清洗联动
+// ==========================================
+
+// ListTags 获取所有全局标签
+func ListTags(c *gin.Context) {
+	db := store.GlobalDB
+	var tags []model.Tag
+	if err := db.Order("id desc").Find(&tags).Error; err != nil {
+		SendError(c, 500, "查询标签失败: "+err.Error())
+		return
+	}
+	SendSuccess(c, tags)
+}
+
+// CreateTag 创建新标签
+func CreateTag(c *gin.Context) {
+	db := store.GlobalDB
+	var tag model.Tag
+	if err := c.ShouldBindJSON(&tag); err != nil {
+		SendError(c, 400, "参数格式错误")
+		return
+	}
+	tag.Name = strings.TrimSpace(tag.Name)
+	if tag.Name == "" {
+		SendError(c, 400, "标签名称不能为空")
+		return
+	}
+	if tag.Color == "" {
+		tag.Color = "#1890ff"
+	}
+
+	var count int64
+	db.Model(&model.Tag{}).Where("name = ?", tag.Name).Count(&count)
+	if count > 0 {
+		SendError(c, 400, "该标签已存在")
+		return
+	}
+
+	if err := db.Create(&tag).Error; err != nil {
+		SendError(c, 500, "创建标签失败: "+err.Error())
+		return
+	}
+	SendSuccess(c, tag)
+}
+
+// UpdateTag 更新标签名或颜色，如果改名了，同步清洗所有资产中该标签
+func UpdateTag(c *gin.Context) {
+	db := store.GlobalDB
+	idStr := c.Param("id")
+	id, _ := strconv.Atoi(idStr)
+
+	var oldTag model.Tag
+	if err := db.First(&oldTag, id).Error; err != nil {
+		SendError(c, 404, "标签不存在")
+		return
+	}
+
+	var req model.Tag
+	if err := c.ShouldBindJSON(&req); err != nil {
+		SendError(c, 400, "参数格式错误")
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		SendError(c, 400, "标签名称不能为空")
+		return
+	}
+
+	if req.Name != oldTag.Name {
+		var count int64
+		db.Model(&model.Tag{}).Where("name = ? AND id != ?", req.Name, id).Count(&count)
+		if count > 0 {
+			SendError(c, 400, "该标签名称已存在")
+			return
+		}
+	}
+
+	oldName := oldTag.Name
+	newName := req.Name
+	oldTag.Name = req.Name
+	if req.Color != "" {
+		oldTag.Color = req.Color
+	}
+
+	if err := db.Save(&oldTag).Error; err != nil {
+		SendError(c, 500, "更新标签失败: "+err.Error())
+		return
+	}
+
+	if oldName != newName {
+		go syncAssetTagsRename(oldName, newName)
+	}
+
+	SendSuccess(c, oldTag)
+}
+
+// DeleteTag 删除标签，并从全部关联的资产里移出
+func DeleteTag(c *gin.Context) {
+	db := store.GlobalDB
+	idStr := c.Param("id")
+	id, _ := strconv.Atoi(idStr)
+
+	var tag model.Tag
+	if err := db.First(&tag, id).Error; err != nil {
+		SendError(c, 404, "标签不存在")
+		return
+	}
+
+	tagName := tag.Name
+	if err := db.Delete(&tag).Error; err != nil {
+		SendError(c, 500, "删除标签失败: "+err.Error())
+		return
+	}
+
+	go syncAssetTagsDelete(tagName)
+
+	SendSuccess(c, "标签已删除")
+}
+
+func syncAssetTagsRename(oldName, newName string) {
+	db := store.GlobalDB
+	var assets []model.Asset
+	if err := db.Where("tags LIKE ?", "%"+oldName+"%").Find(&assets).Error; err != nil {
+		log.Printf("syncAssetTagsRename query error: %v", err)
+		return
+	}
+
+	for _, asset := range assets {
+		var tags []string
+		if err := json.Unmarshal([]byte(asset.Tags), &tags); err == nil {
+			changed := false
+			for i, t := range tags {
+				if t == oldName {
+					tags[i] = newName
+					changed = true
+				}
+			}
+			if changed {
+				newTagsJSON, _ := json.Marshal(tags)
+				db.Model(&asset).Update("tags", string(newTagsJSON))
+			}
+		}
+	}
+}
+
+func syncAssetTagsDelete(tagName string) {
+	db := store.GlobalDB
+	var assets []model.Asset
+	if err := db.Where("tags LIKE ?", "%"+tagName+"%").Find(&assets).Error; err != nil {
+		log.Printf("syncAssetTagsDelete query error: %v", err)
+		return
+	}
+
+	for _, asset := range assets {
+		var tags []string
+		if err := json.Unmarshal([]byte(asset.Tags), &tags); err == nil {
+			var newTags []string
+			changed := false
+			for _, t := range tags {
+				if t == tagName {
+					changed = true
+				} else {
+					newTags = append(newTags, t)
+				}
+			}
+			if changed {
+				newTagsJSON, _ := json.Marshal(newTags)
+				db.Model(&asset).Update("tags", string(newTagsJSON))
+			}
+		}
+	}
+}
+

@@ -86,6 +86,13 @@ func main() {
 		api.POST("/assets/:id/ping", handler.PingAsset)
 		api.POST("/assets/batch-ping", handler.BatchPingAssets)
 
+		// 全局标签管理
+		api.GET("/tags", handler.ListTags)
+		api.POST("/tags", handler.CreateTag)
+		api.PUT("/tags/:id", handler.UpdateTag)
+		api.DELETE("/tags/:id", handler.DeleteTag)
+
+
 
 		// 认证采集（架构/系统信息）
 		api.POST("/assets/:id/collect", handler.CollectAsset)
