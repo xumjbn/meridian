@@ -53,10 +53,12 @@ import {
   getAssetHistory,
   importAssets,
   getAssetUptime,
+  getUsers,
   type Asset,
   type Credential,
   type AssetHistory,
   type AssetUptime,
+  type User,
   type Tag as GlobalTag
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
@@ -100,6 +102,9 @@ export const Assets: React.FC = () => {
   // SFTP 文件管理抽屉
   const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
   const [sftpOpen, setSftpOpen] = useState(false);
+  // 管理员可分配资产归属用户
+  const isAdmin = (localStorage.getItem('mrd-role') || 'admin') === 'admin';
+  const [users, setUsers] = useState<User[]>([]);
 
   // 常用功能：批量选择 / 分组
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -335,6 +340,13 @@ export const Assets: React.FC = () => {
       // ignore
     }
   };
+
+  // 管理员加载用户列表，用于资产归属分配
+  useEffect(() => {
+    if (!isAdmin) return;
+    getUsers().then(setUsers).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 搜索输入防抖：停止输入 350ms 后再发起查询，避免逐字符打接口
   useEffect(() => {
@@ -1010,6 +1022,22 @@ export const Assets: React.FC = () => {
               ))}
             </Select>
           </Form.Item>
+
+          {isAdmin && (
+            <Form.Item
+              label="归属用户"
+              name="owner_id"
+              tooltip="将该资产分配给指定用户；该用户将拥有此资产的查看与操作权限"
+            >
+              <Select placeholder="选择归属用户 (默认归创建者)" allowClear showSearch optionFilterProp="children">
+                {users.map((u) => (
+                  <Option value={u.id} key={u.id}>
+                    {u.username}（{u.role === 'admin' ? '管理员' : '普通用户'}）
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          )}
 
           <Form.Item
             label="描述与备忘"

@@ -166,7 +166,6 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
               >
                 注册新账号
               </a>
-              <div style={{ marginTop: 6 }}>默认账号 admin / admin</div>
             </>
           ) : (
             <>
