@@ -100,7 +100,7 @@ export const Assets: React.FC = () => {
   const fetchGlobalTags = async () => {
     try {
       const data = await getTags();
-      setGlobalTags(data);
+      setGlobalTags(data || []);
     } catch (e) {
       console.error('获取标签列表失败:', e);
     }
@@ -117,6 +117,7 @@ export const Assets: React.FC = () => {
   const presetColors = ['#1890ff', '#52c41a', '#f5222d', '#fa8c16', '#722ed1', '#13c2c2', '#eb2f96', '#2f54eb', '#faad14', '#3f51b5', '#607d8b'];
 
   const getTagColor = (tagName: string) => {
+    if (!globalTags) return '#1890ff';
     const found = globalTags.find(t => t.name === tagName);
     return found ? found.color : '#1890ff';
   };
@@ -872,7 +873,7 @@ export const Assets: React.FC = () => {
               placeholder="输入或选择标签，按回车键新增"
               tokenSeparators={[',', ' ']}
             >
-              {globalTags.map(gt => (
+              {(globalTags || []).map(gt => (
                 <Option value={gt.name} key={gt.id || gt.name}>
                   <Space>
                     <span style={{ 
@@ -1144,7 +1145,7 @@ export const Assets: React.FC = () => {
         </div>
 
         <Table 
-          dataSource={globalTags} 
+          dataSource={globalTags || []} 
           columns={tagColumns} 
           rowKey="id" 
           pagination={{ pageSize: 5 }} 
