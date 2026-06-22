@@ -92,6 +92,7 @@ export const Assets: React.FC = () => {
   // 常用功能：批量选择 / 分组
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [groupBy, setGroupBy] = useState<'none' | 'type' | 'status' | 'tag'>('none');
+  const [activeCollapseKeys, setActiveCollapseKeys] = useState<string[]>([]);
 
   // 全局标签列表与管理 Modal 状态
   const [globalTags, setGlobalTags] = useState<GlobalTag[]>([]);
@@ -120,6 +121,37 @@ export const Assets: React.FC = () => {
     if (!globalTags) return '#1890ff';
     const found = globalTags.find(t => t.name === tagName);
     return found ? found.color : '#1890ff';
+  };
+
+  const fieldLabelMap: Record<string, string> = {
+    name: '显示名称',
+    ip: '管理 IP',
+    type: '设备类型',
+    status: '在线状态',
+    vendor: '设备厂商',
+    os_version: '系统/固件版本',
+    arch: 'CPU架构',
+    virtualization: '虚拟化环境',
+    ports: '开放端口',
+    tags: '资产标签',
+    description: '描述备注',
+    credential_id: '管理凭证',
+  };
+
+  const translateHistoryValue = (field: string, val: string) => {
+    if (!val || val === 'null' || val === '[]') return '无';
+    if (field === 'credential_id') {
+      const credId = Number(val);
+      const cred = credentials.find(c => c.id === credId);
+      return cred ? `${cred.name} (${cred.username})` : `凭证 ID: ${val}`;
+    }
+    if (field === 'type') {
+      return typeLabelMap[val] || val;
+    }
+    if (field === 'status') {
+      return statusLabelMap[val] || val;
+    }
+    return val;
   };
 
   const handleCreateTag = async () => {
@@ -303,6 +335,14 @@ export const Assets: React.FC = () => {
     fetchCredentials();
     fetchGlobalTags();
   }, [searchKey, filterType, filterStatus]);
+
+  // 监听分组方式或资产变动，默认把全部分组展开，避免由于 key 改变导致的行为不统一
+  useEffect(() => {
+    if (groupBy !== 'none') {
+      const groups = groupedAssets();
+      setActiveCollapseKeys(groups.map(([k]) => k));
+    }
+  }, [groupBy, assets]);
 
   // 抽屉打开时拉取该资产的变更历史
   useEffect(() => {
@@ -806,7 +846,8 @@ export const Assets: React.FC = () => {
             const groups = groupedAssets();
             return (
               <Collapse
-                defaultActiveKey={groups.map(([k]) => k)}
+                activeKey={activeCollapseKeys}
+                onChange={(keys) => setActiveCollapseKeys(keys as string[])}
                 items={groups.map(([k, rows]) => ({
                   key: k,
                   label: (
@@ -1043,14 +1084,14 @@ export const Assets: React.FC = () => {
                         color: 'blue',
                         children: (
                           <div style={{ fontSize: '12px' }}>
-                            <div style={{ fontWeight: 600, color: '#334155' }}>{h.field}</div>
+                            <div style={{ fontWeight: 600, color: '#334155' }}>{fieldLabelMap[h.field] || h.field}</div>
                             <div style={{ color: '#475569', margin: '2px 0' }}>
                               <Text delete type="secondary" style={{ fontSize: '12px', marginRight: 4 }}>
-                                {h.old_value || '空'}
+                                {translateHistoryValue(h.field, h.old_value)}
                               </Text>
                               <span style={{ color: '#94a3b8', margin: '0 4px' }}>→</span>
                               <Text style={{ fontSize: '12px', color: '#0f172a' }}>
-                                {h.new_value || '空'}
+                                {translateHistoryValue(h.field, h.new_value)}
                               </Text>
                             </div>
                             <div style={{ color: '#94a3b8' }}>
