@@ -624,9 +624,16 @@ func saveSingleAsset(db *gorm.DB, r ScanResult) (bool, error) {
 		}
 		return false, nil
 	} else {
-		// 新增资产
+		// 新增资产：名称按识别到的类型作前缀（路由器 router- / 交换机 switch- / 其余默认 server-）
+		namePrefix := "server"
+		switch r.Type {
+		case "router":
+			namePrefix = "router"
+		case "switch":
+			namePrefix = "switch"
+		}
 		newAsset := model.Asset{
-			Name:          fmt.Sprintf("Discovered-%s", r.IP),
+			Name:          fmt.Sprintf("%s-%s", namePrefix, r.IP),
 			IP:            r.IP,
 			Type:          r.Type,
 			Status:        "online",
