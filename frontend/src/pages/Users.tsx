@@ -60,11 +60,10 @@ export const Users: React.FC = () => {
     }
   };
 
-  const toggleStatus = async (record: User) => {
-    const next = record.status === 'active' ? 'disabled' : 'active';
+  const setStatus = async (record: User, next: 'active' | 'disabled', okMsg: string) => {
     try {
       await updateUser(record.id, { status: next });
-      message.success(next === 'active' ? '已启用账号' : '已禁用账号');
+      message.success(okMsg);
       fetchUsers();
     } catch (e: any) {
       message.error(e?.message || '操作失败');
@@ -124,12 +123,11 @@ export const Users: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) =>
-        status === 'active' ? (
-          <Tag color="green" style={{ borderRadius: 4 }}>启用</Tag>
-        ) : (
-          <Tag color="red" style={{ borderRadius: 4 }}>禁用</Tag>
-        ),
+      render: (status: string) => {
+        if (status === 'active') return <Tag color="green" style={{ borderRadius: 4 }}>启用</Tag>;
+        if (status === 'pending') return <Tag color="orange" style={{ borderRadius: 4 }}>待审批</Tag>;
+        return <Tag color="red" style={{ borderRadius: 4 }}>禁用</Tag>;
+      },
     },
     {
       title: '上次登录',
@@ -164,14 +162,29 @@ export const Users: React.FC = () => {
           >
             重置密码
           </Button>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => toggleStatus(record)}
-            style={{ padding: 0, fontWeight: 500, color: record.status === 'active' ? '#d97706' : '#16a34a' }}
-          >
-            {record.status === 'active' ? '禁用' : '启用'}
-          </Button>
+          {record.status === 'pending' ? (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setStatus(record, 'active', `已批准 ${record.username}`)}
+              style={{ padding: 0, fontWeight: 600, color: '#16a34a' }}
+            >
+              批准
+            </Button>
+          ) : (
+            <Button
+              type="link"
+              size="small"
+              onClick={() =>
+                record.status === 'active'
+                  ? setStatus(record, 'disabled', '已禁用账号')
+                  : setStatus(record, 'active', '已启用账号')
+              }
+              style={{ padding: 0, fontWeight: 500, color: record.status === 'active' ? '#d97706' : '#16a34a' }}
+            >
+              {record.status === 'active' ? '禁用' : '启用'}
+            </Button>
+          )}
           <Popconfirm
             title={`确认删除用户 ${record.username} 吗？`}
             onConfirm={() => handleDelete(record)}

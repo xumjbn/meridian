@@ -56,18 +56,18 @@ const navItems = [
   { key: '/settings', icon: <SettingOutlined style={{ fontSize: 16 }} />, label: '系统设置' },
 ];
 
-// 仅管理员可见的菜单项
-const adminOnlyKeys = ['/users', '/audit'];
+// 仅管理员可见的菜单项（自动发现涉及全网扫描与资产创建，亦限管理员）
+const adminOnlyKeys = ['/tasks', '/users', '/audit'];
 
-// 按角色过滤侧边栏：普通用户隐藏管理员专属项
+// 按角色过滤侧边栏：普通用户隐藏管理员专属项（分组子项亦随之过滤）
 const buildMenu = (isAdmin: boolean) => {
   const flat = isAdmin ? navItems : navItems.filter((i) => !adminOnlyKeys.includes(i.key));
-  const sysKeys = ['/credentials', '/users', '/audit', '/settings'];
+  const pick = (keys: string[]) => flat.filter((i) => keys.includes(i.key));
   const grouped: MenuProps['items'] = [
-    { type: 'group', label: '概览', children: [navItems[0]] },
-    { type: 'group', label: '资产中心', children: [navItems[1], navItems[2]] },
-    { type: 'group', label: '接入与系统', children: flat.filter((i) => sysKeys.includes(i.key)) },
-  ];
+    { type: 'group' as const, label: '概览', children: pick(['/']) },
+    { type: 'group' as const, label: '资产中心', children: pick(['/assets', '/tasks']) },
+    { type: 'group' as const, label: '接入与系统', children: pick(['/credentials', '/users', '/audit', '/settings']) },
+  ].filter((g) => g.children.length > 0);
   return { flat, grouped };
 };
 
@@ -262,8 +262,8 @@ const AppLayout: React.FC = () => {
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/assets" element={<Assets />} />
-                  <Route path="/tasks" element={<ScanTasks />} />
-                  <Route path="/vulns" element={<Vulns />} />
+                  {isAdmin && <Route path="/tasks" element={<ScanTasks />} />}
+                  {isAdmin && <Route path="/vulns" element={<Vulns />} />}
                   <Route path="/credentials" element={<Credentials />} />
                   {isAdmin && <Route path="/users" element={<Users />} />}
                   {isAdmin && <Route path="/audit" element={<Audit />} />}

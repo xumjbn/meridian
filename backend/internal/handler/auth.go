@@ -21,6 +21,7 @@ import (
 const sessionTTL = 7 * 24 * time.Hour
 
 type session struct {
+	UserID    uint
 	Username  string
 	Role      string
 	ExpiresAt time.Time
@@ -32,7 +33,7 @@ var (
 )
 
 // issueToken 生成随机会话 token 并登记
-func issueToken(username, role string) string {
+func issueToken(userID uint, username, role string) string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		// 极端情况下退化为基于时间的弱 token，仅为不 panic
@@ -40,7 +41,7 @@ func issueToken(username, role string) string {
 	}
 	token := hex.EncodeToString(b)
 	sessionMu.Lock()
-	sessions[token] = session{Username: username, Role: role, ExpiresAt: time.Now().Add(sessionTTL)}
+	sessions[token] = session{UserID: userID, Username: username, Role: role, ExpiresAt: time.Now().Add(sessionTTL)}
 	sessionMu.Unlock()
 	return token
 }
@@ -97,6 +98,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusOK, JSONResponse{Code: 401, Message: "未登录或会话已过期"})
 			return
 		}
+		c.Set("user_id", s.UserID)
 		c.Set("username", s.Username)
 		c.Set("role", s.Role)
 		c.Next()
@@ -182,6 +184,29 @@ func currentUsername(c *gin.Context) string {
 		}
 	}
 	return ""
+}
+
+// currentUserID 读取当前登录用户ID（中间件已注入）
+func currentUserID(c *gin.Context) uint {
+	if v, ok := c.Get("user_id"); ok {
+		if id, ok := v.(uint); ok {
+			return id
+		}
+	}
+	return 0
+}
+
+// isAdmin 当前会话是否为管理员
+func isAdmin(c *gin.Context) bool {
+	if v, ok := c.Get("role"); ok {
+		return v == "admin"
+	}
+	return false
+}
+
+// canAccess 数据隔离判定：管理员可访问任意归属，普通用户仅限自己的记录
+func canAccess(c *gin.Context, ownerID uint) bool {
+	return isAdmin(c) || ownerID == currentUserID(c)
 }
 
 // Logout 注销当前会话
