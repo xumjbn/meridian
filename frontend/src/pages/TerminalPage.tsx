@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Popconfirm } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { getAsset, getTerminalWsUrl, getAssets, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined } from '@ant-design/icons';
+import { getAsset, getTerminalWsUrl, getAssets, aiGenerateCommand, aiStatus, type Asset, type AiCommandResult } from '../services/api';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, RobotOutlined, EnterOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
@@ -567,14 +567,44 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
+  // ── AI 命令助手（自然语言 → shell，生成后确认执行）──────────
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<AiCommandResult | null>(null);
+
+  useEffect(() => {
+    aiStatus().then((s) => setAiEnabled(!!s.enabled)).catch(() => {});
+  }, []);
+
   // ── 命令自动补全（本地输入行追踪 + 片段提示）────────────────
   const [suggestions, setSuggestions] = useState<CmdSnippet[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
+  // 下拉锚点：锚定到光标所在像素位置，默认在输入行上方展开，避免遮挡输入
+  const [anchor, setAnchor] = useState<{ left: number; top: number; cellH: number; cw: number; ch: number } | null>(null);
 
   const lineBufferRef = useRef('');                       // 本地输入行缓冲（尽力追踪）
   const snippetsRef = useRef<CmdSnippet[]>(loadSnippets());
   const suggestionsRef = useRef<CmdSnippet[]>([]);
   const activeIdxRef = useRef(0);
+
+  // 估算光标在终端容器内的像素位置（用于补全下拉锚定）
+  const computeAnchor = useCallback(() => {
+    const term = termRef.current;
+    const el = terminalRef.current;
+    if (!term || !el) return null;
+    const pad = 8; // 终端容器 padding
+    const cols = term.cols || 80;
+    const rows = term.rows || 24;
+    const cw = el.clientWidth;
+    const ch = el.clientHeight;
+    const cellW = (cw - pad * 2) / cols;
+    const cellH = (ch - pad * 2) / rows;
+    const cx = term.buffer.active.cursorX;
+    const cy = term.buffer.active.cursorY;
+    return { left: pad + cx * cellW, top: pad + cy * cellH, cellH, cw, ch };
+  }, []);
 
   useEffect(() => { suggestionsRef.current = suggestions; }, [suggestions]);
   useEffect(() => { activeIdxRef.current = activeIdx; }, [activeIdx]);
@@ -627,9 +657,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   }, [sendToShell]);
 
   const refreshSuggestions = useCallback(() => {
-    setSuggestions(matchSnippets(lineBufferRef.current, snippetsRef.current));
+    const list = matchSnippets(lineBufferRef.current, snippetsRef.current);
+    setSuggestions(list);
     setActiveIdx(0);
-  }, []);
+    setAnchor(list.length ? computeAnchor() : null);
+  }, [computeAnchor]);
 
   // 处理一段终端输入；返回 true 表示被补全逻辑消费（不再下发到 shell）
   const handleCompletionInput = useCallback((data: string): boolean => {
@@ -1022,6 +1054,38 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     });
   };
 
+  // AI 助手：把文本直接写入本窗格终端。不带换行 = 仅填入待回车；带换行 = 直接执行
+  const sendToTerminal = (text: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(new TextEncoder().encode(text));
+      termRef.current?.focus();
+    } else {
+      message.warning('终端未连接');
+    }
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const res = await aiGenerateCommand(assetId, aiPrompt.trim());
+      setAiResult(res);
+    } catch (e: any) {
+      message.error(e?.message || 'AI 生成失败');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const fillCommand = () => {
+    if (aiResult) sendToTerminal(aiResult.command);
+  };
+  const runCommand = () => {
+    if (aiResult) sendToTerminal(aiResult.command + '\n');
+  };
+
   return (
     <div style={{
       display: 'flex',
@@ -1213,15 +1277,20 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           }}
         />
 
-        {/* 命令自动补全下拉 */}
-        {completionEnabled && status === 'connected' && suggestions.length > 0 && (
+        {/* 命令自动补全下拉：锚定光标，默认在输入行上方展开，避免遮挡输入 */}
+        {completionEnabled && status === 'connected' && suggestions.length > 0 && anchor && (
           <div style={{
-            position: 'absolute', left: 12, bottom: 12, zIndex: 14,
-            width: 420, maxWidth: '88%',
+            position: 'absolute', zIndex: 14,
+            width: 360, maxWidth: '90%',
+            left: Math.max(8, Math.min(anchor.left, anchor.cw - 368)),
+            // 光标位于容器下半部分时向上展开，否则向下展开
+            ...(anchor.top > anchor.ch * 0.45
+              ? { bottom: Math.max(8, anchor.ch - anchor.top + 4) }
+              : { top: anchor.top + anchor.cellH + 4 }),
             background: '#0f172a', border: '1px solid #334155', borderRadius: 8,
             boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
           }}>
-            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
               {suggestions.map((s, i) => (
                 <div
                   key={s.id}
@@ -1260,6 +1329,80 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </div>
         )}
       </div>
+
+      {/* AI 命令助手栏：仅在已连接且后端启用时出现 */}
+      {aiEnabled && status === 'connected' && (
+        <div style={{ background: '#0F172A', borderTop: '1px solid #1e293b', padding: aiOpen ? '8px 10px' : '4px 10px', flexShrink: 0 }}>
+          {!aiOpen ? (
+            <Button
+              type="text"
+              size="small"
+              icon={<RobotOutlined />}
+              onClick={() => setAiOpen(true)}
+              style={{ color: '#818cf8', fontSize: 12, padding: '0 4px' }}
+            >
+              AI 命令助手
+            </Button>
+          ) : (
+            <div>
+              <Space.Compact style={{ width: '100%' }}>
+                <Input
+                  size="small"
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  onPressEnter={handleAiGenerate}
+                  placeholder="用自然语言描述需求，如：查找 /var/log 下最大的 5 个文件"
+                  prefix={<RobotOutlined style={{ color: '#818cf8' }} />}
+                  style={{ background: '#1e293b', borderColor: '#334155', color: '#e2e8f0' }}
+                />
+                <Button size="small" type="primary" loading={aiLoading} onClick={handleAiGenerate}>
+                  生成
+                </Button>
+                <Button size="small" onClick={() => { setAiOpen(false); setAiResult(null); }}>
+                  收起
+                </Button>
+              </Space.Compact>
+
+              {aiResult && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{
+                    background: '#020617', border: `1px solid ${aiResult.dangerous ? '#b91c1c' : '#334155'}`,
+                    borderRadius: 6, padding: '8px 10px', fontFamily: 'monospace', fontSize: 13,
+                    color: '#e2e8f0', wordBreak: 'break-all',
+                  }}>
+                    {aiResult.command}
+                  </div>
+                  {aiResult.dangerous && (
+                    <div style={{ marginTop: 6, color: '#f87171', fontSize: 12 }}>
+                      {aiResult.warning || '⚠️ 高危命令，请谨慎核对'}
+                    </div>
+                  )}
+                  <Space style={{ marginTop: 8 }}>
+                    <Button size="small" icon={<EnterOutlined />} onClick={fillCommand}>
+                      填入终端（需回车）
+                    </Button>
+                    {aiResult.dangerous ? (
+                      <Popconfirm
+                        title="这是一条高危命令，确认直接执行？"
+                        okText="确认执行"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={runCommand}
+                      >
+                        <Button size="small" danger icon={<ThunderboltOutlined />}>直接执行</Button>
+                      </Popconfirm>
+                    ) : (
+                      <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />} onClick={runCommand}>
+                        直接执行
+                      </Button>
+                    )}
+                  </Space>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
