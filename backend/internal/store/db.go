@@ -82,6 +82,10 @@ func seedDefaultSettings(db *gorm.DB) {
 		"notify_on_offline": "true",  // 资产离线/恢复时通知
 		"monitor_enabled":   "false", // 是否开启资产可用性定时监控
 		"monitor_interval":  "5",     // 监控探测间隔（分钟）
+		"ai_enabled":        "false", // AI 命令助手开关
+		"ai_base_url":       "",      // OpenAI 兼容接口地址，如 https://api.deepseek.com/v1
+		"ai_api_key":        "",      // 模型 API Key
+		"ai_model":          "",      // 模型名，如 deepseek-chat / moonshot-v1-8k
 	}
 	for k, v := range defaults {
 		var count int64

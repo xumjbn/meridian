@@ -191,6 +191,19 @@ export const updateSettings = (data: Settings): Promise<{ updated: number }> => 
 export const testNotify = (type: string, url: string): Promise<{ ok: boolean }> =>
   api.post('/notify/test', { type, url });
 
+// ── AI 命令助手 ───────────────────────────────
+export interface AiCommandResult {
+  command: string;
+  dangerous: boolean;
+  warning: string;
+}
+export const aiGenerateCommand = (assetId: number, prompt: string): Promise<AiCommandResult> =>
+  api.post('/ai/command', { asset_id: assetId, prompt });
+// 是否启用 AI 助手（仅返回开关，不含密钥；任意登录用户可查）
+export const aiStatus = (): Promise<{ enabled: boolean }> => api.get('/ai/status');
+export const aiTest = (base_url: string, api_key: string, model: string): Promise<{ ok: boolean; sample: string }> =>
+  api.post('/ai/test', { base_url, api_key, model });
+
 // ── SFTP 文件传输 ─────────────────────────────
 export interface SftpEntry {
   name: string;

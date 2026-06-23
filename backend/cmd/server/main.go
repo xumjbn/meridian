@@ -93,6 +93,11 @@ func main() {
 		// 告警通知测试（仅管理员）
 		api.POST("/notify/test", handler.AdminMiddleware(), handler.TestNotify)
 
+		// AI 命令助手：状态/生成（任意登录用户，按资产归属校验）/ 配置测试（仅管理员）
+		api.GET("/ai/status", handler.GetAIStatus)
+		api.POST("/ai/command", handler.GenerateCommand)
+		api.POST("/ai/test", handler.AdminMiddleware(), handler.TestAI)
+
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)
 		api.POST("/assets/import", handler.ImportAssets) // CSV 批量导入（须在 :id 之前的静态路由）

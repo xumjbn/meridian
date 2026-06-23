@@ -35,8 +35,8 @@ func AuditMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		// SFTP 操作由各自处理器显式审计（含路径/资产明细），此处跳过避免重复记录
-		if strings.Contains(c.Request.URL.Path, "/sftp/") {
+		// SFTP / AI 操作由各自处理器显式审计（含路径/命令明细），此处跳过避免重复记录
+		if strings.Contains(c.Request.URL.Path, "/sftp/") || strings.Contains(c.Request.URL.Path, "/ai/") {
 			c.Next()
 			return
 		}
