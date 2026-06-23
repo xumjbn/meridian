@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Popconfirm } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { getAsset, getTerminalWsUrl, getAssets, aiGenerateCommand, aiStatus, type Asset, type AiCommandResult } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, RobotOutlined, EnterOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { getAsset, getTerminalWsUrl, getAssets, type Asset } from '../services/api';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
+import { useTerminals } from '../terminalSessions';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -36,6 +37,9 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const [fullscreen, setFullscreen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
 
+  // 挂载全局终端会话的广播控制
+  const { globalSyncedIds, connectedIds, syncAllConnected } = useTerminals();
+
   // 全局字体设置
   const [fontSize, setFontSize] = useState<number>(() => {
     const saved = localStorage.getItem('term_font_size');
@@ -52,7 +56,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
 
   // 分屏会话列表
   const [sessions, setSessions] = useState<SplitSession[]>(() => {
-    return [{ id: 'session-1', assetId: assetId }];
+    return [{ id: `session-1-${Date.now()}`, assetId: assetId }];
   });
 
   // 1. 获取全局资产列表
@@ -98,7 +102,12 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       }
       return next;
     });
-  }, [layout]);
+
+    // 如果切换回单屏布局，自动取消当前所有同步，以防止单屏输入误操作后台终端
+    if (layout === 'single') {
+      syncAllConnected(false);
+    }
+  }, [layout, syncAllConnected]);
 
   const handleAssetChange = (index: number, newAssetId: number) => {
     setSessions((prev) => {
@@ -115,6 +124,10 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     else window.close();
   };
 
+  // 计算全局一键同步 Checkbox 的状态
+  const allSynced = connectedIds.length > 0 && globalSyncedIds.length === connectedIds.length;
+  const isIndeterminate = globalSyncedIds.length > 0 && globalSyncedIds.length < connectedIds.length;
+
   const renderGrid = () => {
     const containerStyle: React.CSSProperties = {
       width: '100%',
@@ -130,6 +143,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
           {sessions[0] && (
             <TerminalItem
               key={sessions[0].id}
+              paneId={sessions[0].id}
               assetId={sessions[0].assetId}
               fontSize={fontSize}
               fontFamily={fontFamily}
@@ -147,6 +161,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
           {sessions.slice(0, 2).map((s, index) => (
             <div key={s.id} style={{ flex: 1, height: '100%', minWidth: 0 }}>
               <TerminalItem
+                paneId={s.id}
                 assetId={s.assetId}
                 fontSize={fontSize}
                 fontFamily={fontFamily}
@@ -171,6 +186,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         {sessions.slice(0, 4).map((s, index) => (
           <div key={s.id} style={{ width: '100%', height: '100%', minHeight: 0, minWidth: 0 }}>
             <TerminalItem
+              paneId={s.id}
               assetId={s.assetId}
               fontSize={fontSize}
               fontFamily={fontFamily}
@@ -196,6 +212,15 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         ? { position: 'absolute' as const, inset: 0 }
         : { height: '100vh' }),
     }}>
+      {/* CSS keyframes pulse 呼吸动画注入 */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes pulse {
+          0% { opacity: 0.5; }
+          50% { opacity: 1; }
+          100% { opacity: 0.5; }
+        }
+      `}} />
+
       {/* 顶部全局状态栏 */}
       <div style={{
         height: '48px',
@@ -229,6 +254,17 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
               <Radio.Button value="quad">田字四分</Radio.Button>
             </Radio.Group>
           </span>
+
+          {/* 全局命令同步总开关 Checkbox */}
+          <Checkbox
+            checked={allSynced}
+            indeterminate={isIndeterminate}
+            disabled={connectedIds.length === 0}
+            onChange={(e) => syncAllConnected(e.target.checked)}
+            style={{ fontSize: 12, color: '#475569' }}
+          >
+            同步所有 ({connectedIds.length})
+          </Checkbox>
 
           <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
             字体:
@@ -287,6 +323,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
 
 // ── 子组件: 独立终端会话 Split Terminal Item ─────────────────────────
 interface TerminalItemProps {
+  paneId: string; // 窗格的本地会话标识
   assetId: number;
   fontSize: number;
   fontFamily: string;
@@ -294,7 +331,7 @@ interface TerminalItemProps {
   onAssetChange: (id: number) => void;
 }
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFamily, assets, onAssetChange }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, assets, onAssetChange }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -306,22 +343,50 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
   const [errorDetail, setErrorDetail] = useState<string>('');
   const [form] = Form.useForm();
 
-  // AI 命令助手
-  const [aiEnabled, setAiEnabled] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<AiCommandResult | null>(null);
+  // 挂载全局注册同步 Hook
+  const { globalSyncedIds, setGlobalSyncedIds, registerGlobalWS, broadcastGlobalData } = useTerminals();
+
+  // 为每个物理终端分配一个全局唯一的 instanceId，并在 unmount 时自动注销
+  const instanceIdRef = useRef<string>(`term-${paneId}-${Math.random().toString(36).substr(2, 9)}`);
+  const instanceId = instanceIdRef.current;
+
+  const isSynced = globalSyncedIds.includes(instanceId);
+
+  const isSyncedRef = useRef(isSynced);
+  const broadcastGlobalDataRef = useRef(broadcastGlobalData);
+
   useEffect(() => {
-    aiStatus().then((s) => setAiEnabled(!!s.enabled)).catch(() => {});
-  }, []);
+    isSyncedRef.current = isSynced;
+    broadcastGlobalDataRef.current = broadcastGlobalData;
+  }, [isSynced, broadcastGlobalData]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  // 1. 同步加载被分配的资产详情
+  // 1. 注册物理 WebSocket 到全局以实现跨标签页和跨分屏的广播输入
+  useEffect(() => {
+    if (wsRef.current && status === 'connected') {
+      const activeWs = wsRef.current;
+      registerGlobalWS(instanceId, {
+        send: (data) => {
+          if (activeWs.readyState === WebSocket.OPEN) {
+            activeWs.send(data as any);
+          }
+        },
+        status: status,
+        assetId: assetId,
+      });
+    } else {
+      registerGlobalWS(instanceId, null);
+    }
+    return () => {
+      registerGlobalWS(instanceId, null);
+    };
+  }, [status, assetId, registerGlobalWS, instanceId]);
+
+  // 2. 同步加载被分配的资产详情
   useEffect(() => {
     if (assetId <= 0) {
       setAsset(null);
@@ -342,7 +407,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
     fetchAsset();
   }, [assetId]);
 
-  // 2. 建立 WebSocket 隧道
+  // 3. 建立 WebSocket 隧道
   useEffect(() => {
     if (!asset || assetId <= 0) return;
 
@@ -508,9 +573,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
     };
 
     const dataListener = term.onData((data) => {
-      if (socket.readyState === WebSocket.OPEN) {
-        const encoder = new TextEncoder();
-        socket.send(encoder.encode(data));
+      if (isSyncedRef.current && broadcastGlobalDataRef.current) {
+        broadcastGlobalDataRef.current(instanceId, data);
+      } else {
+        if (socket.readyState === WebSocket.OPEN) {
+          const encoder = new TextEncoder();
+          socket.send(encoder.encode(data));
+        }
       }
     });
 
@@ -563,9 +632,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
       }
       term.dispose();
     };
-  }, [asset?.id, assetId]);
+  }, [asset?.id, assetId, instanceId]);
 
-  // 3. 字体与字号热重载（不重新建联）
+  // 4. 字体与字号热重载（不重新建联）
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
@@ -612,36 +681,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
     }
   };
 
-  // 把文本写入终端（模拟键入）。不带换行 = 仅填入等用户回车；带换行 = 直接执行
-  const sendToTerminal = (text: string) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(new TextEncoder().encode(text));
-      termRef.current?.focus();
-    } else {
-      message.warning('终端未连接');
-    }
-  };
-
-  const handleAiGenerate = async () => {
-    if (!aiPrompt.trim()) return;
-    setAiLoading(true);
-    setAiResult(null);
-    try {
-      const res = await aiGenerateCommand(assetId, aiPrompt.trim());
-      setAiResult(res);
-    } catch (e: any) {
-      message.error(e?.message || 'AI 生成失败');
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const fillCommand = () => {
-    if (aiResult) sendToTerminal(aiResult.command);
-  };
-  const runCommand = () => {
-    if (aiResult) sendToTerminal(aiResult.command + '\n');
+  const handleSyncToggle = (checked: boolean) => {
+    setGlobalSyncedIds((prev) => {
+      if (checked) {
+        return prev.includes(instanceId) ? prev : [...prev, instanceId];
+      } else {
+        return prev.filter((id) => id !== instanceId);
+      }
+    });
   };
 
   return (
@@ -652,8 +699,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
       width: '100%',
       position: 'relative',
       background: '#0B0F19',
-      border: '1px solid #1e293b',
+      // 当开启同步且连接成功时，提供微微泛发靛蓝光的边框指示
+      border: isSynced && status === 'connected' ? '1px solid #6366f1' : '1px solid #1e293b',
+      boxShadow: isSynced && status === 'connected' ? '0 0 8px rgba(99, 102, 241, 0.35)' : 'none',
       boxSizing: 'border-box',
+      transition: 'all 0.25s ease',
     }}>
       {/* 分屏窗口头部小状态栏 */}
       <div style={{
@@ -667,24 +717,55 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
         zIndex: 10,
       }}>
         <Space size="small" style={{ flex: 1, minWidth: 0 }}>
+          {/* 同步勾选框 */}
+          <Checkbox
+            checked={isSynced}
+            disabled={status !== 'connected'}
+            onChange={(e) => handleSyncToggle(e.target.checked)}
+            style={{ color: '#94a3b8', fontSize: 11, marginRight: 4 }}
+          >
+            <span style={{ fontSize: 11, color: isSynced ? '#a5b4fc' : '#94a3b8', fontWeight: isSynced ? 600 : 400 }}>
+              同步
+            </span>
+          </Checkbox>
+
           <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>资产:</span>
           <Select
             showSearch
             size="small"
-            placeholder="搜索/选择资产进行连接..."
+            placeholder="选择资产..."
             value={assetId > 0 ? assetId : undefined}
             onChange={(val) => onAssetChange(val)}
             filterOption={(input, option) =>
               (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
             }
             options={assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id }))}
-            style={{ width: '70%', maxWidth: '240px' }}
+            style={{ width: '60%', maxWidth: '180px' }}
             dropdownStyle={{ zIndex: 3000 }}
             popupMatchSelectWidth={false}
           />
           {status === 'connecting' && <SyncOutlined spin style={{ color: '#6366f1', fontSize: 11 }} />}
           {status === 'connected' && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />}
           {(status === 'disconnected' || status === 'error') && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />}
+
+          {/* 带呼吸灯动画的同步中标志 */}
+          {isSynced && status === 'connected' && (
+            <span style={{
+              fontSize: 10,
+              color: '#818cf8',
+              background: 'rgba(99,102,241,0.15)',
+              padding: '1px 6px',
+              borderRadius: '4px',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              animation: 'pulse 2s infinite'
+            }}>
+              <span style={{
+                width: 4, height: 4, borderRadius: '50%', background: '#818cf8', marginRight: 4, display: 'inline-block'
+              }} /> 同步中
+            </span>
+          )}
         </Space>
         
         {status !== 'idle' && (
@@ -789,80 +870,6 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
           }}
         />
       </div>
-
-      {/* AI 命令助手栏：仅在已连接且启用时出现 */}
-      {aiEnabled && status === 'connected' && (
-        <div style={{ background: '#0F172A', borderTop: '1px solid #1e293b', padding: aiOpen ? '8px 10px' : '4px 10px' }}>
-          {!aiOpen ? (
-            <Button
-              type="text"
-              size="small"
-              icon={<RobotOutlined />}
-              onClick={() => setAiOpen(true)}
-              style={{ color: '#818cf8', fontSize: 12, padding: '0 4px' }}
-            >
-              AI 命令助手
-            </Button>
-          ) : (
-            <div>
-              <Space.Compact style={{ width: '100%' }}>
-                <Input
-                  size="small"
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  onPressEnter={handleAiGenerate}
-                  placeholder="用自然语言描述需求，如：查找 /var/log 下最大的 5 个文件"
-                  prefix={<RobotOutlined style={{ color: '#818cf8' }} />}
-                  style={{ background: '#1e293b', borderColor: '#334155', color: '#e2e8f0' }}
-                />
-                <Button size="small" type="primary" loading={aiLoading} onClick={handleAiGenerate}>
-                  生成
-                </Button>
-                <Button size="small" onClick={() => { setAiOpen(false); setAiResult(null); }}>
-                  收起
-                </Button>
-              </Space.Compact>
-
-              {aiResult && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{
-                    background: '#020617', border: `1px solid ${aiResult.dangerous ? '#b91c1c' : '#334155'}`,
-                    borderRadius: 6, padding: '8px 10px', fontFamily: 'monospace', fontSize: 13,
-                    color: '#e2e8f0', wordBreak: 'break-all',
-                  }}>
-                    {aiResult.command}
-                  </div>
-                  {aiResult.dangerous && (
-                    <div style={{ marginTop: 6, color: '#f87171', fontSize: 12 }}>
-                      {aiResult.warning || '⚠️ 高危命令，请谨慎核对'}
-                    </div>
-                  )}
-                  <Space style={{ marginTop: 8 }}>
-                    <Button size="small" icon={<EnterOutlined />} onClick={fillCommand}>
-                      填入终端（需回车）
-                    </Button>
-                    {aiResult.dangerous ? (
-                      <Popconfirm
-                        title="这是一条高危命令，确认直接执行？"
-                        okText="确认执行"
-                        cancelText="取消"
-                        okButtonProps={{ danger: true }}
-                        onConfirm={runCommand}
-                      >
-                        <Button size="small" danger icon={<ThunderboltOutlined />}>直接执行</Button>
-                      </Popconfirm>
-                    ) : (
-                      <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />} onClick={runCommand}>
-                        直接执行
-                      </Button>
-                    )}
-                  </Space>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
