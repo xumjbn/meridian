@@ -1,12 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { getAsset, getTerminalWsUrl, getAssets, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
+import { SnippetManager } from '../components/SnippetManager';
+import { loadSnippets, matchSnippets, type CmdSnippet } from '../commandSnippets';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -19,12 +21,61 @@ const fontFamilies = [
   { label: 'System Monospace', value: 'Menlo, Monaco, Consolas, monospace' },
 ];
 
-interface SplitSession {
+// 一个终端窗格（行内带宽度权重 flex）
+interface PaneNode {
   id: string;
   assetId: number;
+  flex: number;
+}
+
+// 一行窗格（带行高权重 flex），行内多个窗格左右排布
+interface RowNode {
+  id: string;
+  flex: number;
+  panes: PaneNode[];
 }
 
 type LayoutType = 'single' | 'h-split' | 'quad';
+
+const MAX_PANES = 4;
+
+let nodeSeq = 0;
+const newPaneId = () => `pane-${Date.now().toString(36)}-${nodeSeq++}`;
+const newRowId = () => `row-${Date.now().toString(36)}-${nodeSeq++}`;
+
+const flatPanes = (rows: RowNode[]): PaneNode[] => rows.flatMap((r) => r.panes);
+
+// 依据预设构建行结构；尽量复用既有行/窗格 id，避免已连接终端被强制重连
+const buildPreset = (type: LayoutType, existing: RowNode[]): RowNode[] => {
+  const panePool = flatPanes(existing);
+  let pi = 0;
+  const takePane = (): PaneNode => {
+    const p = panePool[pi++];
+    return p ? { ...p, flex: 1 } : { id: newPaneId(), assetId: 0, flex: 1 };
+  };
+  let ri = 0;
+  const takeRowId = (): string => (existing[ri] ? existing[ri++].id : newRowId());
+
+  if (type === 'single') {
+    return [{ id: takeRowId(), flex: 1, panes: [takePane()] }];
+  }
+  if (type === 'h-split') {
+    return [{ id: takeRowId(), flex: 1, panes: [takePane(), takePane()] }];
+  }
+  // 田字四分
+  return [
+    { id: takeRowId(), flex: 1, panes: [takePane(), takePane()] },
+    { id: takeRowId(), flex: 1, panes: [takePane(), takePane()] },
+  ];
+};
+
+// 由当前结构反推出匹配的预设（用于高亮预设按钮），无法匹配则为自定义
+const derivePreset = (rows: RowNode[]): LayoutType | undefined => {
+  if (rows.length === 1 && rows[0].panes.length === 1) return 'single';
+  if (rows.length === 1 && rows[0].panes.length === 2) return 'h-split';
+  if (rows.length === 2 && rows[0].panes.length === 2 && rows[1].panes.length === 2) return 'quad';
+  return undefined;
+};
 
 interface TerminalPageProps {
   assetId: number;
@@ -49,15 +100,39 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     return localStorage.getItem('term_font_family') || 'Fira Code, Menlo, Monaco, Courier New, monospace';
   });
 
-  // 全局布局设置
-  const [layout, setLayout] = useState<LayoutType>(() => {
-    return (localStorage.getItem('term_layout') as LayoutType) || 'single';
+  // 命令自动补全开关 + 命令库管理弹窗
+  const [completionEnabled, setCompletionEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('term_completion_enabled') !== 'false';
+  });
+  const [snippetModalOpen, setSnippetModalOpen] = useState(false);
+
+  const toggleCompletion = (checked: boolean) => {
+    setCompletionEnabled(checked);
+    localStorage.setItem('term_completion_enabled', checked ? 'true' : 'false');
+  };
+
+  // 分屏行结构（可变窗格数 + 可拖拽缩放）
+  const [rows, setRows] = useState<RowNode[]>(() => {
+    const initLayout = (localStorage.getItem('term_layout') as LayoutType) || 'single';
+    const first: PaneNode = { id: newPaneId(), assetId, flex: 1 };
+    return buildPreset(initLayout, [{ id: newRowId(), flex: 1, panes: [first] }]);
   });
 
-  // 分屏会话列表
-  const [sessions, setSessions] = useState<SplitSession[]>(() => {
-    return [{ id: `session-1-${Date.now()}`, assetId: assetId }];
-  });
+  const totalPanes = flatPanes(rows).length;
+  const activePreset = derivePreset(rows);
+
+  // 拖拽缩放状态：记录拖动起点、相邻两元素的基准 flex 与容器像素尺寸
+  const dragRef = useRef<null | {
+    type: 'col' | 'row';
+    rowId?: string;
+    aId: string;
+    bId: string;
+    baseA: number;
+    baseB: number;
+    start: number;
+    size: number;
+  }>(null);
+  const dragHandlersRef = useRef<{ move?: (e: MouseEvent) => void; up?: () => void }>({});
 
   // 1. 获取全局资产列表
   useEffect(() => {
@@ -72,52 +147,143 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     fetchAssets();
   }, []);
 
-  // 2. 外部传入的初始 assetId 变更时，更新主屏 session
+  // 2. 外部传入的初始 assetId 变更时，更新主屏（第一行第一个窗格）
   useEffect(() => {
-    setSessions((prev) => {
-      const next = [...prev];
-      if (next[0]) {
-        next[0] = { ...next[0], assetId: assetId };
-      }
-      return next;
+    setRows((prev) => {
+      if (!prev.length || !prev[0].panes.length) return prev;
+      return prev.map((r, ri) =>
+        ri === 0
+          ? { ...r, panes: r.panes.map((p, pi) => (pi === 0 ? { ...p, assetId } : p)) }
+          : r,
+      );
     });
   }, [assetId]);
 
-  // 3. 监听布局变更，同步扩缩会话队列
-  useEffect(() => {
-    localStorage.setItem('term_layout', layout);
-    setSessions((prev) => {
-      const targetLength = layout === 'single' ? 1 : layout === 'h-split' ? 2 : 4;
-      if (prev.length === targetLength) return prev;
-      if (prev.length > targetLength) {
-        return prev.slice(0, targetLength);
-      }
-      // 补充空会话 (默认为 0，展示资产选择卡片)
-      const next = [...prev];
-      for (let i = prev.length; i < targetLength; i++) {
-        next.push({
-          id: `session-${Date.now()}-${i}`,
-          assetId: 0,
-        });
-      }
-      return next;
+  // 应用预设布局（单屏 / 左右双分 / 田字四分）
+  const applyPreset = (type: LayoutType) => {
+    localStorage.setItem('term_layout', type);
+    setRows((prev) => buildPreset(type, prev));
+    // 切回单屏时取消所有同步，避免单屏输入误操作后台终端
+    if (type === 'single') syncAllConnected(false);
+  };
+
+  const handleAssetChange = (paneId: string, newAssetId: number) => {
+    setRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        panes: r.panes.map((p) => (p.id === paneId ? { ...p, assetId: newAssetId } : p)),
+      })),
+    );
+  };
+
+  // 独立关闭某个窗格；行内删空则移除该行；始终至少保留一个窗格
+  const closePane = (paneId: string) => {
+    setRows((prev) => {
+      const next = prev
+        .map((r) => ({ ...r, panes: r.panes.filter((p) => p.id !== paneId) }))
+        .filter((r) => r.panes.length > 0);
+      return next.length > 0 ? next : prev;
     });
+  };
 
-    // 如果切换回单屏布局，自动取消当前所有同步，以防止单屏输入误操作后台终端
-    if (layout === 'single') {
-      syncAllConnected(false);
-    }
-  }, [layout, syncAllConnected]);
-
-  const handleAssetChange = (index: number, newAssetId: number) => {
-    setSessions((prev) => {
-      const next = [...prev];
-      if (next[index]) {
-        next[index] = { ...next[index], assetId: newAssetId };
+  // 添加一个空窗格：优先填补不足 2 列的行，否则新增一行，上限 MAX_PANES
+  const addPane = () => {
+    setRows((prev) => {
+      if (flatPanes(prev).length >= MAX_PANES) return prev;
+      const next = prev.map((r) => ({ ...r, panes: [...r.panes] }));
+      const rowWithSpace = next.find((r) => r.panes.length < 2);
+      if (rowWithSpace) {
+        rowWithSpace.panes.push({ id: newPaneId(), assetId: 0, flex: 1 });
+      } else if (next.length < 2) {
+        next.push({ id: newRowId(), flex: 1, panes: [{ id: newPaneId(), assetId: 0, flex: 1 }] });
       }
       return next;
     });
   };
+
+  // ── 拖拽缩放：相邻两元素按像素位移等量增减 flex 权重 ──────────
+  const startDrag = () => {
+    const move = (ev: MouseEvent) => {
+      const d = dragRef.current;
+      if (!d || d.size <= 0) return;
+      const pos = d.type === 'col' ? ev.clientX : ev.clientY;
+      const total = d.baseA + d.baseB;
+      const minFlex = total * 0.12; // 防止某一侧被拖到塌缩
+      let newA = d.baseA + ((pos - d.start) / d.size) * total;
+      newA = Math.max(minFlex, Math.min(total - minFlex, newA));
+      const newB = total - newA;
+      if (d.type === 'col') {
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id !== d.rowId
+              ? r
+              : {
+                  ...r,
+                  panes: r.panes.map((p) =>
+                    p.id === d.aId ? { ...p, flex: newA } : p.id === d.bId ? { ...p, flex: newB } : p,
+                  ),
+                },
+          ),
+        );
+      } else {
+        setRows((prev) =>
+          prev.map((r) => (r.id === d.aId ? { ...r, flex: newA } : r.id === d.bId ? { ...r, flex: newB } : r)),
+        );
+      }
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      dragRef.current = null;
+    };
+    dragHandlersRef.current = { move, up };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    document.body.style.cursor = dragRef.current?.type === 'col' ? 'col-resize' : 'row-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const beginColResize = (
+    e: React.MouseEvent,
+    rowId: string,
+    leftId: string,
+    rightId: string,
+    baseA: number,
+    baseB: number,
+  ) => {
+    e.preventDefault();
+    const rowEl = (e.currentTarget as HTMLElement).parentElement;
+    const size = rowEl ? rowEl.getBoundingClientRect().width : 0;
+    dragRef.current = { type: 'col', rowId, aId: leftId, bId: rightId, baseA, baseB, start: e.clientX, size };
+    startDrag();
+  };
+
+  const beginRowResize = (
+    e: React.MouseEvent,
+    topId: string,
+    bottomId: string,
+    baseA: number,
+    baseB: number,
+  ) => {
+    e.preventDefault();
+    const colEl = (e.currentTarget as HTMLElement).parentElement;
+    const size = colEl ? colEl.getBoundingClientRect().height : 0;
+    dragRef.current = { type: 'row', aId: topId, bId: bottomId, baseA, baseB, start: e.clientY, size };
+    startDrag();
+  };
+
+  // 卸载时清理可能残留的拖拽监听
+  useEffect(() => {
+    return () => {
+      const { move, up } = dragHandlersRef.current;
+      if (move) window.removeEventListener('mousemove', move);
+      if (up) window.removeEventListener('mouseup', up);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
 
   const handleClose = () => {
     if (onClose) onClose();
@@ -128,76 +294,59 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const allSynced = connectedIds.length > 0 && globalSyncedIds.length === connectedIds.length;
   const isIndeterminate = globalSyncedIds.length > 0 && globalSyncedIds.length < connectedIds.length;
 
-  const renderGrid = () => {
-    const containerStyle: React.CSSProperties = {
+  const renderGrid = () => (
+    <div style={{
       width: '100%',
       height: '100%',
       background: '#0B0F19',
       boxSizing: 'border-box',
       padding: '4px',
-    };
-
-    if (layout === 'single') {
-      return (
-        <div style={containerStyle}>
-          {sessions[0] && (
-            <TerminalItem
-              key={sessions[0].id}
-              paneId={sessions[0].id}
-              assetId={sessions[0].assetId}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              assets={assets}
-              onAssetChange={(newId) => handleAssetChange(0, newId)}
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      {rows.map((row, ri) => (
+        <React.Fragment key={row.id}>
+          {/* 行间横向分隔条（可上下拖拽调整行高） */}
+          {ri > 0 && (
+            <div
+              className="term-splitter-row"
+              onMouseDown={(e) => beginRowResize(e, rows[ri - 1].id, row.id, rows[ri - 1].flex, row.flex)}
+              style={{ height: 6, flex: '0 0 auto', cursor: 'row-resize' }}
             />
           )}
-        </div>
-      );
-    }
-
-    if (layout === 'h-split') {
-      return (
-        <div style={{ ...containerStyle, display: 'flex', gap: '4px' }}>
-          {sessions.slice(0, 2).map((s, index) => (
-            <div key={s.id} style={{ flex: 1, height: '100%', minWidth: 0 }}>
-              <TerminalItem
-                paneId={s.id}
-                assetId={s.assetId}
-                fontSize={fontSize}
-                fontFamily={fontFamily}
-                assets={assets}
-                onAssetChange={(newId) => handleAssetChange(index, newId)}
-              />
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    // 四分屏
-    return (
-      <div style={{
-        ...containerStyle,
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gridTemplateRows: '1fr 1fr',
-        gap: '4px',
-      }}>
-        {sessions.slice(0, 4).map((s, index) => (
-          <div key={s.id} style={{ width: '100%', height: '100%', minHeight: 0, minWidth: 0 }}>
-            <TerminalItem
-              paneId={s.id}
-              assetId={s.assetId}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              assets={assets}
-              onAssetChange={(newId) => handleAssetChange(index, newId)}
-            />
+          <div style={{ flex: row.flex, minHeight: 0, display: 'flex', width: '100%' }}>
+            {row.panes.map((pane, pi) => (
+              <React.Fragment key={pane.id}>
+                {/* 列间纵向分隔条（可左右拖拽调整列宽） */}
+                {pi > 0 && (
+                  <div
+                    className="term-splitter-col"
+                    onMouseDown={(e) =>
+                      beginColResize(e, row.id, row.panes[pi - 1].id, pane.id, row.panes[pi - 1].flex, pane.flex)
+                    }
+                    style={{ width: 6, flex: '0 0 auto', cursor: 'col-resize' }}
+                  />
+                )}
+                <div style={{ flex: pane.flex, minWidth: 0, minHeight: 0, height: '100%' }}>
+                  <TerminalItem
+                    paneId={pane.id}
+                    assetId={pane.assetId}
+                    fontSize={fontSize}
+                    fontFamily={fontFamily}
+                    assets={assets}
+                    completionEnabled={completionEnabled}
+                    canClose={totalPanes > 1}
+                    onClose={() => closePane(pane.id)}
+                    onAssetChange={(newId) => handleAssetChange(pane.id, newId)}
+                  />
+                </div>
+              </React.Fragment>
+            ))}
           </div>
-        ))}
-      </div>
-    );
-  };
+        </React.Fragment>
+      ))}
+    </div>
+  );
 
   return (
     <div style={{
@@ -212,12 +361,20 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         ? { position: 'absolute' as const, inset: 0 }
         : { height: '100vh' }),
     }}>
-      {/* CSS keyframes pulse 呼吸动画注入 */}
+      {/* CSS keyframes pulse 呼吸动画 + 分隔条拖拽样式注入 */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes pulse {
           0% { opacity: 0.5; }
           50% { opacity: 1; }
           100% { opacity: 0.5; }
+        }
+        .term-splitter-col, .term-splitter-row {
+          background: rgba(148,163,184,0.06);
+          transition: background 0.15s ease;
+          flex-shrink: 0;
+        }
+        .term-splitter-col:hover, .term-splitter-row:hover {
+          background: rgba(99,102,241,0.55);
         }
       `}} />
 
@@ -245,14 +402,25 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             布局:
             <Radio.Group
               size="small"
-              value={layout}
-              onChange={(e) => setLayout(e.target.value)}
+              value={activePreset}
+              onChange={(e) => applyPreset(e.target.value)}
               style={{ marginLeft: 6 }}
             >
               <Radio.Button value="single">单屏</Radio.Button>
               <Radio.Button value="h-split">左右双分</Radio.Button>
               <Radio.Button value="quad">田字四分</Radio.Button>
             </Radio.Group>
+            <Button
+              size="small"
+              type="text"
+              icon={<PlusOutlined />}
+              onClick={addPane}
+              disabled={totalPanes >= MAX_PANES}
+              title="添加一个分屏"
+              style={{ marginLeft: 6, fontSize: 12, color: '#475569' }}
+            >
+              添加分屏
+            </Button>
           </span>
 
           {/* 全局命令同步总开关 Checkbox */}
@@ -265,6 +433,25 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
           >
             同步所有 ({connectedIds.length})
           </Checkbox>
+
+          {/* 命令自动补全开关 + 命令库管理入口 */}
+          <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
+            <Checkbox
+              checked={completionEnabled}
+              onChange={(e) => toggleCompletion(e.target.checked)}
+              style={{ fontSize: 12, color: '#475569' }}
+            >
+              命令补全
+            </Checkbox>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setSnippetModalOpen(true)}
+              style={{ padding: '0 4px', fontSize: 12 }}
+            >
+              命令库
+            </Button>
+          </span>
 
           <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
             字体:
@@ -317,6 +504,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: '#0B0F19' }}>
         {renderGrid()}
       </div>
+
+      <SnippetManager open={snippetModalOpen} onClose={() => setSnippetModalOpen(false)} />
     </div>
   );
 };
@@ -328,10 +517,23 @@ interface TerminalItemProps {
   fontSize: number;
   fontFamily: string;
   assets: Asset[];
+  completionEnabled: boolean;
+  canClose?: boolean;      // 是否允许独立关闭该窗格（至少保留一个）
+  onClose?: () => void;    // 关闭该窗格
   onAssetChange: (id: number) => void;
 }
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, assets, onAssetChange }) => {
+// 判断一段输入是否为可见字符（含粘贴文本）；控制字符 / 转义序列返回 false
+const isPrintableInput = (s: string): boolean => {
+  if (s.length === 0) return false;
+  for (const ch of s) {
+    const c = ch.codePointAt(0)!;
+    if (c < 0x20 || c === 0x7f) return false;
+  }
+  return true;
+};
+
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, assets, completionEnabled, canClose, onClose, onAssetChange }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -364,6 +566,131 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
+  // ── 命令自动补全（本地输入行追踪 + 片段提示）────────────────
+  const [suggestions, setSuggestions] = useState<CmdSnippet[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  const lineBufferRef = useRef('');                       // 本地输入行缓冲（尽力追踪）
+  const snippetsRef = useRef<CmdSnippet[]>(loadSnippets());
+  const suggestionsRef = useRef<CmdSnippet[]>([]);
+  const activeIdxRef = useRef(0);
+
+  useEffect(() => { suggestionsRef.current = suggestions; }, [suggestions]);
+  useEffect(() => { activeIdxRef.current = activeIdx; }, [activeIdx]);
+
+  // 命令库变更时热重载，并刷新当前提示
+  useEffect(() => {
+    const reload = () => {
+      snippetsRef.current = loadSnippets();
+      setSuggestions(matchSnippets(lineBufferRef.current, snippetsRef.current));
+      setActiveIdx(0);
+    };
+    window.addEventListener('cmd-snippets-changed', reload);
+    return () => window.removeEventListener('cmd-snippets-changed', reload);
+  }, []);
+
+  // 关闭补全时清空提示与缓冲
+  useEffect(() => {
+    if (!completionEnabled) {
+      lineBufferRef.current = '';
+      setSuggestions([]);
+      setActiveIdx(0);
+    }
+  }, [completionEnabled]);
+
+  // 断开 / 重连时重置补全状态，避免缓冲与实际行错位
+  useEffect(() => {
+    if (status !== 'connected') {
+      lineBufferRef.current = '';
+      setSuggestions([]);
+      setActiveIdx(0);
+    }
+  }, [status]);
+
+  const sendToShell = useCallback((data: string) => {
+    if (isSyncedRef.current && broadcastGlobalDataRef.current) {
+      broadcastGlobalDataRef.current(instanceId, data);
+    } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(new TextEncoder().encode(data));
+    }
+  }, [instanceId]);
+
+  const acceptSuggestion = useCallback((snippet: CmdSnippet) => {
+    // 退格清掉当前已输入缓冲后插入完整命令；行首多余退格会被 readline 安全忽略
+    const erase = '\x7f'.repeat(lineBufferRef.current.length);
+    sendToShell(erase + snippet.cmd);
+    lineBufferRef.current = snippet.cmd;
+    setSuggestions([]);
+    setActiveIdx(0);
+    termRef.current?.focus();
+  }, [sendToShell]);
+
+  const refreshSuggestions = useCallback(() => {
+    setSuggestions(matchSnippets(lineBufferRef.current, snippetsRef.current));
+    setActiveIdx(0);
+  }, []);
+
+  // 处理一段终端输入；返回 true 表示被补全逻辑消费（不再下发到 shell）
+  const handleCompletionInput = useCallback((data: string): boolean => {
+    const isOpen = suggestionsRef.current.length > 0;
+    if (isOpen) {
+      if (data === '\t') {
+        const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
+        if (sel) acceptSuggestion(sel);
+        return true;
+      }
+      if (data === '\x1b[A') { // ↑ 上移选择
+        const n = suggestionsRef.current.length;
+        setActiveIdx((i) => (i - 1 + n) % n);
+        return true;
+      }
+      if (data === '\x1b[B') { // ↓ 下移选择
+        const n = suggestionsRef.current.length;
+        setActiveIdx((i) => (i + 1) % n);
+        return true;
+      }
+      if (data === '\x1b') { // Esc 关闭下拉（不下发）
+        setSuggestions([]);
+        setActiveIdx(0);
+        return true;
+      }
+    }
+
+    // 回车 / Ctrl-C / Ctrl-U：提交或清行 → 重置缓冲
+    if (data === '\r' || data === '\n' || data === '\x03' || data === '\x15') {
+      lineBufferRef.current = '';
+      setSuggestions([]);
+      setActiveIdx(0);
+      return false;
+    }
+    // 退格
+    if (data === '\x7f' || data === '\b') {
+      lineBufferRef.current = lineBufferRef.current.slice(0, -1);
+      refreshSuggestions();
+      return false;
+    }
+    // 可见字符（含粘贴文本）：追加到缓冲
+    if (isPrintableInput(data)) {
+      lineBufferRef.current += data;
+      refreshSuggestions();
+      return false;
+    }
+    // 其它控制 / 转义序列（方向键移动、Home/End 等）：本地模型已失真，重置
+    lineBufferRef.current = '';
+    setSuggestions([]);
+    setActiveIdx(0);
+    return false;
+  }, [acceptSuggestion, refreshSuggestions]);
+
+  // 将最新开关与处理函数暴露给 onData，避免连接闭包内引用过期
+  const completionApiRef = useRef<{ enabled: boolean; handle: (d: string) => boolean }>({
+    enabled: completionEnabled,
+    handle: handleCompletionInput,
+  });
+  useEffect(() => {
+    completionApiRef.current = { enabled: completionEnabled, handle: handleCompletionInput };
+  }, [completionEnabled, handleCompletionInput]);
 
   // 1. 注册物理 WebSocket 到全局以实现跨标签页和跨分屏的广播输入
   useEffect(() => {
@@ -573,6 +900,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     };
 
     const dataListener = term.onData((data) => {
+      // 命令补全优先拦截：Tab 接受 / ↑↓ 选择 / Esc 关闭等被消费的输入不下发
+      if (completionApiRef.current.enabled && completionApiRef.current.handle(data)) {
+        return;
+      }
       if (isSyncedRef.current && broadcastGlobalDataRef.current) {
         broadcastGlobalDataRef.current(instanceId, data);
       } else {
@@ -768,11 +1099,23 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           )}
         </Space>
         
-        {status !== 'idle' && (
-          <Button size="small" type="link" onClick={handleReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
-            重新连接
-          </Button>
-        )}
+        <Space size={2} style={{ flexShrink: 0 }}>
+          {status !== 'idle' && (
+            <Button size="small" type="link" onClick={handleReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
+              重新连接
+            </Button>
+          )}
+          {canClose && (
+            <Button
+              size="small"
+              type="text"
+              icon={<CloseOutlined />}
+              onClick={onClose}
+              title="关闭此分屏"
+              style={{ padding: '0 4px', fontSize: 11, color: '#f87171', display: 'flex', alignItems: 'center' }}
+            />
+          )}
+        </Space>
       </div>
 
       <div style={{ flexGrow: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
@@ -869,6 +1212,53 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             boxSizing: 'border-box',
           }}
         />
+
+        {/* 命令自动补全下拉 */}
+        {completionEnabled && status === 'connected' && suggestions.length > 0 && (
+          <div style={{
+            position: 'absolute', left: 12, bottom: 12, zIndex: 14,
+            width: 420, maxWidth: '88%',
+            background: '#0f172a', border: '1px solid #334155', borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
+          }}>
+            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+              {suggestions.map((s, i) => (
+                <div
+                  key={s.id}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  onMouseDown={(e) => { e.preventDefault(); acceptSuggestion(s); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    padding: '6px 10px', cursor: 'pointer',
+                    background: i === activeIdx ? 'rgba(99,102,241,0.18)' : 'transparent',
+                    borderLeft: i === activeIdx ? '2px solid #6366f1' : '2px solid transparent',
+                  }}
+                >
+                  <span style={{
+                    fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0,
+                  }}>
+                    {s.keyword && (
+                      <span style={{ color: '#818cf8', marginRight: 8 }}>{s.keyword}</span>
+                    )}
+                    {s.cmd}
+                  </span>
+                  {s.desc && (
+                    <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {s.desc}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{
+              padding: '4px 10px', borderTop: '1px solid #1e293b',
+              fontSize: 10, color: '#64748b', background: '#0b1220',
+            }}>
+              Tab 补全 · ↑↓ 选择 · Esc 关闭
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

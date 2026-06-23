@@ -1,0 +1,360 @@
+// ─────────────────────────────────────────────────────────────
+// Meridian · 终端命令片段库（命令自动补全）
+// 用户在终端输入时，按缓冲前缀 / 关键字匹配命令片段并给出补全建议。
+// 例：输入 g 提示 git log；输入 dps 提示 docker ps -a。
+// 片段持久化于 localStorage，可在「命令库」弹窗中自定义增删改。
+// ─────────────────────────────────────────────────────────────
+
+export interface CmdSnippet {
+  id: string;
+  /** 要插入终端的完整命令 */
+  cmd: string;
+  /** 可选短别名 / 缩写，用于快速触发（如 g → git log） */
+  keyword?: string;
+  /** 可选中文说明，仅用于下拉提示展示 */
+  desc?: string;
+}
+
+const STORAGE_KEY = 'term_cmd_snippets';
+
+// 内置默认片段：覆盖 Linux 日常运维绝大多数高频命令。
+// [关键字, 命令, 说明]，关键字为可选短别名（留空则仅按命令前缀 / 子串匹配）。
+type RawSnippet = [string, string, string];
+
+const RAW_SNIPPETS: RawSnippet[] = [
+  // ── 文件与目录 ──────────────────────────────
+  ['ll', 'ls -alh', '详细列表'],
+  ['la', 'ls -A', '含隐藏文件'],
+  ['lt', 'ls -alht', '按时间排序'],
+  ['lsz', 'ls -alhS', '按大小排序'],
+  ['tree', 'tree -L 2', '目录树'],
+  ['mkp', 'mkdir -p ', '递归建目录'],
+  ['cpr', 'cp -r ', '递归复制'],
+  ['', 'mv ', '移动/重命名'],
+  ['lns', 'ln -s ', '创建软链接'],
+  ['rmrf', 'rm -rf ', '⚠️ 强制递归删除'],
+  ['', 'pwd', '当前路径'],
+  ['', 'stat ', '文件详情'],
+  ['', 'file ', '文件类型'],
+  ['', 'touch ', '创建空文件'],
+  ['', 'realpath ', '绝对路径'],
+  ['', 'basename ', '取文件名'],
+  ['', 'dirname ', '取目录名'],
+  ['rsync', 'rsync -avz --progress ', '增量同步'],
+
+  // ── 文本查看与处理 ──────────────────────────
+  ['', 'cat ', '查看文件'],
+  ['', 'less ', '分页查看'],
+  ['head', 'head -n 50 ', '看头部'],
+  ['tail', 'tail -n 100 ', '看尾部'],
+  ['tf', 'tail -f ', '实时跟踪'],
+  ['grep', 'grep -rn ', '递归搜索'],
+  ['grepi', 'grep -rin ', '忽略大小写搜索'],
+  ['', 'grep -v ', '反向过滤'],
+  ['', "sed -n '1,50p' ", '打印指定行'],
+  ['', "sed -i 's/old/new/g' ", '原地替换'],
+  ['', "awk '{print $1}' ", '取列'],
+  ['', 'sort -u ', '排序去重'],
+  ['', 'uniq -c ', '计数去重'],
+  ['wcl', 'wc -l ', '统计行数'],
+  ['', 'cut -d: -f1 ', '按分隔取列'],
+  ['', 'diff ', '比较文件'],
+  ['', 'xargs ', '参数传递'],
+  ['', 'tee ', '同时输出文件'],
+  ['', 'column -t', '对齐成列'],
+  ['', 'jq . ', '格式化 JSON'],
+
+  // ── 查找 ────────────────────────────────────
+  ['find', 'find . -name "*" ', '按名查找'],
+  ['', 'find . -type f -mtime -1', '一天内修改的文件'],
+  ['', 'find . -size +100M', '大于100M的文件'],
+  ['', 'find . -type f -exec ls -lh {} \\;', '查找并列出'],
+  ['', 'which ', '命令路径'],
+  ['', 'whereis ', '定位命令/手册'],
+  ['', 'locate ', '索引查找'],
+
+  // ── 权限与归属 ──────────────────────────────
+  ['chx', 'chmod +x ', '加可执行'],
+  ['', 'chmod 755 ', '设权限755'],
+  ['', 'chmod -R 644 ', '递归设权限'],
+  ['chr', 'chown -R ', '递归改属主'],
+  ['', 'chgrp -R ', '改属组'],
+  ['', 'umask', '默认权限掩码'],
+  ['', 'getfacl ', '查看ACL'],
+  ['', 'setfacl -m u:user:rwx ', '设置ACL'],
+
+  // ── 进程管理 ────────────────────────────────
+  ['psa', 'ps aux', '全部进程'],
+  ['pg', 'ps aux | grep ', '进程查找'],
+  ['psf', 'ps -ef | grep ', '进程查找(ef)'],
+  ['', 'pgrep -a ', '按名找PID'],
+  ['', 'pkill -f ', '按名杀进程'],
+  ['k9', 'kill -9 ', '强制杀进程'],
+  ['', 'killall ', '按名全杀'],
+  ['top', 'top', '实时进程'],
+  ['htop', 'htop', '增强top'],
+  ['', 'nohup  &', '后台不挂断运行'],
+  ['', 'jobs -l', '后台任务'],
+  ['lsofi', 'lsof -i ', '端口占用进程'],
+  ['lsofp', 'lsof -p ', '进程打开文件'],
+  ['', 'fuser -v ', '占用查询'],
+  ['', 'strace -f -p ', '系统调用跟踪'],
+  ['', 'renice -n 10 -p ', '调整优先级'],
+
+  // ── 系统资源与监控 ──────────────────────────
+  ['fr', 'free -h', '内存使用'],
+  ['', 'vmstat 1', '虚拟内存统计'],
+  ['', 'iostat -x 1', 'IO统计'],
+  ['', 'mpstat -P ALL 1', 'CPU各核统计'],
+  ['', 'pidstat 1', '进程级资源'],
+  ['', 'sar -u 1 5', '历史性能采样'],
+  ['up', 'uptime', '负载与运行时长'],
+  ['', 'w', '登录用户与负载'],
+  ['', 'dmesg -T | tail -n 50', '内核日志'],
+  ['watch', 'watch -n 1 ', '定时重复执行'],
+  ['', 'nproc', 'CPU核数'],
+
+  // ── 磁盘与文件系统 ──────────────────────────
+  ['df', 'df -h', '磁盘使用'],
+  ['dfi', 'df -i', 'inode使用'],
+  ['du', 'du -sh * | sort -h', '目录大小排序'],
+  ['', 'du -ah . | sort -h | tail -n 20', '最大文件Top20'],
+  ['', 'lsblk', '块设备列表'],
+  ['', 'blkid', '分区UUID'],
+  ['', 'mount | column -t', '已挂载文件系统'],
+  ['', 'findmnt', '挂载树'],
+  ['', 'fdisk -l', '分区表'],
+  ['', 'ncdu', '交互式磁盘分析'],
+
+  // ── 网络 ────────────────────────────────────
+  ['ipa', 'ip a', '网卡地址'],
+  ['ipr', 'ip r', '路由表'],
+  ['nt', 'netstat -tulnp', '端口监听(netstat)'],
+  ['sst', 'ss -tulnp', '端口监听(ss)'],
+  ['', 'ss -s', '连接统计'],
+  ['ping', 'ping -c 4 ', '连通性测试'],
+  ['', 'traceroute ', '路由追踪'],
+  ['', 'mtr ', '实时路由质量'],
+  ['curl', 'curl -sS -i ', '请求并看响应头'],
+  ['', 'curl -o /dev/null -s -w "%{http_code} %{time_total}s\\n" ', '测响应码/耗时'],
+  ['', 'wget ', '下载文件'],
+  ['dig', 'dig ', 'DNS解析'],
+  ['', 'nslookup ', '域名查询'],
+  ['', 'nc -zv  ', '端口探测'],
+  ['', 'tcpdump -i any -nn ', '抓包'],
+  ['', 'iptables -L -n -v', '防火墙规则'],
+  ['', 'arp -n', 'ARP表'],
+  ['scp', 'scp  user@host:/path', '远程拷贝'],
+
+  // ── 用户与组 ────────────────────────────────
+  ['', 'whoami', '当前用户'],
+  ['', 'id ', '用户ID与组'],
+  ['', 'su - ', '切换用户'],
+  ['', 'useradd -m ', '新建用户'],
+  ['', 'usermod -aG ', '加入附加组'],
+  ['', 'passwd ', '改密码'],
+  ['', 'groupadd ', '新建组'],
+  ['', 'last -n 20', '最近登录'],
+  ['', 'who', '在线用户'],
+
+  // ── 服务 / systemd ──────────────────────────
+  ['sts', 'systemctl status ', '服务状态'],
+  ['str', 'systemctl restart ', '重启服务'],
+  ['sta', 'systemctl start ', '启动服务'],
+  ['stp', 'systemctl stop ', '停止服务'],
+  ['ste', 'systemctl enable --now ', '开机自启并启动'],
+  ['std', 'systemctl disable ', '取消自启'],
+  ['', 'systemctl daemon-reload', '重载unit配置'],
+  ['', 'systemctl --failed', '失败的服务'],
+  ['', 'systemctl list-units --type=service', '服务列表'],
+  ['jx', 'journalctl -xe', '系统日志'],
+  ['ju', 'journalctl -u  -f', '跟踪服务日志'],
+  ['', 'journalctl --since "1 hour ago"', '近1小时日志'],
+
+  // ── 包管理 ──────────────────────────────────
+  ['', 'apt update && apt upgrade -y', 'apt 更新升级'],
+  ['', 'apt install -y ', 'apt 安装'],
+  ['', 'apt remove -y ', 'apt 卸载'],
+  ['', 'apt search ', 'apt 搜索'],
+  ['', 'dpkg -l | grep ', 'dpkg 已装查询'],
+  ['', 'yum install -y ', 'yum 安装'],
+  ['', 'yum update -y', 'yum 更新'],
+  ['', 'dnf install -y ', 'dnf 安装'],
+  ['', 'rpm -qa | grep ', 'rpm 已装查询'],
+
+  // ── 压缩与归档 ──────────────────────────────
+  ['tarc', 'tar -czvf archive.tar.gz ', '打包压缩'],
+  ['tarx', 'tar -xzvf ', '解包解压'],
+  ['tart', 'tar -tzvf ', '查看归档内容'],
+  ['', 'zip -r archive.zip ', 'zip 压缩'],
+  ['', 'unzip ', 'zip 解压'],
+  ['', 'gzip ', 'gzip 压缩'],
+  ['', 'gunzip ', 'gzip 解压'],
+
+  // ── Git ─────────────────────────────────────
+  ['g', 'git log --oneline --graph --decorate -20', 'Git 提交历史'],
+  ['gs', 'git status', 'Git 状态'],
+  ['gp', 'git pull', 'Git 拉取'],
+  ['gpush', 'git push', 'Git 推送'],
+  ['gd', 'git diff', 'Git 差异'],
+  ['ga', 'git add .', 'Git 暂存全部'],
+  ['gc', 'git commit -m ""', 'Git 提交'],
+  ['gco', 'git checkout ', 'Git 切换'],
+  ['gb', 'git branch -a', 'Git 分支列表'],
+  ['', 'git stash', 'Git 暂存改动'],
+  ['', 'git reset --hard ', '⚠️ Git 硬重置'],
+  ['', 'git fetch --all --prune', 'Git 拉取所有远端'],
+  ['', 'git remote -v', 'Git 远端列表'],
+
+  // ── Docker ──────────────────────────────────
+  ['dps', 'docker ps -a', '容器列表'],
+  ['di', 'docker images', '镜像列表'],
+  ['dl', 'docker logs -f --tail 200 ', '容器日志'],
+  ['dex', 'docker exec -it  bash', '进入容器'],
+  ['', 'docker stop ', '停止容器'],
+  ['', 'docker rm -f ', '删除容器'],
+  ['', 'docker rmi ', '删除镜像'],
+  ['', 'docker pull ', '拉取镜像'],
+  ['', 'docker build -t  .', '构建镜像'],
+  ['', 'docker stats', '容器资源监控'],
+  ['', 'docker inspect ', '容器详情'],
+  ['', 'docker system df', '镜像/容器占用'],
+  ['', 'docker system prune -af', '⚠️ 清理无用资源'],
+  ['dc', 'docker compose up -d', 'Compose 启动'],
+  ['dcd', 'docker compose down', 'Compose 停止'],
+  ['dcl', 'docker compose logs -f', 'Compose 日志'],
+
+  // ── Kubernetes ──────────────────────────────
+  ['k', 'kubectl get pods -o wide', '查看Pod'],
+  ['', 'kubectl get pods -A', '全命名空间Pod'],
+  ['', 'kubectl get nodes -o wide', '查看节点'],
+  ['', 'kubectl get svc', '查看Service'],
+  ['', 'kubectl describe pod ', 'Pod详情'],
+  ['kl', 'kubectl logs -f ', 'Pod日志'],
+  ['', 'kubectl exec -it  -- bash', '进入Pod'],
+  ['', 'kubectl apply -f ', '应用配置'],
+  ['', 'kubectl top pods', 'Pod资源占用'],
+  ['', 'kubectl get events --sort-by=.lastTimestamp', '集群事件'],
+
+  // ── 防火墙 ──────────────────────────────────
+  ['', 'firewall-cmd --list-all', 'firewalld 规则'],
+  ['', 'firewall-cmd --add-port=80/tcp --permanent && firewall-cmd --reload', '放行端口'],
+  ['', 'ufw status verbose', 'ufw 状态'],
+  ['', 'ufw allow ', 'ufw 放行'],
+
+  // ── 计划任务与环境 ──────────────────────────
+  ['', 'crontab -l', '查看定时任务'],
+  ['', 'crontab -e', '编辑定时任务'],
+  ['', 'systemctl list-timers', 'systemd 定时器'],
+  ['', 'env', '环境变量'],
+  ['', 'echo $PATH', '查看PATH'],
+  ['', 'export ', '导出环境变量'],
+  ['', 'history', '命令历史'],
+  ['', 'source ', '加载脚本'],
+
+  // ── 系统信息 ────────────────────────────────
+  ['', 'uname -a', '内核信息'],
+  ['', 'hostnamectl', '主机信息'],
+  ['', 'lscpu', 'CPU信息'],
+  ['', 'lspci', 'PCI设备'],
+  ['', 'lsusb', 'USB设备'],
+  ['', 'timedatectl', '时间/时区'],
+  ['', 'cat /etc/os-release', '系统版本'],
+  ['', 'date', '当前时间'],
+  ['', 'reboot', '⚠️ 重启系统'],
+  ['', 'shutdown -h now', '⚠️ 关机'],
+];
+
+const DEFAULT_SNIPPETS: CmdSnippet[] = RAW_SNIPPETS.map(([keyword, cmd, desc], i) => ({
+  id: `def-${i}`,
+  cmd,
+  keyword: keyword || undefined,
+  desc: desc || undefined,
+}));
+
+let cache: CmdSnippet[] | null = null;
+
+/** 读取当前片段列表（带内存缓存）。损坏或缺失时回退到默认集。 */
+export function loadSnippets(): CmdSnippet[] {
+  if (cache) return cache;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        cache = parsed.filter((s) => s && typeof s.cmd === 'string' && s.cmd.length > 0);
+        return cache;
+      }
+    }
+  } catch {
+    // ignore，回退默认
+  }
+  cache = DEFAULT_SNIPPETS;
+  return cache;
+}
+
+/** 保存片段列表并广播变更，便于各终端窗格热重载。 */
+export function saveSnippets(list: CmdSnippet[]): void {
+  cache = list;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    // ignore 存储配额异常
+  }
+  window.dispatchEvent(new Event('cmd-snippets-changed'));
+}
+
+/** 恢复默认片段集。 */
+export function resetSnippets(): CmdSnippet[] {
+  cache = null;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  window.dispatchEvent(new Event('cmd-snippets-changed'));
+  return DEFAULT_SNIPPETS;
+}
+
+export function defaultSnippets(): CmdSnippet[] {
+  return DEFAULT_SNIPPETS;
+}
+
+/**
+ * 按当前输入缓冲匹配片段并打分排序：
+ *   关键字精确 > 关键字前缀 > 命令前缀 > 关键字包含 > 命令包含。
+ * 按命令去重，返回前 limit 条。
+ */
+export function matchSnippets(buffer: string, list: CmdSnippet[], limit = 7): CmdSnippet[] {
+  const w = buffer.trim().toLowerCase();
+  if (!w) return [];
+
+  const scored: { s: CmdSnippet; score: number }[] = [];
+  for (const s of list) {
+    const cmd = s.cmd.toLowerCase();
+    // 已完整输入该命令则无需提示
+    if (cmd === w) continue;
+    const kw = (s.keyword || '').toLowerCase();
+
+    let score = -1;
+    if (kw && kw === w) score = 100;
+    else if (kw && kw.startsWith(w)) score = 90;
+    else if (cmd.startsWith(w)) score = 80;
+    else if (kw && kw.includes(w)) score = 35;
+    else if (cmd.includes(w)) score = 30;
+
+    if (score >= 0) scored.push({ s, score });
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.s.cmd.length - b.s.cmd.length);
+
+  const seen = new Set<string>();
+  const out: CmdSnippet[] = [];
+  for (const { s } of scored) {
+    if (seen.has(s.cmd)) continue;
+    seen.add(s.cmd);
+    out.push(s);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
