@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Popconfirm } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { getAsset, getTerminalWsUrl, getAssets, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
+import { getAsset, getTerminalWsUrl, getAssets, aiGenerateCommand, aiStatus, type Asset, type AiCommandResult } from '../services/api';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, RobotOutlined, EnterOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import '@xterm/xterm/css/xterm.css';
@@ -306,6 +306,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
   const [errorDetail, setErrorDetail] = useState<string>('');
   const [form] = Form.useForm();
 
+  // AI 命令助手
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<AiCommandResult | null>(null);
+  useEffect(() => {
+    aiStatus().then((s) => setAiEnabled(!!s.enabled)).catch(() => {});
+  }, []);
+
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -602,6 +612,38 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
     }
   };
 
+  // 把文本写入终端（模拟键入）。不带换行 = 仅填入等用户回车；带换行 = 直接执行
+  const sendToTerminal = (text: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(new TextEncoder().encode(text));
+      termRef.current?.focus();
+    } else {
+      message.warning('终端未连接');
+    }
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const res = await aiGenerateCommand(assetId, aiPrompt.trim());
+      setAiResult(res);
+    } catch (e: any) {
+      message.error(e?.message || 'AI 生成失败');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const fillCommand = () => {
+    if (aiResult) sendToTerminal(aiResult.command);
+  };
+  const runCommand = () => {
+    if (aiResult) sendToTerminal(aiResult.command + '\n');
+  };
+
   return (
     <div style={{
       display: 'flex',
@@ -747,6 +789,80 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ assetId, fontSize, fontFami
           }}
         />
       </div>
+
+      {/* AI 命令助手栏：仅在已连接且启用时出现 */}
+      {aiEnabled && status === 'connected' && (
+        <div style={{ background: '#0F172A', borderTop: '1px solid #1e293b', padding: aiOpen ? '8px 10px' : '4px 10px' }}>
+          {!aiOpen ? (
+            <Button
+              type="text"
+              size="small"
+              icon={<RobotOutlined />}
+              onClick={() => setAiOpen(true)}
+              style={{ color: '#818cf8', fontSize: 12, padding: '0 4px' }}
+            >
+              AI 命令助手
+            </Button>
+          ) : (
+            <div>
+              <Space.Compact style={{ width: '100%' }}>
+                <Input
+                  size="small"
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  onPressEnter={handleAiGenerate}
+                  placeholder="用自然语言描述需求，如：查找 /var/log 下最大的 5 个文件"
+                  prefix={<RobotOutlined style={{ color: '#818cf8' }} />}
+                  style={{ background: '#1e293b', borderColor: '#334155', color: '#e2e8f0' }}
+                />
+                <Button size="small" type="primary" loading={aiLoading} onClick={handleAiGenerate}>
+                  生成
+                </Button>
+                <Button size="small" onClick={() => { setAiOpen(false); setAiResult(null); }}>
+                  收起
+                </Button>
+              </Space.Compact>
+
+              {aiResult && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{
+                    background: '#020617', border: `1px solid ${aiResult.dangerous ? '#b91c1c' : '#334155'}`,
+                    borderRadius: 6, padding: '8px 10px', fontFamily: 'monospace', fontSize: 13,
+                    color: '#e2e8f0', wordBreak: 'break-all',
+                  }}>
+                    {aiResult.command}
+                  </div>
+                  {aiResult.dangerous && (
+                    <div style={{ marginTop: 6, color: '#f87171', fontSize: 12 }}>
+                      {aiResult.warning || '⚠️ 高危命令，请谨慎核对'}
+                    </div>
+                  )}
+                  <Space style={{ marginTop: 8 }}>
+                    <Button size="small" icon={<EnterOutlined />} onClick={fillCommand}>
+                      填入终端（需回车）
+                    </Button>
+                    {aiResult.dangerous ? (
+                      <Popconfirm
+                        title="这是一条高危命令，确认直接执行？"
+                        okText="确认执行"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={runCommand}
+                      >
+                        <Button size="small" danger icon={<ThunderboltOutlined />}>直接执行</Button>
+                      </Popconfirm>
+                    ) : (
+                      <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />} onClick={runCommand}>
+                        直接执行
+                      </Button>
+                    )}
+                  </Space>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
