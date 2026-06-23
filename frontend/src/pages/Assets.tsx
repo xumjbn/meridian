@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Table,
   Button,
@@ -111,6 +111,7 @@ export const Assets: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [groupBy, setGroupBy] = useState<'none' | 'type' | 'status' | 'tag'>('none');
   const [activeCollapseKeys, setActiveCollapseKeys] = useState<string[]>([]);
+  const prevGroupKeysRef = useRef<string[]>([]);
 
   // 全局标签列表与管理 Modal 状态
   const [globalTags, setGlobalTags] = useState<GlobalTag[]>([]);
@@ -361,11 +362,28 @@ export const Assets: React.FC = () => {
     fetchGlobalTags();
   }, [searchKey, filterType, filterStatus]);
 
-  // 监听分组方式或资产变动，默认把全部分组展开，避免由于 key 改变导致的行为不统一
+  // 监听分组方式或资产变动，智能维护分组展开/折叠状态，保留用户手动折叠的状态
   useEffect(() => {
     if (groupBy !== 'none') {
       const groups = groupedAssets();
-      setActiveCollapseKeys(groups.map(([k]) => k));
+      const currentKeys = groups.map(([k]) => k);
+      
+      // 找出当前有、但之前没有的新增分组
+      const newKeys = currentKeys.filter(k => !prevGroupKeysRef.current.includes(k));
+      
+      if (newKeys.length > 0 || prevGroupKeysRef.current.length === 0) {
+        // 如果是首次启用分组，或者有新分组加入，我们更新 activeCollapseKeys
+        setActiveCollapseKeys((prev) => {
+          if (prevGroupKeysRef.current.length === 0) {
+            return currentKeys;
+          }
+          // 追加新产生的键，保留原先展开/折叠的状态
+          return Array.from(new Set([...prev, ...newKeys]));
+        });
+      }
+      prevGroupKeysRef.current = currentKeys;
+    } else {
+      prevGroupKeysRef.current = [];
     }
   }, [groupBy, assets]);
 
