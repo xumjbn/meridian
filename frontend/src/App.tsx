@@ -118,6 +118,7 @@ const AppLayout: React.FC = () => {
           theme={{
             algorithm: theme.darkAlgorithm,
             token: {
+              colorBgBase: palette.siderBg,
               colorBgContainer: palette.siderBg,
               colorText: palette.siderText,
               colorBorder: palette.siderBorder,
@@ -138,6 +139,10 @@ const AppLayout: React.FC = () => {
                 groupTitleColor: '#5b6680',
                 groupTitleFontSize: 11,
                 iconSize: 16,
+              },
+              Tooltip: {
+                colorBgSpotlight: '#1e293b',
+                colorTextLightSolid: '#f8fafc',
               },
             },
           }}
