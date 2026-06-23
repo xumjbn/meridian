@@ -19,7 +19,8 @@
 ```
 
 - 前端构建产物由 nginx 托管，`/api/` 反代到后端；终端 WebSocket 与扫描日志 SSE 均已配置长连接透传。
-- 后端默认**不对外暴露端口**，仅在 compose 内网供 nginx 访问（API 当前无鉴权，避免直接裸奔公网）。
+- 后端默认**不对外暴露端口**，仅在 compose 内网供 nginx 访问。
+- API 已启用**会话鉴权 + 多租户隔离**（登录签发 Bearer 令牌，受保护路由服务端校验，管理员路由再校验角色）；但凭据仍**明文**存储、SSH 未校验主机密钥，公网暴露前请充分评估。
 - SQLite 落在命名卷 `meridian-data`，容器重建不丢数据。
 
 ## 一键启动
@@ -31,7 +32,7 @@ docker compose up -d --build
 # 查看日志
 docker compose logs -f
 
-# 访问：http://<宿主机IP>:8088   默认登录 admin / admin
+# 访问：http://<宿主机IP>:8088   默认登录 admin / admin（首次登录强制改密）
 ```
 
 停止 / 清理：
@@ -93,7 +94,7 @@ docker build --build-arg REGISTRY=docker.io -f backend/Dockerfile -t meridian-ba
       - "8080:8080"
 ```
 
-> ⚠️ 后端 API 当前**无鉴权**，请勿在公网环境暴露 8080。
+> ⚠️ 直连后端会绕过 nginx，且凭据为明文存储——仅用于本机排查，请勿在公网环境暴露 8080。
 
 ## 常见问题
 
