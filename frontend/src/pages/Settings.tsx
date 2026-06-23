@@ -9,10 +9,11 @@ import {
   BellOutlined,
   SendOutlined,
   DashboardOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '../components/PageHeader';
 import { palette, brand } from '../theme';
-import { getSettings, updateSettings, testNotify } from '../services/api';
+import { getSettings, updateSettings, testNotify, aiTest } from '../services/api';
 
 const { Text, Link } = Typography;
 
@@ -79,6 +80,13 @@ export const Settings: React.FC = () => {
   const [monitorEnabled, setMonitorEnabled] = useState(false);
   const [monitorInterval, setMonitorInterval] = useState(5);
 
+  // AI 命令助手
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiBaseUrl, setAiBaseUrl] = useState('');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiModel, setAiModel] = useState('');
+  const [aiTesting, setAiTesting] = useState(false);
+
   useEffect(() => {
     getSettings()
       .then((s) => {
@@ -91,6 +99,10 @@ export const Settings: React.FC = () => {
         if (s.notify_on_offline) setNotifyOnOffline(s.notify_on_offline === 'true');
         if (s.monitor_enabled) setMonitorEnabled(s.monitor_enabled === 'true');
         if (s.monitor_interval) setMonitorInterval(Number(s.monitor_interval));
+        if (s.ai_enabled) setAiEnabled(s.ai_enabled === 'true');
+        if (s.ai_base_url) setAiBaseUrl(s.ai_base_url);
+        if (s.ai_api_key) setAiApiKey(s.ai_api_key);
+        if (s.ai_model) setAiModel(s.ai_model);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -109,12 +121,32 @@ export const Settings: React.FC = () => {
         notify_on_offline: String(notifyOnOffline),
         monitor_enabled: String(monitorEnabled),
         monitor_interval: String(monitorInterval),
+        ai_enabled: String(aiEnabled),
+        ai_base_url: aiBaseUrl,
+        ai_api_key: aiApiKey,
+        ai_model: aiModel,
       });
       message.success('配置已保存');
     } catch (e) {
       message.error('保存失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestAi = async () => {
+    if (!aiBaseUrl.trim() || !aiApiKey.trim() || !aiModel.trim()) {
+      message.warning('请先填写接口地址、API Key 和模型名');
+      return;
+    }
+    try {
+      setAiTesting(true);
+      const res = await aiTest(aiBaseUrl.trim(), aiApiKey.trim(), aiModel.trim());
+      message.success(`连接成功，示例输出：${res.sample || 'OK'}`);
+    } catch (e: any) {
+      message.error(e?.message || '连接失败');
+    } finally {
+      setAiTesting(false);
     }
   };
 
@@ -272,6 +304,54 @@ export const Settings: React.FC = () => {
               <div style={{ marginTop: 12, padding: '10px 14px', background: '#f0fdf4', borderRadius: 6, border: '1px solid #bbf7d0' }}>
                 <Text style={{ fontSize: 12, color: '#15803d' }}>
                   在资产详情中可查看各资产近 24 小时在线率；状态从在线变为离线时会按「告警通知」配置推送。
+                </Text>
+              </div>
+            </SettingCard>
+
+            {/* AI 命令助手 */}
+            <SettingCard
+              icon={<RobotOutlined style={{ fontSize: 16 }} />}
+              title="AI 命令助手"
+              description="在终端用自然语言生成 shell 命令（OpenAI 兼容接口）。生成后需人工确认才执行，高危命令会标红警示"
+            >
+              <SettingRow label="启用 AI 命令助手" hint="开启后终端页出现「AI 助手」输入框">
+                <Switch checked={aiEnabled} onChange={setAiEnabled} />
+              </SettingRow>
+              <SettingRow label="接口地址 (base_url)" hint="OpenAI 兼容地址，如 https://api.deepseek.com/v1">
+                <Input
+                  value={aiBaseUrl}
+                  onChange={(e) => setAiBaseUrl(e.target.value)}
+                  placeholder="https://api.deepseek.com/v1"
+                  style={{ width: 360 }}
+                  disabled={!aiEnabled}
+                />
+              </SettingRow>
+              <SettingRow label="API Key" hint="模型服务的密钥，仅管理员可见，服务端调用不回传前端">
+                <Input.Password
+                  value={aiApiKey}
+                  onChange={(e) => setAiApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  style={{ width: 360 }}
+                  disabled={!aiEnabled}
+                />
+              </SettingRow>
+              <SettingRow label="模型名 (model)" hint="如 deepseek-chat / moonshot-v1-8k / qwen-plus">
+                <Input
+                  value={aiModel}
+                  onChange={(e) => setAiModel(e.target.value)}
+                  placeholder="deepseek-chat"
+                  style={{ width: 220 }}
+                  disabled={!aiEnabled}
+                />
+              </SettingRow>
+              <div style={{ marginTop: 12, textAlign: 'right' }}>
+                <Button icon={<SendOutlined />} loading={aiTesting} onClick={handleTestAi} disabled={!aiEnabled}>
+                  测试连接
+                </Button>
+              </div>
+              <div style={{ marginTop: 12, padding: '10px 14px', background: '#fff7ed', borderRadius: 6, border: '1px solid #fed7aa' }}>
+                <Text style={{ fontSize: 12, color: '#c2410c' }}>
+                  ⚠️ AI 生成的命令仅供参考，执行前请务必人工核对。系统已对常见高危命令（rm -rf、mkfs、关机等）做标红提醒，但不能保证拦截所有风险。
                 </Text>
               </div>
             </SettingCard>
