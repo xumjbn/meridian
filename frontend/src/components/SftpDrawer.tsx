@@ -11,6 +11,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   InboxOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import {
   sftpList,
@@ -55,6 +56,7 @@ export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose }) => {
   const [entries, setEntries] = useState<SftpEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   // 新建目录 / 重命名 弹窗
   const [mkdirOpen, setMkdirOpen] = useState(false);
@@ -265,33 +267,51 @@ export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose }) => {
             <Button icon={<FolderAddOutlined />} onClick={() => { setMkdirName(''); setMkdirOpen(true); }}>
               新建文件夹
             </Button>
+            <Upload
+              multiple
+              accept="*"
+              showUploadList={false}
+              disabled={busy}
+              beforeUpload={(file) => { handleUpload(file as File); return false; }}
+            >
+              <Button type="primary" icon={<UploadOutlined />} loading={busy}>上传</Button>
+            </Upload>
           </Space>
 
-          <Upload.Dragger
-            multiple
-            accept="*"
-            showUploadList={false}
-            disabled={busy}
-            beforeUpload={(file) => {
-              handleUpload(file as File);
-              return false;
-            }}
-            style={{ marginBottom: 12, padding: '4px 0' }}
-          >
-            <p style={{ margin: '6px 0', color: '#94a3b8', fontSize: 13 }}>
-              <InboxOutlined style={{ marginRight: 8, color: palette.primary }} />
-              点击或拖拽文件到此处，上传到当前目录
-            </p>
-          </Upload.Dragger>
+          <div style={{ fontSize: 12, color: palette.textSub, marginBottom: 8 }}>
+            当前目录：<code>{path || '~'}</code>　·　可直接把文件拖拽到下方列表区上传
+          </div>
 
-          <Table
-            columns={columns}
-            dataSource={entries}
-            rowKey="path"
-            loading={loading}
-            size="small"
-            pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 项` }}
-          />
+          {/* 文件列表为主；拖拽到此区域即上传（无常驻大拖拽框） */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+            onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              Array.from(e.dataTransfer?.files || []).forEach((f) => handleUpload(f));
+            }}
+            style={{ position: 'relative', borderRadius: 8, outline: dragging ? `2px dashed ${palette.primary}` : 'none' }}
+          >
+            <Table
+              columns={columns}
+              dataSource={entries}
+              rowKey="path"
+              loading={loading}
+              size="small"
+              pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 项` }}
+            />
+            {dragging && (
+              <div style={{
+                position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(99,102,241,0.08)', borderRadius: 8,
+                color: palette.primary, fontSize: 14, fontWeight: 500,
+              }}>
+                <InboxOutlined style={{ marginRight: 8 }} /> 松手上传到 {path || '~'}
+              </div>
+            )}
+          </div>
         </>
       )}
 

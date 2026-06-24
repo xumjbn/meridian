@@ -56,7 +56,7 @@ const SettingRow: React.FC<{ label: string; hint?: string; children: React.React
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f8fafc' }}>
     <div>
       <div style={{ fontSize: 13, fontWeight: 500, color: '#334155' }}>{label}</div>
-      {hint && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{hint}</div>}
     </div>
     <div style={{ flexShrink: 0, marginLeft: 24 }}>{children}</div>
   </div>
