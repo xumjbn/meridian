@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Popconfirm } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { getAsset, getTerminalWsUrl, getAssets, aiGenerateCommand, aiStatus, type Asset, type AiCommandResult } from '../services/api';
+import { getAsset, getTerminalWsUrl, getAssets, aiStatus, aiAgentStart, aiAgentContinue, aiAgentMessage, type Asset, type AgentState } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, RobotOutlined, EnterOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
@@ -567,12 +567,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  // ── AI 命令助手（自然语言 → shell，生成后确认执行）──────────
+  // ── AI 助手（Agent 模式：一句话自动完成任务 + 多轮上下文）──────
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<AiCommandResult | null>(null);
+  const [agentState, setAgentState] = useState<AgentState | null>(null);
 
   useEffect(() => {
     aiStatus().then((s) => setAiEnabled(!!s.enabled)).catch(() => {});
@@ -1065,26 +1065,54 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     }
   };
 
-  const handleAiGenerate = async () => {
-    if (!aiPrompt.trim()) return;
+  // 启动一次 Agent 任务（一句话 → 自动执行，命中高危暂停确认）
+  const startAgent = async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt) return;
+    if (assetId <= 0) { message.warning('请先选择资产再发起任务'); return; }
     setAiLoading(true);
-    setAiResult(null);
     try {
-      const res = await aiGenerateCommand(assetId, aiPrompt.trim());
-      setAiResult(res);
+      const st = await aiAgentStart(assetId, prompt);
+      setAgentState(st);
+      setAiPrompt('');
     } catch (e: any) {
-      message.error(e?.message || 'AI 生成失败');
+      message.error(e?.message || 'AI 任务启动失败');
     } finally {
       setAiLoading(false);
     }
   };
 
-  const fillCommand = () => {
-    if (aiResult) sendToTerminal(aiResult.command);
+  // 多轮追加指令（带上下文继续）
+  const sendAgentFollowup = async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt || !agentState) return;
+    setAiLoading(true);
+    try {
+      const st = await aiAgentMessage(agentState.session_id, prompt);
+      setAgentState(st);
+      setAiPrompt('');
+    } catch (e: any) {
+      message.error(e?.message || '发送失败');
+    } finally {
+      setAiLoading(false);
+    }
   };
-  const runCommand = () => {
-    if (aiResult) sendToTerminal(aiResult.command + '\n');
+
+  // 高危命令确认(true) / 中止(false)
+  const confirmAgent = async (approve: boolean) => {
+    if (!agentState) return;
+    setAiLoading(true);
+    try {
+      const st = await aiAgentContinue(agentState.session_id, approve);
+      setAgentState(st);
+    } catch (e: any) {
+      message.error(e?.message || '操作失败');
+    } finally {
+      setAiLoading(false);
+    }
   };
+
+  const resetAgent = () => { setAgentState(null); setAiPrompt(''); };
 
   return (
     <div style={{
@@ -1330,7 +1358,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         )}
       </div>
 
-      {/* AI 命令助手栏：仅在已连接且后端启用时出现 */}
+      {/* AI 助手栏（Agent 模式）：仅在已连接且后端启用时出现 */}
       {aiEnabled && status === 'connected' && (
         <div style={{ background: '#0F172A', borderTop: '1px solid #1e293b', padding: aiOpen ? '8px 10px' : '4px 10px', flexShrink: 0 }}>
           {!aiOpen ? (
@@ -1341,64 +1369,114 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               onClick={() => setAiOpen(true)}
               style={{ color: '#818cf8', fontSize: 12, padding: '0 4px' }}
             >
-              AI 命令助手
+              AI 助手 · 自动执行
             </Button>
           ) : (
             <div>
+              {/* 头部：标题 + 工作目录 + 新建/收起 */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: '#a5b4fc', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <RobotOutlined /> AI 助手 · 自动执行
+                  {agentState?.work_dir && (
+                    <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>cwd: {agentState.work_dir}</span>
+                  )}
+                </span>
+                <Space size={4}>
+                  {agentState && (
+                    <Button size="small" type="text" onClick={resetAgent} style={{ fontSize: 11, color: '#94a3b8' }}>新建任务</Button>
+                  )}
+                  <Button size="small" type="text" onClick={() => setAiOpen(false)} style={{ fontSize: 11, color: '#94a3b8' }}>收起</Button>
+                </Space>
+              </div>
+
+              {/* 执行记录（transcript） */}
+              {agentState && agentState.steps.length > 0 && (
+                <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 8, paddingRight: 2 }}>
+                  {agentState.steps.map((step) => (
+                    <div key={step.index} style={{ marginBottom: 8 }}>
+                      {step.thought && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>💭 {step.thought}</div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0', flex: 1, minWidth: 0, wordBreak: 'break-all' }}>
+                          <span style={{ color: '#818cf8' }}>▶ </span>{step.command}
+                        </span>
+                        <span style={{ fontSize: 10, color: step.exit_code === 0 ? '#10B981' : '#f87171', whiteSpace: 'nowrap' }}>
+                          exit {step.exit_code}{step.dangerous ? ' ⚠' : ''}
+                        </span>
+                        <Button size="small" type="text" title="填入可见终端" onClick={() => sendToTerminal(step.command)} style={{ fontSize: 10, color: '#38bdf8', padding: '0 4px' }}>填入</Button>
+                      </div>
+                      {step.output && (
+                        <pre style={{
+                          margin: '4px 0 0 0', maxHeight: 120, overflow: 'auto',
+                          background: '#020617', border: '1px solid #1e293b', borderRadius: 4,
+                          padding: '6px 8px', fontFamily: 'monospace', fontSize: 11, color: '#cbd5e1',
+                          whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                        }}>{step.output}</pre>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 执行中提示 */}
+              {aiLoading && (
+                <div style={{ fontSize: 11, color: '#818cf8', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <SyncOutlined spin /> AI 执行中…（自动运行命令并读取输出推进任务）
+                </div>
+              )}
+
+              {/* 高危命令待确认 */}
+              {!aiLoading && agentState?.status === 'awaiting_confirm' && (
+                <div style={{ marginBottom: 8, background: '#020617', border: '1px solid #b91c1c', borderRadius: 6, padding: '8px 10px' }}>
+                  {agentState.pending_note && (
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>💭 {agentState.pending_note}</div>
+                  )}
+                  <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#fca5a5', wordBreak: 'break-all', marginBottom: 4 }}>
+                    {agentState.pending}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#f87171', marginBottom: 8 }}>
+                    {agentState.pending_warning || '⚠️ 高危命令，确认后才会执行'}
+                  </div>
+                  <Space>
+                    <Button size="small" danger type="primary" icon={<ThunderboltOutlined />} onClick={() => confirmAgent(true)}>确认执行</Button>
+                    <Button size="small" onClick={() => confirmAgent(false)}>中止</Button>
+                    <Button size="small" type="text" icon={<EnterOutlined />} onClick={() => sendToTerminal(agentState.pending)} style={{ color: '#38bdf8' }}>仅填入终端</Button>
+                  </Space>
+                </div>
+              )}
+
+              {/* 完成 / 中止总结 */}
+              {!aiLoading && (agentState?.status === 'done' || agentState?.status === 'aborted') && agentState.summary && (
+                <div style={{
+                  marginBottom: 8, fontSize: 12,
+                  color: agentState.status === 'done' ? '#34d399' : '#94a3b8',
+                }}>
+                  {agentState.status === 'done' ? '✓ ' : '■ '}{agentState.summary}
+                </div>
+              )}
+
+              {/* 出错 */}
+              {!aiLoading && agentState?.status === 'error' && (
+                <div style={{ marginBottom: 8, fontSize: 12, color: '#f87171' }}>✗ {agentState.error}</div>
+              )}
+
+              {/* 输入框：无会话=发起任务，有会话=多轮追加 */}
               <Space.Compact style={{ width: '100%' }}>
                 <Input
                   size="small"
                   value={aiPrompt}
+                  disabled={aiLoading}
                   onChange={(e) => setAiPrompt(e.target.value)}
-                  onPressEnter={handleAiGenerate}
-                  placeholder="用自然语言描述需求，如：查找 /var/log 下最大的 5 个文件"
+                  onPressEnter={agentState ? sendAgentFollowup : startAgent}
+                  placeholder={agentState ? '追加指令继续（带上下文）…' : '一句话描述要自动完成的运维任务，如：清理 /var/log 下大于100M 的日志'}
                   prefix={<RobotOutlined style={{ color: '#818cf8' }} />}
                   style={{ background: '#1e293b', borderColor: '#334155', color: '#e2e8f0' }}
                 />
-                <Button size="small" type="primary" loading={aiLoading} onClick={handleAiGenerate}>
-                  生成
-                </Button>
-                <Button size="small" onClick={() => { setAiOpen(false); setAiResult(null); }}>
-                  收起
+                <Button size="small" type="primary" loading={aiLoading} onClick={agentState ? sendAgentFollowup : startAgent}>
+                  {agentState ? '继续' : '执行'}
                 </Button>
               </Space.Compact>
-
-              {aiResult && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{
-                    background: '#020617', border: `1px solid ${aiResult.dangerous ? '#b91c1c' : '#334155'}`,
-                    borderRadius: 6, padding: '8px 10px', fontFamily: 'monospace', fontSize: 13,
-                    color: '#e2e8f0', wordBreak: 'break-all',
-                  }}>
-                    {aiResult.command}
-                  </div>
-                  {aiResult.dangerous && (
-                    <div style={{ marginTop: 6, color: '#f87171', fontSize: 12 }}>
-                      {aiResult.warning || '⚠️ 高危命令，请谨慎核对'}
-                    </div>
-                  )}
-                  <Space style={{ marginTop: 8 }}>
-                    <Button size="small" icon={<EnterOutlined />} onClick={fillCommand}>
-                      填入终端（需回车）
-                    </Button>
-                    {aiResult.dangerous ? (
-                      <Popconfirm
-                        title="这是一条高危命令，确认直接执行？"
-                        okText="确认执行"
-                        cancelText="取消"
-                        okButtonProps={{ danger: true }}
-                        onConfirm={runCommand}
-                      >
-                        <Button size="small" danger icon={<ThunderboltOutlined />}>直接执行</Button>
-                      </Popconfirm>
-                    ) : (
-                      <Button size="small" type="primary" ghost icon={<ThunderboltOutlined />} onClick={runCommand}>
-                        直接执行
-                      </Button>
-                    )}
-                  </Space>
-                </div>
-              )}
             </div>
           )}
         </div>
