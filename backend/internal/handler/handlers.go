@@ -694,12 +694,66 @@ func ConnectTerminal(c *gin.Context) {
 		return
 	}
 
+	// 资产无凭据且开启「自动尝试」(默认开)：逐个试已保存的 SSH 凭据，成功即自动绑定；
+	// 全部失败则回退到 ProxyTerminal 内的手动输入流程。
+	if credPtr == nil && c.Query("autotry") != "0" {
+		credPtr = autoTryBindCredential(c, &asset, ws)
+	}
+
 	// 根据凭据类型选择 SSH 或 Telnet 代理
 	if credPtr != nil && credPtr.Type == "telnet" {
 		go sshproxy.ProxyTelnet(ws, &asset, credPtr)
 	} else {
 		go sshproxy.ProxyTerminal(ws, &asset, credPtr)
 	}
+}
+
+// wsStatus 向终端 WebSocket 推送一条 status 消息（前端会渲染到终端）
+func wsStatus(ws *websocket.Conn, msg string) {
+	b, _ := json.Marshal(map[string]string{"type": "status", "message": msg})
+	_ = ws.WriteMessage(websocket.TextMessage, b)
+}
+
+// autoTryBindCredential 资产未绑定凭据时，逐个尝试当前用户已保存的 SSH 凭据；
+// 第一个连接成功的凭据会被自动绑定到该资产并返回；全部失败返回 nil。
+// 调用时机：WebSocket 已升级、ProxyTerminal 尚未启动，独占写通道，无并发写。
+func autoTryBindCredential(c *gin.Context, asset *model.Asset, ws *websocket.Conn) *model.Credential {
+	db := store.GlobalDB
+	var creds []model.Credential
+	q := db.Where("type IN ?", []string{"ssh_password", "ssh_key"})
+	if !isAdmin(c) {
+		q = q.Where("owner_id = ?", currentUserID(c))
+	}
+	q.Order("id desc").Find(&creds)
+	if len(creds) == 0 {
+		return nil
+	}
+
+	wsStatus(ws, fmt.Sprintf("资产未绑定凭据，正在自动尝试 %d 个已保存的 SSH 凭据...", len(creds)))
+	for i := range creds {
+		cred := creds[i]
+		wsStatus(ws, fmt.Sprintf("尝试凭据「%s」(%s)...", cred.Name, cred.Username))
+		client, err := dialSSHForAsset(asset, &cred)
+		if err != nil {
+			continue
+		}
+		client.Close()
+		// 自动绑定到资产
+		db.Model(&model.Asset{}).Where("id = ?", asset.ID).Update("credential_id", cred.ID)
+		cid := cred.ID
+		asset.CredentialID = &cid
+		db.Create(&model.AuditLog{
+			Actor:  currentUsername(c),
+			Action: "AUTO_BIND_CRED",
+			Path:   fmt.Sprintf("资产#%d 自动绑定凭据#%d(%s)", asset.ID, cred.ID, cred.Name),
+			Status: 200,
+			IP:     c.ClientIP(),
+		})
+		wsStatus(ws, fmt.Sprintf("凭据「%s」连接成功，已自动绑定到该资产 ✓", cred.Name))
+		return &cred
+	}
+	wsStatus(ws, "已保存的凭据均无法连接，请在下方手动输入登录信息。")
+	return nil
 }
 
 // ==========================================

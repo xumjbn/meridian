@@ -58,6 +58,7 @@ type agentSession struct {
 	RequesterID uint
 	Actor       string
 	IP          string
+	Title       string // 首条任务描述（截断，用于历史列表）
 	Asset       model.Asset
 	Cred        model.Credential
 	OSHint      string
@@ -104,10 +105,70 @@ func sweepAgentSessions() {
 	}
 }
 
+// getAgentSession 取会话；内存未命中则从数据库加载并重建（重启后仍可继续/查看）
 func getAgentSession(id string) *agentSession {
 	agentMu.Lock()
-	defer agentMu.Unlock()
-	return agentSessions[id]
+	if s := agentSessions[id]; s != nil {
+		agentMu.Unlock()
+		return s
+	}
+	agentMu.Unlock()
+
+	var rec model.AgentSession
+	if err := store.GlobalDB.First(&rec, "id = ?", id).Error; err != nil {
+		return nil
+	}
+	s := &agentSession{
+		ID:          rec.ID,
+		RequesterID: rec.RequesterID,
+		Title:       rec.Title,
+		OSHint:      rec.OSHint,
+		WorkDir:     rec.WorkDir,
+		Status:      rec.Status,
+		Pending:     rec.Pending,
+		PendingNote: rec.PendingNote,
+		PendingWarn: rec.PendingWarn,
+		Summary:     rec.Summary,
+		LastErr:     rec.LastErr,
+		LastUsed:    time.Now(),
+	}
+	_ = json.Unmarshal([]byte(rec.Messages), &s.Messages)
+	_ = json.Unmarshal([]byte(rec.Steps), &s.Steps)
+	// 重新加载资产与凭据以便继续执行
+	store.GlobalDB.First(&s.Asset, rec.AssetID)
+	s.Actor = "" // 由调用方按当前用户补充审计
+	if s.Asset.CredentialID != nil {
+		store.GlobalDB.First(&s.Cred, *s.Asset.CredentialID)
+	}
+	agentMu.Lock()
+	agentSessions[id] = s
+	agentMu.Unlock()
+	return s
+}
+
+// persistSession 写穿持久化会话（调用方应持有 s.mu）
+func persistSession(s *agentSession) {
+	msgs, _ := json.Marshal(s.Messages)
+	steps, _ := json.Marshal(s.Steps)
+	rec := model.AgentSession{
+		ID:          s.ID,
+		RequesterID: s.RequesterID,
+		AssetID:     s.Asset.ID,
+		AssetName:   s.Asset.Name,
+		Title:       s.Title,
+		OSHint:      s.OSHint,
+		WorkDir:     s.WorkDir,
+		Messages:    string(msgs),
+		Steps:       string(steps),
+		Status:      s.Status,
+		Pending:     s.Pending,
+		PendingNote: s.PendingNote,
+		PendingWarn: s.PendingWarn,
+		Summary:     s.Summary,
+		LastErr:     s.LastErr,
+	}
+	// 主键存在则更新，否则创建
+	store.GlobalDB.Save(&rec)
 }
 
 // shSingleQuote 安全地单引号包裹路径，供 shell 使用
@@ -260,18 +321,19 @@ func callOpenAIMessages(baseURL, apiKey, model string, messages []chatMsg, maxTo
 }
 
 func agentSystemPrompt(osHint string) string {
-	return fmt.Sprintf(`你是一名严谨的 Linux 运维自动化助手，通过 SSH 在「%s」主机上执行命令来逐步完成用户交代的运维任务。
+	return fmt.Sprintf(`你是一名资深 Linux 运维工程师，通过 SSH 在「%s」主机上执行命令，以「观察→决策→执行」的循环逐步完成用户交代的任务。每次只做一步。
 
-你每一步必须只回复一个 JSON 对象（不要 markdown、不要多余文字、不要反引号），格式二选一：
-- 需要执行命令时：{"thought":"一句话说明你的判断","command":"要执行的单条 shell 命令","done":false}
-- 任务已完成时：{"thought":"...","command":"","done":true,"summary":"用一两句话向用户总结结果"}
+每一步只回复一个 JSON 对象（不要 markdown、不要反引号、不要任何多余文字），二选一：
+- 执行命令：{"thought":"你的判断与本步目的","command":"单条 shell 命令","done":false}
+- 任务完成：{"thought":"...","command":"","done":true,"summary":"向用户汇报结果与关键数据（可核对）"}
 
-规则：
-1) command 必须是非交互式的单条命令（可用管道与 && 串联），不要使用 vim/nano/top/less 等需要交互的程序，包管理一律加 -y。
-2) 每条命令在独立 shell 中按顺序执行：工作目录(cd)会被保留，但环境变量(export)不保留——需要时用 && 串联或使用绝对路径。
-3) 我会把每条命令的退出码与真实输出回传给你，你必须据此判断下一步，不要臆造输出。
-4) 优先采用只读/低风险方式；破坏性或高危操作仅在任务确需时使用（这类命令会被系统拦截并请用户二次确认）。
-5) 尽量高效，步数有限（最多 %d 步）；任务达成后立即 done。`, osHint, maxAgentSteps)
+工作准则：
+1) 先观察后动手：做任何修改/删除/重启前，先用只读命令确认现状（如 ls -lh、cat、df -h、systemctl status、ss -tlnp），核实路径、文件是否存在、影响范围，再决定下一步——绝不基于猜测直接动手。
+2) 命令精确且自包含：用绝对路径或基于「当前目录」（每步回执会告诉你 pwd）；可用管道与 &&；必须非交互式——不要用 vim/nano/top/less/man 等交互程序，分页器加 | cat，包管理与确认一律加 -y / -f。
+3) 状态规则：每条命令在独立 shell 顺序执行，工作目录(cd)会保留并在回执中回报当前目录；环境变量(export)不保留，需要时用 && 串联。
+4) 严格依据真实回执：我会回传每条命令的退出码、当前目录与真实输出；命令失败(退出码≠0)时先读输出诊断原因再调整，不要重复同一条失败命令，也不要臆测输出。
+5) 破坏性/高危命令（删除、清空、重启服务、改权限等）会被系统拦截并请用户确认后才执行；因此请先用只读命令把要处理的目标列清楚，再给出精确的高危命令。
+6) 高效收敛：步数上限 %d 步；目标达成立即 done，并在 summary 里给出可核对的结论（处理了什么、释放/变更了多少）。`, osHint, maxAgentSteps)
 }
 
 // runLoop 执行 Agent 推理-执行循环，直至：完成 / 命中高危待确认 / 出错 / 达步数上限。
@@ -350,8 +412,8 @@ func (s *agentSession) runLoop() {
 			IP:     s.IP,
 		})
 
-		// 把执行结果回传给模型推进下一步
-		obs := fmt.Sprintf("命令已执行，退出码 %d。输出如下：\n%s", code, truncateStr(out, agentFeedLimit))
+		// 把执行结果回传给模型推进下一步（含当前目录，便于其跟踪状态）
+		obs := fmt.Sprintf("退出码 %d ｜ 当前目录 %s\n输出:\n%s", code, s.WorkDir, truncateStr(out, agentFeedLimit))
 		s.Messages = append(s.Messages, chatMsg{Role: "user", Content: obs})
 	}
 
@@ -439,6 +501,7 @@ func StartAgent(c *gin.Context) {
 		RequesterID: currentUserID(c),
 		Actor:       currentUsername(c),
 		IP:          c.ClientIP(),
+		Title:       truncateStr(req.Prompt, 80),
 		Asset:       asset,
 		Cred:        cred,
 		OSHint:      osHint,
@@ -466,6 +529,7 @@ func StartAgent(c *gin.Context) {
 	s.mu.Lock()
 	s.runLoop()
 	s.LastUsed = time.Now()
+	persistSession(s)
 	resp := agentStateResp(s)
 	s.mu.Unlock()
 
@@ -494,6 +558,8 @@ func ContinueAgent(c *gin.Context) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.Actor = currentUsername(c) // 刷新审计主体（DB 加载的会话 Actor 为空）
+	s.IP = c.ClientIP()
 
 	if s.Status != "awaiting_confirm" || s.Pending == "" {
 		SendSuccess(c, agentStateResp(s))
@@ -520,6 +586,7 @@ func ContinueAgent(c *gin.Context) {
 		s.Messages = append(s.Messages, chatMsg{Role: "user", Content: note})
 	}
 	s.LastUsed = time.Now()
+	persistSession(s)
 	SendSuccess(c, agentStateResp(s))
 }
 
@@ -550,6 +617,8 @@ func MessageAgent(c *gin.Context) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.Actor = currentUsername(c) // 刷新审计主体（DB 加载的会话 Actor 为空）
+	s.IP = c.ClientIP()
 
 	// 追加指令视为新一轮意图：清空挂起的高危命令，让模型重新决策
 	s.Pending = ""
@@ -569,5 +638,45 @@ func MessageAgent(c *gin.Context) {
 
 	s.runLoop()
 	s.LastUsed = time.Now()
+	persistSession(s)
+	SendSuccess(c, agentStateResp(s))
+}
+
+// ListAgentSessions 当前用户的历史 Agent 会话（最近在前，供前端切换历史对话）
+func ListAgentSessions(c *gin.Context) {
+	var recs []model.AgentSession
+	store.GlobalDB.
+		Where("requester_id = ?", currentUserID(c)).
+		Order("updated_at desc").
+		Limit(50).
+		Find(&recs)
+	out := make([]gin.H, 0, len(recs))
+	for _, r := range recs {
+		out = append(out, gin.H{
+			"session_id": r.ID,
+			"asset_id":   r.AssetID,
+			"asset_name": r.AssetName,
+			"title":      r.Title,
+			"status":     r.Status,
+			"summary":    r.Summary,
+			"updated_at": r.UpdatedAt,
+		})
+	}
+	SendSuccess(c, out)
+}
+
+// GetAgentSessionDetail 读取单个历史会话完整状态（含步骤），供前端载入查看/继续
+func GetAgentSessionDetail(c *gin.Context) {
+	s := getAgentSession(c.Param("id"))
+	if s == nil {
+		SendError(c, 404, "会话不存在")
+		return
+	}
+	if s.RequesterID != currentUserID(c) && !isAdmin(c) {
+		SendError(c, 403, "无权访问该会话")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	SendSuccess(c, agentStateResp(s))
 }
