@@ -1,6 +1,6 @@
 # Meridian 接口定义文档 (API Specification)
 
-> 产品：Meridian · 子午 — 网络资产发现与统一接入平台 · 文档版本 **v5.0**（2026-06-23）· 对应应用版本 **v0.30**
+> 产品：Meridian · 子午 — 网络资产发现与统一接入平台 · 文档版本 **v5.1**（2026-06-24）· 对应应用版本 **v0.33**
 
 本文档定义前后端交互的 RESTful API、WebSocket 终端协议与 SSE 流。所有列出的接口均已实现。
 
@@ -236,6 +236,12 @@ data: 扫描完成。总IP数: 254，存活主机数: 12，新增资产: 3 ...  
 }
 ```
 
+### 12.2 Agent 历史会话（持久化，重启不丢）
+- 会话写穿持久化到 `agent_sessions` 表，作为「历史对话」来源。
+- `GET /api/ai/agent/sessions` → 当前用户的会话列表（最近在前，最多 50）：
+  `[{ "session_id", "asset_id", "asset_name", "title", "status", "summary", "updated_at" }]`
+- `GET /api/ai/agent/sessions/:id` → 单个会话完整状态（同 12.1 的会话状态结构，归属校验）。
+
 ---
 
 ## 13. SFTP 文件传输
@@ -258,9 +264,10 @@ data: 扫描完成。总IP数: 254，存活主机数: 12，新增资产: 3 ...  
 ### 14.1 建立连接
 - WebSocket：`ws(s)://<host>/api/ws/terminal/:asset_id?token=<会话令牌>`
 - 后端校验令牌 + 资产归属后，按凭据类型选择 SSH 或 Telnet 代理；非标端口取 `asset.SSHPort`。
+- 查询参数 `autotry`（默认开，传 `autotry=0` 关闭）：资产**未绑定凭据**时，先按归属逐个尝试已保存的 SSH 凭据（过程以 `status` 消息回显），**首个连接成功的自动绑定**到该资产并审计（`AUTO_BIND_CRED`）；全部失败再走下方手动输入。
 
 ### 14.2 消息交互
-- **后端索要临时凭据**（资产未绑定凭据时）：
+- **后端索要临时凭据**（资产未绑定凭据、且自动尝试未成功时）：
   后端→前端 `{ "type": "auth_request", "message": "..." }`；前端→后端 `{ "type": "auth_response", "username", "password" }`
 - **终端数据**：前端→后端为键盘输入（二进制/字符串）；后端→前端为目标机输出，前端 `xterm.write()` 渲染。
 - **窗口大小**：前端→后端 `{ "type": "resize", "cols": 120, "rows": 35 }`
