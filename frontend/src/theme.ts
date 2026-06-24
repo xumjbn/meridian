@@ -8,7 +8,7 @@ export const brand = {
   name: 'Meridian',
   zh: '子午',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.31',
+  version: 'v0.32',
   repo: 'https://github.com/',
 } as const;
 
@@ -72,7 +72,8 @@ export const antdLightToken = {
   colorBgContainer: '#ffffff',
   colorBgLayout: '#f5f6fb',
   colorText: '#0f172a',
-  colorTextDescription: '#64748b',
+  colorTextDescription: '#475569',
+  colorTextPlaceholder: '#808da2',
   colorBorder: '#e2e8f0',
   colorBorderSecondary: '#eef1f6',
   borderRadius: 8,

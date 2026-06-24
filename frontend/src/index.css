@@ -13,8 +13,8 @@
   --mrd-border: #eef1f6;
   --mrd-border-strong: #e2e8f0;
   --mrd-text: #0f172a;
-  --mrd-text-sub: #64748b;
-  --mrd-text-mute: #94a3b8;
+  --mrd-text-sub: #475569;
+  --mrd-text-mute: #64748b;
 
   background-color: var(--mrd-bg);
 }
