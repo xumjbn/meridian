@@ -97,6 +97,10 @@ func main() {
 		api.GET("/ai/status", handler.GetAIStatus)
 		api.POST("/ai/command", handler.GenerateCommand)
 		api.POST("/ai/test", handler.AdminMiddleware(), handler.TestAI)
+		// AI Agent：一句话自动完成任务（自动执行 + 高危拦截 + 多轮上下文）
+		api.POST("/ai/agent/start", handler.StartAgent)
+		api.POST("/ai/agent/continue", handler.ContinueAgent)
+		api.POST("/ai/agent/message", handler.MessageAgent)
 
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)
