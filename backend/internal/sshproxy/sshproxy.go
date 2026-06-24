@@ -154,6 +154,12 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 		return
 	}
 
+	// 6.5 强制远端 UTF-8 字符集：避免 macOS 等未设 LANG 的主机以 C/POSIX 区域设置
+	// 输出多字节字符时乱码（如 ls 中文文件名）。需服务器 AcceptEnv LANG LC_*（macOS/多数 Linux 默认开）；
+	// 不被接受时静默忽略，不影响连接。
+	_ = sshSession.Setenv("LANG", "en_US.UTF-8")
+	_ = sshSession.Setenv("LC_ALL", "en_US.UTF-8")
+
 	// 7. 开启 Shell
 	if err := sshSession.Shell(); err != nil {
 		errStatus, _ := json.Marshal(WSMessage{
