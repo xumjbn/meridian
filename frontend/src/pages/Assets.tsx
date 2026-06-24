@@ -111,7 +111,9 @@ export const Assets: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [groupBy, setGroupBy] = useState<'none' | 'type' | 'status' | 'tag'>('none');
   const [activeCollapseKeys, setActiveCollapseKeys] = useState<string[]>([]);
-  const prevGroupKeysRef = useRef<string[]>([]);
+  // 按分组维度分别记忆：该维度已展开的面板键、已知的分组键（用于识别新分组）
+  const expandedByGroupRef = useRef<Record<string, string[]>>({});
+  const knownKeysByGroupRef = useRef<Record<string, string[]>>({});
 
   // 全局标签列表与管理 Modal 状态
   const [globalTags, setGlobalTags] = useState<GlobalTag[]>([]);
@@ -362,29 +364,27 @@ export const Assets: React.FC = () => {
     fetchGlobalTags();
   }, [searchKey, filterType, filterStatus]);
 
-  // 监听分组方式或资产变动，智能维护分组展开/折叠状态，保留用户手动折叠的状态
+  // 监听分组方式或资产变动，按「分组维度」分别维护展开/折叠状态：
+  // 切换维度时恢复该维度上次的折叠状态；仅对该维度真正新增的分组默认展开。
   useEffect(() => {
-    if (groupBy !== 'none') {
-      const groups = groupedAssets();
-      const currentKeys = groups.map(([k]) => k);
-      
-      // 找出当前有、但之前没有的新增分组
-      const newKeys = currentKeys.filter(k => !prevGroupKeysRef.current.includes(k));
-      
-      if (newKeys.length > 0 || prevGroupKeysRef.current.length === 0) {
-        // 如果是首次启用分组，或者有新分组加入，我们更新 activeCollapseKeys
-        setActiveCollapseKeys((prev) => {
-          if (prevGroupKeysRef.current.length === 0) {
-            return currentKeys;
-          }
-          // 追加新产生的键，保留原先展开/折叠的状态
-          return Array.from(new Set([...prev, ...newKeys]));
-        });
-      }
-      prevGroupKeysRef.current = currentKeys;
+    if (groupBy === 'none') return;
+    const currentKeys = groupedAssets().map(([k]) => k);
+    const known = knownKeysByGroupRef.current[groupBy];
+    const saved = expandedByGroupRef.current[groupBy];
+
+    let nextExpanded: string[];
+    if (saved === undefined) {
+      // 该维度首次启用：全部展开
+      nextExpanded = currentKeys;
     } else {
-      prevGroupKeysRef.current = [];
+      // 保留该维度记忆的展开项（仅限仍存在的分组）+ 该维度新出现的分组（默认展开）
+      const newKeys = currentKeys.filter((k) => !(known || []).includes(k));
+      nextExpanded = Array.from(new Set([...saved.filter((k) => currentKeys.includes(k)), ...newKeys]));
     }
+
+    expandedByGroupRef.current[groupBy] = nextExpanded;
+    knownKeysByGroupRef.current[groupBy] = currentKeys;
+    setActiveCollapseKeys(nextExpanded);
   }, [groupBy, assets]);
 
   // 抽屉打开时拉取该资产的变更历史与可用性
@@ -425,6 +425,25 @@ export const Assets: React.FC = () => {
     setModalVisible(true);
   };
 
+  // 开放端口在 ports 字段以 JSON 数组字符串存储；表单里用逗号分隔文本编辑
+  const portsJsonToText = (json?: string): string => {
+    if (!json) return '';
+    try {
+      const arr = JSON.parse(json);
+      return Array.isArray(arr) ? arr.join(', ') : String(json);
+    } catch {
+      return json;
+    }
+  };
+  const portsTextToJson = (text?: string): string => {
+    if (!text || !String(text).trim()) return '';
+    const nums = String(text)
+      .split(/[,，\s]+/)
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n) && n > 0 && n <= 65535);
+    return JSON.stringify(Array.from(new Set(nums)).sort((a, b) => a - b));
+  };
+
   const handleOpenEdit = (record: Asset) => {
     let formValues = { ...record } as any;
     if (record.tags) {
@@ -436,6 +455,7 @@ export const Assets: React.FC = () => {
     } else {
       formValues.tags = [];
     }
+    formValues.ports = portsJsonToText(record.ports); // JSON → 逗号文本
     setEditingAsset(record);
     form.setFieldsValue(formValues);
     setModalVisible(true);
@@ -459,6 +479,8 @@ export const Assets: React.FC = () => {
       } else {
         payload.tags = JSON.stringify([]);
       }
+      // 逗号文本 → JSON 数组字符串
+      payload.ports = portsTextToJson(values.ports);
 
       // 自动注册未在 globalTags 中保存的新添加标签
       if (Array.isArray(values.tags)) {
@@ -944,7 +966,12 @@ export const Assets: React.FC = () => {
             return (
               <Collapse
                 activeKey={activeCollapseKeys}
-                onChange={(keys) => setActiveCollapseKeys(keys as string[])}
+                onChange={(keys) => {
+                  const next = keys as string[];
+                  setActiveCollapseKeys(next);
+                  // 记忆当前维度的展开/折叠状态，切换维度再切回时恢复
+                  expandedByGroupRef.current[groupBy] = next;
+                }}
                 items={groups.map(([k, rows]) => ({
                   key: k,
                   label: (
@@ -1048,6 +1075,14 @@ export const Assets: React.FC = () => {
             tooltip="终端连接、SFTP 文件传输与认证采集使用的 SSH 端口，支持非标端口，默认 22"
           >
             <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="默认 22" />
+          </Form.Item>
+
+          <Form.Item
+            label="开放端口"
+            name="ports"
+            tooltip="手动登记该资产对外开放的端口，逗号分隔；自动发现/在线探测也会回填此项"
+          >
+            <Input placeholder="如 22, 80, 443（逗号分隔，可留空）" />
           </Form.Item>
 
           {isAdmin && (
