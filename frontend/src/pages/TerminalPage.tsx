@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { getAsset, getTerminalWsUrl, getAssets, aiStatus, aiAgentStart, aiAgentContinue, aiAgentMessage, type Asset, type AgentState } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, RobotOutlined, EnterOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { SearchAddon } from '@xterm/addon-search';
+import { getAsset, getTerminalWsUrl, getAssets, type Asset } from '../services/api';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
 import { SnippetManager } from '../components/SnippetManager';
+import { TerminalAIPanel } from '../components/TerminalAIPanel';
 import { loadSnippets, matchSnippets, type CmdSnippet } from '../commandSnippets';
 import '@xterm/xterm/css/xterm.css';
 
@@ -20,6 +22,33 @@ const fontFamilies = [
   { label: 'Courier New', value: '"Courier New", Courier, monospace' },
   { label: 'System Monospace', value: 'Menlo, Monaco, Consolas, monospace' },
 ];
+
+// 终端配色主题（xterm theme + 容器底色），可在顶栏切换并持久化
+interface TermTheme { background: string; foreground: string; cursor: string; [k: string]: string }
+const termThemes: { label: string; value: string; theme: TermTheme }[] = [
+  { label: 'Meridian 深空', value: 'meridian', theme: {
+    background: '#0B0F19', foreground: '#F3F4F6', cursor: '#1677ff', black: '#000000', red: '#EF4444',
+    green: '#10B981', yellow: '#F59E0B', blue: '#3B82F6', magenta: '#8B5CF6', cyan: '#06B6D4', white: '#FFFFFF' } },
+  { label: 'VS Code 暗', value: 'vscode', theme: {
+    background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#aeafad', black: '#000000', red: '#cd3131',
+    green: '#0dbc79', yellow: '#e5e510', blue: '#2472c8', magenta: '#bc3fbc', cyan: '#11a8cd', white: '#e5e5e5' } },
+  { label: 'Dracula', value: 'dracula', theme: {
+    background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f2', black: '#21222c', red: '#ff5555',
+    green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2' } },
+  { label: 'Monokai', value: 'monokai', theme: {
+    background: '#272822', foreground: '#f8f8f2', cursor: '#f8f8f0', black: '#272822', red: '#f92672',
+    green: '#a6e22e', yellow: '#f4bf75', blue: '#66d9ef', magenta: '#ae81ff', cyan: '#a1efe4', white: '#f8f8f2' } },
+  { label: 'Solarized 暗', value: 'sol-dark', theme: {
+    background: '#002b36', foreground: '#93a1a1', cursor: '#93a1a1', black: '#073642', red: '#dc322f',
+    green: '#859900', yellow: '#b58900', blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5' } },
+  { label: 'Solarized 亮', value: 'sol-light', theme: {
+    background: '#fdf6e3', foreground: '#586e75', cursor: '#586e75', black: '#073642', red: '#dc322f',
+    green: '#859900', yellow: '#b58900', blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5' } },
+  { label: 'GitHub 亮', value: 'gh-light', theme: {
+    background: '#ffffff', foreground: '#24292e', cursor: '#044289', black: '#24292e', red: '#d73a49',
+    green: '#28a745', yellow: '#dbab09', blue: '#0366d6', magenta: '#5a32a3', cyan: '#0598bc', white: '#6a737d' } },
+];
+const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value === v) || termThemes[0]).theme;
 
 // 一个终端窗格（行内带宽度权重 flex）
 interface PaneNode {
@@ -100,11 +129,24 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     return localStorage.getItem('term_font_family') || 'Fira Code, Menlo, Monaco, Courier New, monospace';
   });
 
+  // 终端配色主题
+  const [termThemeKey, setTermThemeKey] = useState<string>(() => localStorage.getItem('term_theme') || 'meridian');
+  const termTheme = getTermTheme(termThemeKey);
+
   // 命令自动补全开关 + 命令库管理弹窗
   const [completionEnabled, setCompletionEnabled] = useState<boolean>(() => {
     return localStorage.getItem('term_completion_enabled') !== 'false';
   });
   const [snippetModalOpen, setSnippetModalOpen] = useState(false);
+
+  // 未绑定凭据时自动尝试已存凭据（默认开）；getTerminalWsUrl 读取 localStorage 决定是否带 autotry=0
+  const [autoTryCred, setAutoTryCred] = useState<boolean>(() => {
+    return localStorage.getItem('term_auto_cred') !== 'false';
+  });
+  const toggleAutoTryCred = (checked: boolean) => {
+    setAutoTryCred(checked);
+    localStorage.setItem('term_auto_cred', checked ? 'true' : 'false');
+  };
 
   const toggleCompletion = (checked: boolean) => {
     setCompletionEnabled(checked);
@@ -333,6 +375,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     assetId={pane.assetId}
                     fontSize={fontSize}
                     fontFamily={fontFamily}
+                    termTheme={termTheme}
                     assets={assets}
                     completionEnabled={completionEnabled}
                     canClose={totalPanes > 1}
@@ -453,6 +496,16 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             </Button>
           </span>
 
+          <Tooltip title="资产未绑定凭据时，先自动尝试你已保存的 SSH 凭据，成功则自动绑定；全部失败再手动输入">
+            <Checkbox
+              checked={autoTryCred}
+              onChange={(e) => toggleAutoTryCred(e.target.checked)}
+              style={{ fontSize: 12, color: '#475569' }}
+            >
+              自动试凭据
+            </Checkbox>
+          </Tooltip>
+
           <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
             字体:
             <Select
@@ -473,6 +526,18 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
               onChange={(val) => setFontSize(val)}
               options={fontSizes.map((s) => ({ label: `${s}px`, value: s }))}
               style={{ width: 75, marginLeft: 6 }}
+            />
+          </span>
+
+          <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
+            配色:
+            <Select
+              size="small"
+              value={termThemeKey}
+              onChange={(val) => { setTermThemeKey(val); localStorage.setItem('term_theme', val); }}
+              options={termThemes.map((t) => ({ label: t.label, value: t.value }))}
+              style={{ width: 110, marginLeft: 6 }}
+              popupMatchSelectWidth={false}
             />
           </span>
 
@@ -503,6 +568,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
 
       <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: '#0B0F19' }}>
         {renderGrid()}
+        {/* 悬浮 AI 助手（收起为右下角按钮，展开为可调宽浮层，带历史切换） */}
+        <TerminalAIPanel assets={assets} defaultAssetId={assetId} />
       </div>
 
       <SnippetManager open={snippetModalOpen} onClose={() => setSnippetModalOpen(false)} />
@@ -516,6 +583,7 @@ interface TerminalItemProps {
   assetId: number;
   fontSize: number;
   fontFamily: string;
+  termTheme: TermTheme;    // 终端配色主题
   assets: Asset[];
   completionEnabled: boolean;
   canClose?: boolean;      // 是否允许独立关闭该窗格（至少保留一个）
@@ -533,7 +601,7 @@ const isPrintableInput = (s: string): boolean => {
   return true;
 };
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, assets, completionEnabled, canClose, onClose, onAssetChange }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, assets, completionEnabled, canClose, onClose, onAssetChange }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -544,6 +612,18 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   );
   const [errorDetail, setErrorDetail] = useState<string>('');
   const [form] = Form.useForm();
+
+  // 终端搜索（Ctrl+F）
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<any>(null);
+
+  // 终端输出历史缓冲（重连后回放，恢复以前的终端记录）
+  const outputBufRef = useRef<Array<string | Uint8Array>>([]);
+  const outputBytesRef = useRef(0);
+  const termThemeRef = useRef(termTheme);
+  useEffect(() => { termThemeRef.current = termTheme; }, [termTheme]);
 
   // 挂载全局注册同步 Hook
   const { globalSyncedIds, setGlobalSyncedIds, registerGlobalWS, broadcastGlobalData } = useTerminals();
@@ -566,17 +646,6 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-
-  // ── AI 助手（Agent 模式：一句话自动完成任务 + 多轮上下文）──────
-  const [aiEnabled, setAiEnabled] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [agentState, setAgentState] = useState<AgentState | null>(null);
-
-  useEffect(() => {
-    aiStatus().then((s) => setAiEnabled(!!s.enabled)).catch(() => {});
-  }, []);
 
   // ── 命令自动补全（本地输入行追踪 + 片段提示）────────────────
   const [suggestions, setSuggestions] = useState<CmdSnippet[]>([]);
@@ -791,19 +860,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       scrollback: 5000,
       fontSize: fontSize,
       fontFamily: fontFamily,
-      theme: {
-        background: '#0B0F19',
-        foreground: '#F3F4F6',
-        cursor: '#1677ff',
-        black: '#000000',
-        red: '#EF4444',
-        green: '#10B981',
-        yellow: '#F59E0B',
-        blue: '#3B82F6',
-        magenta: '#8B5CF6',
-        cyan: '#06B6D4',
-        white: '#FFFFFF',
-      },
+      theme: { ...termThemeRef.current },
       allowProposedApi: true,
     });
     termRef.current = term;
@@ -811,6 +868,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
     term.loadAddon(fitAddon);
+
+    const searchAddon = new SearchAddon();
+    searchAddonRef.current = searchAddon;
+    term.loadAddon(searchAddon);
 
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true;
@@ -824,11 +885,26 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         navigator.clipboard?.readText().then((t) => { if (t) term.paste(t); }).catch(() => {});
         return false;
       }
+      // Ctrl+F 打开终端内搜索
+      if (e.ctrlKey && !e.shiftKey && key === 'f') {
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus?.(), 0);
+        return false;
+      }
       return true;
     });
 
     if (terminalRef.current) {
       term.open(terminalRef.current);
+
+      // 重连时回放此前的终端历史输出（恢复以前的终端记录）
+      if (outputBufRef.current.length > 0) {
+        term.write('\x1b[90m──────── 以下为重连前的历史输出 ────────\x1b[0m\r\n');
+        for (const chunk of outputBufRef.current) {
+          term.write(chunk as string);
+        }
+        term.write('\x1b[90m──────── 历史输出结束，下面是新会话 ────────\x1b[0m\r\n');
+      }
 
       const fitSafe = () => {
         const el = terminalRef.current;
@@ -896,6 +972,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       }
     };
 
+    // 累积远端输出到历史缓冲（上限 512KB，超出从头丢弃），供重连回放
+    const appendBuf = (chunk: string | Uint8Array) => {
+      outputBufRef.current.push(chunk);
+      outputBytesRef.current += typeof chunk === 'string' ? chunk.length : chunk.byteLength;
+      while (outputBytesRef.current > 512 * 1024 && outputBufRef.current.length > 1) {
+        const removed = outputBufRef.current.shift()!;
+        outputBytesRef.current -= typeof removed === 'string' ? removed.length : removed.byteLength;
+      }
+    };
+
     socket.onmessage = (event) => {
       if (typeof event.data === 'string') {
         try {
@@ -925,9 +1011,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           }
         } catch (e) {
           term.write(event.data);
+          appendBuf(event.data as string);
         }
       } else if (event.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(event.data));
+        const bytes = new Uint8Array(event.data);
+        term.write(bytes);
+        appendBuf(bytes);
       }
     };
 
@@ -1004,6 +1093,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     term.options.fontSize = fontSize;
     term.options.fontFamily = fontFamily;
+    term.options.theme = { ...termTheme };
 
     const fitSafe = () => {
       try {
@@ -1021,7 +1111,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
     };
-  }, [fontSize, fontFamily]);
+  }, [fontSize, fontFamily, termTheme]);
 
   const handleAuthSubmit = (values: any) => {
     const activeWs = wsRef.current;
@@ -1054,65 +1144,25 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     });
   };
 
-  // AI 助手：把文本直接写入本窗格终端。不带换行 = 仅填入待回车；带换行 = 直接执行
-  const sendToTerminal = (text: string) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(new TextEncoder().encode(text));
-      termRef.current?.focus();
-    } else {
-      message.warning('终端未连接');
-    }
+  // 终端搜索：高亮所有匹配并跳转上一个/下一个
+  const doSearch = (forward: boolean) => {
+    const q = searchQuery;
+    if (!q || !searchAddonRef.current) return;
+    const opts = {
+      caseSensitive: false,
+      decorations: {
+        matchBackground: '#f59e0b66', matchBorder: '#f59e0b', matchOverviewRuler: '#f59e0b',
+        activeMatchBackground: '#f59e0b', activeMatchBorder: '#b45309', activeMatchColorOverviewRuler: '#fbbf24',
+      },
+    };
+    if (forward) searchAddonRef.current.findNext(q, opts as any);
+    else searchAddonRef.current.findPrevious(q, opts as any);
   };
-
-  // 启动一次 Agent 任务（一句话 → 自动执行，命中高危暂停确认）
-  const startAgent = async () => {
-    const prompt = aiPrompt.trim();
-    if (!prompt) return;
-    if (assetId <= 0) { message.warning('请先选择资产再发起任务'); return; }
-    setAiLoading(true);
-    try {
-      const st = await aiAgentStart(assetId, prompt);
-      setAgentState(st);
-      setAiPrompt('');
-    } catch (e: any) {
-      message.error(e?.message || 'AI 任务启动失败');
-    } finally {
-      setAiLoading(false);
-    }
+  const closeSearch = () => {
+    setSearchOpen(false);
+    searchAddonRef.current?.clearDecorations?.();
+    termRef.current?.focus();
   };
-
-  // 多轮追加指令（带上下文继续）
-  const sendAgentFollowup = async () => {
-    const prompt = aiPrompt.trim();
-    if (!prompt || !agentState) return;
-    setAiLoading(true);
-    try {
-      const st = await aiAgentMessage(agentState.session_id, prompt);
-      setAgentState(st);
-      setAiPrompt('');
-    } catch (e: any) {
-      message.error(e?.message || '发送失败');
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  // 高危命令确认(true) / 中止(false)
-  const confirmAgent = async (approve: boolean) => {
-    if (!agentState) return;
-    setAiLoading(true);
-    try {
-      const st = await aiAgentContinue(agentState.session_id, approve);
-      setAgentState(st);
-    } catch (e: any) {
-      message.error(e?.message || '操作失败');
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const resetAgent = () => { setAgentState(null); setAiPrompt(''); };
 
   return (
     <div style={{
@@ -1163,9 +1213,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
             }
             options={assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id }))}
-            style={{ width: '60%', maxWidth: '180px' }}
+            style={{ flex: 1, minWidth: 150, maxWidth: 300 }}
             dropdownStyle={{ zIndex: 3000 }}
-            popupMatchSelectWidth={false}
+            popupMatchSelectWidth={280}
           />
           {status === 'connecting' && <SyncOutlined spin style={{ color: '#6366f1', fontSize: 11 }} />}
           {status === 'connected' && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />}
@@ -1302,8 +1352,42 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             height: '100%',
             padding: '8px',
             boxSizing: 'border-box',
+            background: termTheme.background,
           }}
         />
+
+        {/* 终端搜索框（Ctrl+F） */}
+        {searchOpen && (
+          <div style={{
+            position: 'absolute', top: 6, right: 10, zIndex: 16,
+            display: 'flex', alignItems: 'center', gap: 4,
+            background: '#1e293b', border: '1px solid #334155', borderRadius: 6,
+            padding: '4px 6px', boxShadow: '0 4px 12px rgba(0,0,0,0.45)',
+          }}>
+            <Input
+              ref={searchInputRef}
+              size="small"
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); doSearch(!e.shiftKey); }
+                else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+              }}
+              placeholder="搜索终端内容"
+              style={{ width: 170, background: '#0f172a', borderColor: '#334155', color: '#e2e8f0' }}
+            />
+            <Tooltip title="上一个 (Shift+Enter)">
+              <Button size="small" type="text" onClick={() => doSearch(false)} style={{ color: '#94a3b8', padding: '0 4px' }}>↑</Button>
+            </Tooltip>
+            <Tooltip title="下一个 (Enter)">
+              <Button size="small" type="text" onClick={() => doSearch(true)} style={{ color: '#94a3b8', padding: '0 4px' }}>↓</Button>
+            </Tooltip>
+            <Tooltip title="关闭 (Esc)">
+              <Button size="small" type="text" onClick={closeSearch} style={{ color: '#94a3b8', padding: '0 4px' }}>✕</Button>
+            </Tooltip>
+          </div>
+        )}
 
         {/* 命令自动补全下拉：锚定光标，默认在输入行上方展开，避免遮挡输入 */}
         {completionEnabled && status === 'connected' && suggestions.length > 0 && anchor && (
@@ -1358,129 +1442,6 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         )}
       </div>
 
-      {/* AI 助手栏（Agent 模式）：仅在已连接且后端启用时出现 */}
-      {aiEnabled && status === 'connected' && (
-        <div style={{ background: '#0F172A', borderTop: '1px solid #1e293b', padding: aiOpen ? '8px 10px' : '4px 10px', flexShrink: 0 }}>
-          {!aiOpen ? (
-            <Button
-              type="text"
-              size="small"
-              icon={<RobotOutlined />}
-              onClick={() => setAiOpen(true)}
-              style={{ color: '#818cf8', fontSize: 12, padding: '0 4px' }}
-            >
-              AI 助手 · 自动执行
-            </Button>
-          ) : (
-            <div>
-              {/* 头部：标题 + 工作目录 + 新建/收起 */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: '#a5b4fc', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <RobotOutlined /> AI 助手 · 自动执行
-                  {agentState?.work_dir && (
-                    <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>cwd: {agentState.work_dir}</span>
-                  )}
-                </span>
-                <Space size={4}>
-                  {agentState && (
-                    <Button size="small" type="text" onClick={resetAgent} style={{ fontSize: 11, color: '#94a3b8' }}>新建任务</Button>
-                  )}
-                  <Button size="small" type="text" onClick={() => setAiOpen(false)} style={{ fontSize: 11, color: '#94a3b8' }}>收起</Button>
-                </Space>
-              </div>
-
-              {/* 执行记录（transcript） */}
-              {agentState && agentState.steps.length > 0 && (
-                <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 8, paddingRight: 2 }}>
-                  {agentState.steps.map((step) => (
-                    <div key={step.index} style={{ marginBottom: 8 }}>
-                      {step.thought && (
-                        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>💭 {step.thought}</div>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0', flex: 1, minWidth: 0, wordBreak: 'break-all' }}>
-                          <span style={{ color: '#818cf8' }}>▶ </span>{step.command}
-                        </span>
-                        <span style={{ fontSize: 10, color: step.exit_code === 0 ? '#10B981' : '#f87171', whiteSpace: 'nowrap' }}>
-                          exit {step.exit_code}{step.dangerous ? ' ⚠' : ''}
-                        </span>
-                        <Button size="small" type="text" title="填入可见终端" onClick={() => sendToTerminal(step.command)} style={{ fontSize: 10, color: '#38bdf8', padding: '0 4px' }}>填入</Button>
-                      </div>
-                      {step.output && (
-                        <pre style={{
-                          margin: '4px 0 0 0', maxHeight: 120, overflow: 'auto',
-                          background: '#020617', border: '1px solid #1e293b', borderRadius: 4,
-                          padding: '6px 8px', fontFamily: 'monospace', fontSize: 11, color: '#cbd5e1',
-                          whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                        }}>{step.output}</pre>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 执行中提示 */}
-              {aiLoading && (
-                <div style={{ fontSize: 11, color: '#818cf8', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <SyncOutlined spin /> AI 执行中…（自动运行命令并读取输出推进任务）
-                </div>
-              )}
-
-              {/* 高危命令待确认 */}
-              {!aiLoading && agentState?.status === 'awaiting_confirm' && (
-                <div style={{ marginBottom: 8, background: '#020617', border: '1px solid #b91c1c', borderRadius: 6, padding: '8px 10px' }}>
-                  {agentState.pending_note && (
-                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>💭 {agentState.pending_note}</div>
-                  )}
-                  <div style={{ fontFamily: 'monospace', fontSize: 13, color: '#fca5a5', wordBreak: 'break-all', marginBottom: 4 }}>
-                    {agentState.pending}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#f87171', marginBottom: 8 }}>
-                    {agentState.pending_warning || '⚠️ 高危命令，确认后才会执行'}
-                  </div>
-                  <Space>
-                    <Button size="small" danger type="primary" icon={<ThunderboltOutlined />} onClick={() => confirmAgent(true)}>确认执行</Button>
-                    <Button size="small" onClick={() => confirmAgent(false)}>中止</Button>
-                    <Button size="small" type="text" icon={<EnterOutlined />} onClick={() => sendToTerminal(agentState.pending)} style={{ color: '#38bdf8' }}>仅填入终端</Button>
-                  </Space>
-                </div>
-              )}
-
-              {/* 完成 / 中止总结 */}
-              {!aiLoading && (agentState?.status === 'done' || agentState?.status === 'aborted') && agentState.summary && (
-                <div style={{
-                  marginBottom: 8, fontSize: 12,
-                  color: agentState.status === 'done' ? '#34d399' : '#94a3b8',
-                }}>
-                  {agentState.status === 'done' ? '✓ ' : '■ '}{agentState.summary}
-                </div>
-              )}
-
-              {/* 出错 */}
-              {!aiLoading && agentState?.status === 'error' && (
-                <div style={{ marginBottom: 8, fontSize: 12, color: '#f87171' }}>✗ {agentState.error}</div>
-              )}
-
-              {/* 输入框：无会话=发起任务，有会话=多轮追加 */}
-              <Space.Compact style={{ width: '100%' }}>
-                <Input
-                  size="small"
-                  value={aiPrompt}
-                  disabled={aiLoading}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  onPressEnter={agentState ? sendAgentFollowup : startAgent}
-                  placeholder={agentState ? '追加指令继续（带上下文）…' : '一句话描述要自动完成的运维任务，如：清理 /var/log 下大于100M 的日志'}
-                  prefix={<RobotOutlined style={{ color: '#818cf8' }} />}
-                  style={{ background: '#1e293b', borderColor: '#334155', color: '#e2e8f0' }}
-                />
-                <Button size="small" type="primary" loading={aiLoading} onClick={agentState ? sendAgentFollowup : startAgent}>
-                  {agentState ? '继续' : '执行'}
-                </Button>
-              </Space.Compact>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };

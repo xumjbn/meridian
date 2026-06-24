@@ -234,6 +234,19 @@ export const aiAgentContinue = (sessionId: string, approve: boolean): Promise<Ag
 export const aiAgentMessage = (sessionId: string, prompt: string): Promise<AgentState> =>
   api.post('/ai/agent/message', { session_id: sessionId, prompt });
 
+// 历史会话（持久化，重启不丢）
+export interface AgentSessionMeta {
+  session_id: string;
+  asset_id: number;
+  asset_name: string;
+  title: string;
+  status: string;
+  summary: string;
+  updated_at: string;
+}
+export const aiAgentSessions = (): Promise<AgentSessionMeta[]> => api.get('/ai/agent/sessions');
+export const aiAgentSession = (id: string): Promise<AgentState> => api.get(`/ai/agent/sessions/${id}`);
+
 // ── SFTP 文件传输 ─────────────────────────────
 export interface SftpEntry {
   name: string;
@@ -417,7 +430,10 @@ export const getScanStreamUrl = (taskId: number): string => {
 export const getTerminalWsUrl = (assetId: number): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('mrd-token') || '';
-  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  // 自动尝试已存凭据（默认开）；关闭时附带 autotry=0
+  const autoTry = localStorage.getItem('term_auto_cred') !== 'false';
+  const params = [token ? `token=${encodeURIComponent(token)}` : '', autoTry ? '' : 'autotry=0'].filter(Boolean);
+  const q = params.length ? `?${params.join('&')}` : '';
 
   // 仅在 Vite 开发模式下直连后端 8080，绕开 dev server 偶发的 ws 代理问题；
   // 生产 / 容器部署（vite build）一律走同源，由 nginx 反向代理到后端，
