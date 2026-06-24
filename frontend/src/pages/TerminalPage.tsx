@@ -133,6 +133,9 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const [termThemeKey, setTermThemeKey] = useState<string>(() => localStorage.getItem('term_theme') || 'meridian');
   const termTheme = getTermTheme(termThemeKey);
 
+  // 终端字符编码（默认 UTF-8；连本地 Windows/GBK 主机中文乱码时切 GBK）
+  const [termEncoding, setTermEncoding] = useState<string>(() => localStorage.getItem('term_encoding') || 'utf-8');
+
   // 命令自动补全开关 + 命令库管理弹窗
   const [completionEnabled, setCompletionEnabled] = useState<boolean>(() => {
     return localStorage.getItem('term_completion_enabled') !== 'false';
@@ -376,6 +379,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     fontSize={fontSize}
                     fontFamily={fontFamily}
                     termTheme={termTheme}
+                    termEncoding={termEncoding}
                     assets={assets}
                     completionEnabled={completionEnabled}
                     canClose={totalPanes > 1}
@@ -541,6 +545,20 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             />
           </span>
 
+          <Tooltip title="远端中文乱码时切到 GBK（如本地 Windows / GB18030 主机）；切换后建议重新连接">
+            <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
+              编码:
+              <Select
+                size="small"
+                value={termEncoding}
+                onChange={(val) => { setTermEncoding(val); localStorage.setItem('term_encoding', val); }}
+                options={[{ label: 'UTF-8', value: 'utf-8' }, { label: 'GBK', value: 'gbk' }]}
+                style={{ width: 84, marginLeft: 6 }}
+                popupMatchSelectWidth={false}
+              />
+            </span>
+          </Tooltip>
+
           <span style={{ fontSize: 12, color: '#94a3b8' }}>
             右键粘贴 · Ctrl+Shift+C / V
           </span>
@@ -584,6 +602,7 @@ interface TerminalItemProps {
   fontSize: number;
   fontFamily: string;
   termTheme: TermTheme;    // 终端配色主题
+  termEncoding: string;    // 终端字符编码：utf-8 | gbk
   assets: Asset[];
   completionEnabled: boolean;
   canClose?: boolean;      // 是否允许独立关闭该窗格（至少保留一个）
@@ -601,7 +620,7 @@ const isPrintableInput = (s: string): boolean => {
   return true;
 };
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, assets, completionEnabled, canClose, onClose, onAssetChange }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -624,6 +643,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const outputBytesRef = useRef(0);
   const termThemeRef = useRef(termTheme);
   useEffect(() => { termThemeRef.current = termTheme; }, [termTheme]);
+  const termEncodingRef = useRef(termEncoding);
+  useEffect(() => { termEncodingRef.current = termEncoding; }, [termEncoding]);
 
   // 挂载全局注册同步 Hook
   const { globalSyncedIds, setGlobalSyncedIds, registerGlobalWS, broadcastGlobalData } = useTerminals();
@@ -972,6 +993,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       }
     };
 
+    // GBK/GB18030 流式解码器（编码=gbk 时用它把字节转成字符串，处理跨帧半个汉字）
+    let gbkDecoder: TextDecoder | null = null;
+    try { gbkDecoder = new TextDecoder('gb18030'); } catch { gbkDecoder = null; }
+
     // 累积远端输出到历史缓冲（上限 512KB，超出从头丢弃），供重连回放
     const appendBuf = (chunk: string | Uint8Array) => {
       outputBufRef.current.push(chunk);
@@ -1015,8 +1040,15 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         }
       } else if (event.data instanceof ArrayBuffer) {
         const bytes = new Uint8Array(event.data);
-        term.write(bytes);
-        appendBuf(bytes);
+        if (termEncodingRef.current === 'gbk' && gbkDecoder) {
+          // GBK 主机：先解码为字符串再写入（xterm 默认按 UTF-8 解析字节，会乱码）
+          const s = gbkDecoder.decode(bytes, { stream: true });
+          term.write(s);
+          appendBuf(s);
+        } else {
+          term.write(bytes);
+          appendBuf(bytes);
+        }
       }
     };
 
