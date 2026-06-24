@@ -1,7 +1,7 @@
 # Meridian 架构设计文档 (Architecture Design)
 
 > **产品**: Meridian · 子午 — 网络资产发现与统一接入平台
-> **文档版本**: v5.0（2026-06-23）· 对应应用版本 **v0.30**
+> **文档版本**: v5.1（2026-06-24）· 对应应用版本 **v0.33**
 
 本文档描述了 Meridian 的整体技术架构、模块职责、以及关键机制的实现逻辑。
 
@@ -46,7 +46,8 @@ graph TD
 - **凭据保管箱**：SSH 密码/密钥/Telnet 的录入管理 + 连通性测试（按归属隔离）。
 - **系统设置**：扫描并发/超时、SSH 超时、**可用性监控开关/间隔**、**告警通知（企业微信/钉钉/Webhook）**、**AI 命令助手（OpenAI 兼容）** 配置真实读写（管理员）。
 - **用户管理 / 审计**：`Users` 用户增删改、角色与状态（审批 pending→active）；`Audit` 操作审计查询（均管理员）。
-- **网页终端 (WebSSH / Telnet)**：集成 `@xterm/xterm`，WebSocket 双向交互、自适应缩放、应用内多标签、全屏、滚动回看；**多屏分屏（单/左右双分/田字四分，可独立关闭、分隔条自由拖拽缩放）**、**命令同步广播**、**命令自动补全**（本地输入行追踪 + 内置 200+ 运维命令片段库，Tab 补全）、**AI 命令助手栏**（自然语言生成命令，确认后填入/执行）。
+- **网页终端 (WebSSH / Telnet)**：集成 `@xterm/xterm`，WebSocket 双向交互、自适应缩放、应用内多标签、全屏、滚动回看；**多屏分屏（单/左右双分/田字四分，可独立关闭、分隔条自由拖拽缩放）**、**命令同步广播**、**命令自动补全**（本地输入行追踪 + 内置 200+ 运维命令片段库，Tab 补全）、**屏幕搜索**（Ctrl+F，`@xterm/addon-search`）、**配色主题**（7 套可热切换并持久化）、**重连历史回放**（本地缓冲，≤512KB）。
+- **悬浮 AI 助手 (`components/TerminalAIPanel.tsx`)**：终端右下角悬浮按钮，点击展开为浮层；可拖拽调宽、选择目标资产、**切换历史对话**；Agent 在后端独立 SSH 通道自动执行命令，命中高危暂停确认。
 - **全局搜索**：Ctrl/Cmd + K 检索资产与页面跳转。
 
 ### 2.2 后端 (Backend)
@@ -59,9 +60,9 @@ graph TD
 - **告警通知 (`notifier/notifier.go`)**：扫描完成 / 资产离线时推送 **企业微信（markdown）/ 钉钉（text）/ 通用 Webhook（JSON）**，由系统设置开关驱动。
 - **扫描引擎 (`scanner/engine.go` 等)**：可插拔分发，按任务 `kind` 选择 **discovery（端口发现）** 或 **vuln（nuclei 漏扫）**；网段解析、并发 Worker Pool、Banner 指纹判型、增量入库与离线清扫；入口含 `panic` 恢复。
 - **定时调度 (`scheduler/scheduler.go`)**：自包含轮询（每 30s），支持 `@every 15m` 与 `daily:HH:MM`，无外部 cron 依赖。
-- **终端 / 文件代理 (`sshproxy/`, `handler/sftp.go`)**：`sshproxy.go` 用 `golang.org/x/crypto/ssh` 建 SSH + PTY 双向管道；`telnet.go` 处理 Telnet IAC；`sftp.go` 基于 `pkg/sftp` 提供浏览/上传/下载/建删改目录（仅 SSH、全程审计）。均支持资产**非标 SSH 端口**（`asset.SSHPort`）。
+- **终端 / 文件代理 (`sshproxy/`, `handler/sftp.go`)**：`sshproxy.go` 用 `golang.org/x/crypto/ssh` 建 SSH + PTY 双向管道；`telnet.go` 处理 Telnet IAC；`sftp.go` 基于 `pkg/sftp` 提供浏览/上传/下载/建删改目录（仅 SSH、全程审计）。均支持资产**非标 SSH 端口**（`asset.SSHPort`）。**凭据自动绑定**：连接无凭据资产时（`autotry`，默认开）按归属逐个试已存 SSH 凭据，成功即自动绑定并审计（`AUTO_BIND_CRED`），全失败回退手动输入。
 - **AI 命令助手 (`handler/ai.go`)**：调用 OpenAI 兼容 `/chat/completions` 由自然语言生成命令；**仅生成不执行**，正则识别高危命令（`rm -rf`、`mkfs`、`dd`、fork 炸弹、`curl|sh` 等）；全程审计；按资产归属校验。
-- **AI Agent (`handler/ai_agent.go`)**：「一句话自动完成任务」。后端以**独立 SSH 通道**逐条执行 AI 生成的命令（`CombinedOutput` + pwd 标记跨命令保留工作目录、每步超时），把退出码与输出回传模型推进，直至完成；命中高危命令暂停等待用户确认（自动执行 + 高危拦截）。会话保存完整对话历史支持**多轮上下文**；带步数上限、归属校验、全程审计（`AI_AGENT*`）。
+- **AI Agent (`handler/ai_agent.go`)**：「一句话自动完成任务」。后端以**独立 SSH 通道**逐条执行 AI 生成的命令（`CombinedOutput` + pwd 标记跨命令保留工作目录、每步超时），把退出码与当前目录回传模型推进，直至完成；命中高危命令暂停等待用户确认（自动执行 + 高危拦截）。会话保存完整对话历史支持**多轮上下文**，并**写穿持久化到 `AgentSession` 表**（重启不丢，亦作历史对话来源 `GET /ai/agent/sessions`）；带步数上限、归属校验、全程审计（`AI_AGENT*`）。
 - **数据持久化 (`store/db.go`)**：GORM + **glebarez/sqlite（纯 Go，免 cgo）**，启动 `AutoMigrate` 全部模型、播种默认设置与默认管理员（`admin/admin` + 首登强制改密）。
 
 ---
@@ -156,7 +157,7 @@ sequenceDiagram
 
 ---
 
-## 5. 数据模型总览（v5.0，共 12 表）
+## 5. 数据模型总览（v5.1，共 13 表）
 
 启动时统一 `AutoMigrate`（`store/db.go`），模型定义见 `model/models.go`。
 
@@ -174,15 +175,16 @@ sequenceDiagram
 | VulnFinding | vuln_findings | id, asset_id, target, template_id, name, severity, matched_at, engine | nuclei 结果 |
 | AssetHistory | asset_histories | id, asset_id, field, old_value, new_value, created_at | 字段级变更 |
 | Tag | tags | id, name(唯一), color | 全局标签，重命名/删除同步到资产 |
+| AgentSession | agent_sessions | id, requester_id, asset_id, asset_name, title, work_dir, messages(JSON), steps(JSON), status, pending, summary | AI Agent 会话持久化（重启不丢 + 历史对话） |
 
-> `arch` / `virtualization` 由认证采集写入；`kind` 区分端口发现与漏扫；`owner_id` 驱动多租户隔离；`ssh_port` 支持非标端口。
+> `arch` / `virtualization` 由认证采集写入；`kind` 区分端口发现与漏扫；`owner_id` 驱动多租户隔离；`ssh_port` 支持非标端口；`agent_sessions` 写穿持久化，供历史对话切换。
 
 ### 系统设置默认键（节选）
 `scan_concurrency=100` · `scan_timeout=2` · `ssh_timeout=10` · `auth_username=admin` · `auth_password=admin` · `monitor_enabled=false` · `monitor_interval=5` · `notify_type=none` · `notify_url=` · `notify_on_scan=true` · `notify_on_offline=true` · `ai_enabled=false` · `ai_base_url=` · `ai_api_key=` · `ai_model=`
 
 ---
 
-## 6. 前端路由（v5.0）
+## 6. 前端路由（v5.1）
 
 `react-router-dom v7`，页面按路由懒加载（重型依赖 xterm.js 不进首屏主包）。未登录由鉴权门禁拦截；首登/被重置跳强制改密页；用户/审计页仅管理员可见。
 
