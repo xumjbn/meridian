@@ -208,13 +208,33 @@ data: 扫描完成。总IP数: 254，存活主机数: 12，新增资产: 3 ...  
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/ai/status` | `{ "enabled": true }`（仅开关，不含密钥；任意登录用户可查） |
-| POST | `/api/ai/command` | 自然语言生成命令 |
+| POST | `/api/ai/command` | 自然语言生成单条命令（不执行） |
 | POST 🔒 | `/api/ai/test` | 测试 AI 配置连通性 |
+| POST | `/api/ai/agent/start` | 启动 Agent 任务（自动执行 + 高危拦截） |
+| POST | `/api/ai/agent/continue` | 对高危命令确认/中止 |
+| POST | `/api/ai/agent/message` | 多轮追加指令（带上下文继续） |
 
 - 生成：请求 `{ "asset_id": 101, "prompt": "查找 /var/log 下最大的 5 个文件" }`
   → `{ "command": "du -ah /var/log | sort -rh | head -5", "dangerous": false, "warning": "" }`
   - **仅生成不执行**；正则识别高危命令（`rm -rf`/`mkfs`/`dd`/fork 炸弹/`curl|sh` 等）置 `dangerous=true` 并给 `warning`；按资产归属校验；全程审计。
 - 测试：请求 `{ "base_url", "api_key", "model" }` → `{ "ok": true, "sample": "..." }`
+
+### 12.1 AI Agent（一句话自动完成任务）
+- **模式**：自动执行 + 高危拦截。后端以**独立 SSH 通道**逐条执行 AI 生成的命令、读取退出码与输出回传给模型推进，跨命令保留工作目录；命中高危命令则暂停等待确认。会话保存完整对话历史（多轮上下文记忆）。
+- **安全**：归属校验、高危拦截、步数上限（默认 15）、每步超时（默认 30s）、会话归属校验、全程审计（`AI_AGENT_START`/`AI_AGENT`/`AI_AGENT_CONFIRM`/`AI_AGENT_MSG`）；仅 SSH 资产。
+- `POST /api/ai/agent/start`：请求 `{ "asset_id": 101, "prompt": "清理 /var/log 下大于100M 的日志" }`
+- `POST /api/ai/agent/continue`：请求 `{ "session_id": "agent-...", "approve": true }`（false=中止）
+- `POST /api/ai/agent/message`：请求 `{ "session_id": "agent-...", "prompt": "顺便重启 rsyslog" }`
+- 三者统一返回会话状态 (`data`)：
+```json
+{
+  "session_id": "agent-…",
+  "status": "awaiting_confirm | done | error | aborted",
+  "steps": [{ "index": 1, "thought": "…", "command": "du -ah /var/log|sort -rh|head", "output": "…", "exit_code": 0, "dangerous": false }],
+  "pending": "truncate -s 0 /var/log/syslog",  "pending_note": "…", "pending_warning": "⚠️ …",
+  "summary": "已清理 2 个文件，释放 1.3G", "error": "", "work_dir": "/var/log"
+}
+```
 
 ---
 

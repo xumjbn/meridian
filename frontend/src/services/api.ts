@@ -204,6 +204,36 @@ export const aiStatus = (): Promise<{ enabled: boolean }> => api.get('/ai/status
 export const aiTest = (base_url: string, api_key: string, model: string): Promise<{ ok: boolean; sample: string }> =>
   api.post('/ai/test', { base_url, api_key, model });
 
+// ── AI Agent（一句话自动完成任务：自动执行 + 高危拦截 + 多轮上下文）──
+export interface AgentStep {
+  index: number;
+  thought?: string;
+  command: string;
+  output: string;
+  exit_code: number;
+  dangerous: boolean;
+}
+export interface AgentState {
+  session_id: string;
+  status: 'awaiting_confirm' | 'done' | 'error' | 'aborted' | 'running' | string;
+  steps: AgentStep[];
+  pending: string;
+  pending_note: string;
+  pending_warning: string;
+  summary: string;
+  error: string;
+  work_dir: string;
+}
+// 启动一次 Agent 任务
+export const aiAgentStart = (assetId: number, prompt: string): Promise<AgentState> =>
+  api.post('/ai/agent/start', { asset_id: assetId, prompt });
+// 对高危命令确认(true)/中止(false)
+export const aiAgentContinue = (sessionId: string, approve: boolean): Promise<AgentState> =>
+  api.post('/ai/agent/continue', { session_id: sessionId, approve });
+// 多轮追加指令（带上下文记忆继续推进）
+export const aiAgentMessage = (sessionId: string, prompt: string): Promise<AgentState> =>
+  api.post('/ai/agent/message', { session_id: sessionId, prompt });
+
 // ── SFTP 文件传输 ─────────────────────────────
 export interface SftpEntry {
   name: string;

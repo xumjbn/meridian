@@ -61,6 +61,7 @@ graph TD
 - **定时调度 (`scheduler/scheduler.go`)**：自包含轮询（每 30s），支持 `@every 15m` 与 `daily:HH:MM`，无外部 cron 依赖。
 - **终端 / 文件代理 (`sshproxy/`, `handler/sftp.go`)**：`sshproxy.go` 用 `golang.org/x/crypto/ssh` 建 SSH + PTY 双向管道；`telnet.go` 处理 Telnet IAC；`sftp.go` 基于 `pkg/sftp` 提供浏览/上传/下载/建删改目录（仅 SSH、全程审计）。均支持资产**非标 SSH 端口**（`asset.SSHPort`）。
 - **AI 命令助手 (`handler/ai.go`)**：调用 OpenAI 兼容 `/chat/completions` 由自然语言生成命令；**仅生成不执行**，正则识别高危命令（`rm -rf`、`mkfs`、`dd`、fork 炸弹、`curl|sh` 等）；全程审计；按资产归属校验。
+- **AI Agent (`handler/ai_agent.go`)**：「一句话自动完成任务」。后端以**独立 SSH 通道**逐条执行 AI 生成的命令（`CombinedOutput` + pwd 标记跨命令保留工作目录、每步超时），把退出码与输出回传模型推进，直至完成；命中高危命令暂停等待用户确认（自动执行 + 高危拦截）。会话保存完整对话历史支持**多轮上下文**；带步数上限、归属校验、全程审计（`AI_AGENT*`）。
 - **数据持久化 (`store/db.go`)**：GORM + **glebarez/sqlite（纯 Go，免 cgo）**，启动 `AutoMigrate` 全部模型、播种默认设置与默认管理员（`admin/admin` + 首登强制改密）。
 
 ---
