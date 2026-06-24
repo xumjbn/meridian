@@ -101,6 +101,9 @@ func main() {
 		api.POST("/ai/agent/start", handler.StartAgent)
 		api.POST("/ai/agent/continue", handler.ContinueAgent)
 		api.POST("/ai/agent/message", handler.MessageAgent)
+		// AI Agent 历史会话（持久化，重启不丢）
+		api.GET("/ai/agent/sessions", handler.ListAgentSessions)
+		api.GET("/ai/agent/sessions/:id", handler.GetAgentSessionDetail)
 
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)

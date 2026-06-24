@@ -154,3 +154,24 @@ type Tag struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// AgentSession 持久化 AI Agent 会话（写穿缓存，服务重启不丢；也作为历史对话来源）
+type AgentSession struct {
+	ID          string    `gorm:"primaryKey;size:64" json:"id"`
+	RequesterID uint      `gorm:"index" json:"requester_id"`
+	AssetID     uint      `gorm:"index" json:"asset_id"`
+	AssetName   string    `gorm:"size:120" json:"asset_name"`
+	Title       string    `gorm:"size:255" json:"title"` // 首条任务描述（截断）
+	OSHint      string    `gorm:"size:255" json:"os_hint"`
+	WorkDir     string    `gorm:"size:512" json:"work_dir"`
+	Messages    string    `gorm:"type:text" json:"-"` // 完整对话历史 JSON
+	Steps       string    `gorm:"type:text" json:"-"` // 执行步骤 JSON
+	Status      string    `gorm:"size:20" json:"status"`
+	Pending     string    `gorm:"type:text" json:"pending"`
+	PendingNote string    `gorm:"type:text" json:"pending_note"`
+	PendingWarn string    `gorm:"size:255" json:"pending_warning"`
+	Summary     string    `gorm:"type:text" json:"summary"`
+	LastErr     string    `gorm:"type:text" json:"error"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
