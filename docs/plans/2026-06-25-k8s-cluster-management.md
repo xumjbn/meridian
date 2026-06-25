@@ -199,8 +199,11 @@ DetectK8s bool `gorm:"default:false" json:"detect_k8s"`
 - [ ] worker(10250) 探测开关（系统设置）。
 - [ ] 控制台 `console_type` + 后端反代免登（k8s Dashboard token / Rancher / KubeSphere，逐个适配）。
 
-**Phase 3（深度，可选）**
-- 绑定 kubeconfig/ServiceAccount token 凭据，调用 kube-apiserver 拉 **节点/Pod/Deployment** 只读看板；在线 `kubectl`/exec。
+**Phase 3（深度）— 已实现实时看板**
+- [x] 集群绑定 **ServiceAccount Bearer Token**（`K8sCluster.APIToken`，`json:"-"` 不回传前端）；
+- [x] 后端调 kube-apiserver（Token 仅服务端用）：`/overview`、`/live/nodes`、`/live/pods`；
+- [x] 前端集群抽屉加「实时节点 / Pod / 归类节点」Tabs + 概览统计（节点就绪/总、Pod 运行/总、版本）。
+- [ ] 后续可扩展：Deployment/Service 视图、namespace 过滤、在线 `kubectl`/exec。
 
 ---
 
