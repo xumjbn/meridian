@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +44,7 @@ func enrichCluster(cl *model.K8sCluster) {
 	db.Model(&model.Asset{}).Where("k8s_cluster_id = ? AND k8s_role = ?", cl.ID, "control-plane").Count(&masters)
 	cl.NodeCount = int(total)
 	cl.MasterCount = int(masters)
+	cl.HasToken = strings.TrimSpace(cl.APIToken) != ""
 	if cl.CredentialID != nil {
 		var cred model.Credential
 		if db.First(&cred, *cl.CredentialID).Error == nil {
@@ -89,6 +93,7 @@ type clusterReq struct {
 	ConsolePort  int    `json:"console_port"`
 	ConsolePath  string `json:"console_path"`
 	APIServer    string `json:"api_server"`
+	APIToken     string `json:"api_token"` // 留空=保持不变（更新时）
 	CredentialID *uint  `json:"credential_id"`
 	Description  string `json:"description"`
 }
@@ -122,6 +127,7 @@ func CreateK8sCluster(c *gin.Context) {
 	}
 	cl := model.K8sCluster{OwnerID: currentUserID(c)}
 	normalizeCluster(&req, &cl)
+	cl.APIToken = strings.TrimSpace(req.APIToken)
 	if err := store.GlobalDB.Create(&cl).Error; err != nil {
 		SendError(c, 500, "创建集群失败")
 		return
@@ -146,6 +152,9 @@ func UpdateK8sCluster(c *gin.Context) {
 		return
 	}
 	normalizeCluster(&req, cl)
+	if t := strings.TrimSpace(req.APIToken); t != "" {
+		cl.APIToken = t // 留空则保持原 token 不变
+	}
 	store.GlobalDB.Save(cl)
 	enrichCluster(cl)
 	SendSuccess(c, cl)
@@ -276,6 +285,229 @@ func GetK8sConsole(c *gin.Context) {
 		Status: 200, IP: c.ClientIP(),
 	})
 	SendSuccess(c, gin.H{"url": url, "username": username, "password": password})
+}
+
+// ── Phase 3：调用 kube-apiserver 拉取实时节点 / Pod（只读看板）────────
+// 认证用集群绑定的 ServiceAccount Bearer Token，调用全部在服务端完成，Token 不出后端。
+
+func kubeAPIServer(cl *model.K8sCluster) string {
+	s := strings.TrimSpace(cl.APIServer)
+	if s == "" {
+		s = cl.VIP + ":6443"
+	}
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	return strings.TrimRight(s, "/")
+}
+
+// kubeGet 对 kube-apiserver 发起带 Bearer Token 的 GET（跳过 TLS 校验）
+func kubeGet(cl *model.K8sCluster, path string) ([]byte, int, error) {
+	url := "https://" + kubeAPIServer(cl) + path
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	if cl.APIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cl.APIToken)
+	}
+	client := &http.Client{
+		Timeout:   8 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	return body, resp.StatusCode, nil
+}
+
+type kubeNodeList struct {
+	Items []struct {
+		Metadata struct {
+			Name              string            `json:"name"`
+			Labels            map[string]string `json:"labels"`
+			CreationTimestamp string            `json:"creationTimestamp"`
+		} `json:"metadata"`
+		Status struct {
+			NodeInfo struct {
+				KubeletVersion string `json:"kubeletVersion"`
+				OSImage        string `json:"osImage"`
+				Architecture   string `json:"architecture"`
+			} `json:"nodeInfo"`
+			Addresses []struct {
+				Type    string `json:"type"`
+				Address string `json:"address"`
+			} `json:"addresses"`
+			Conditions []struct {
+				Type   string `json:"type"`
+				Status string `json:"status"`
+			} `json:"conditions"`
+		} `json:"status"`
+	} `json:"items"`
+}
+
+type kubePodList struct {
+	Items []struct {
+		Metadata struct {
+			Name              string `json:"name"`
+			Namespace         string `json:"namespace"`
+			CreationTimestamp string `json:"creationTimestamp"`
+		} `json:"metadata"`
+		Spec struct {
+			NodeName string `json:"nodeName"`
+		} `json:"spec"`
+		Status struct {
+			Phase             string `json:"phase"`
+			ContainerStatuses []struct {
+				RestartCount int `json:"restartCount"`
+			} `json:"containerStatuses"`
+		} `json:"status"`
+	} `json:"items"`
+}
+
+// loadClusterWithToken 加载集群并要求已配置 Token；失败时已写响应
+func loadClusterWithToken(c *gin.Context) (*model.K8sCluster, bool) {
+	cl, ok := loadCluster(c)
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(cl.APIToken) == "" {
+		SendError(c, 400, "该集群未配置 API Token，无法拉取实时数据（请在集群编辑里填 ServiceAccount Bearer Token）")
+		return nil, false
+	}
+	return cl, true
+}
+
+// GetK8sLiveNodes 实时节点列表
+func GetK8sLiveNodes(c *gin.Context) {
+	cl, ok := loadClusterWithToken(c)
+	if !ok {
+		return
+	}
+	body, code, err := kubeGet(cl, "/api/v1/nodes")
+	if err != nil {
+		SendError(c, 502, "连接 kube-apiserver 失败: "+err.Error())
+		return
+	}
+	if code != 200 {
+		SendError(c, 502, fmt.Sprintf("kube API 返回 %d: %s", code, truncateStr(string(body), 200)))
+		return
+	}
+	var list kubeNodeList
+	_ = json.Unmarshal(body, &list)
+	out := make([]gin.H, 0, len(list.Items))
+	for _, n := range list.Items {
+		ready := "NotReady"
+		for _, cond := range n.Status.Conditions {
+			if cond.Type == "Ready" && cond.Status == "True" {
+				ready = "Ready"
+			}
+		}
+		ip := ""
+		for _, a := range n.Status.Addresses {
+			if a.Type == "InternalIP" {
+				ip = a.Address
+			}
+		}
+		role := "worker"
+		for k := range n.Metadata.Labels {
+			if strings.Contains(k, "node-role.kubernetes.io/control-plane") || strings.Contains(k, "node-role.kubernetes.io/master") {
+				role = "control-plane"
+			}
+		}
+		out = append(out, gin.H{
+			"name": n.Metadata.Name, "ready": ready, "role": role, "ip": ip,
+			"version": n.Status.NodeInfo.KubeletVersion, "os": n.Status.NodeInfo.OSImage,
+			"arch": n.Status.NodeInfo.Architecture, "created_at": n.Metadata.CreationTimestamp,
+		})
+	}
+	SendSuccess(c, out)
+}
+
+// GetK8sLivePods 实时 Pod 列表（可选 ?namespace=）
+func GetK8sLivePods(c *gin.Context) {
+	cl, ok := loadClusterWithToken(c)
+	if !ok {
+		return
+	}
+	path := "/api/v1/pods?limit=500"
+	if ns := strings.TrimSpace(c.Query("namespace")); ns != "" {
+		path = "/api/v1/namespaces/" + ns + "/pods?limit=500"
+	}
+	body, code, err := kubeGet(cl, path)
+	if err != nil {
+		SendError(c, 502, "连接 kube-apiserver 失败: "+err.Error())
+		return
+	}
+	if code != 200 {
+		SendError(c, 502, fmt.Sprintf("kube API 返回 %d: %s", code, truncateStr(string(body), 200)))
+		return
+	}
+	var list kubePodList
+	_ = json.Unmarshal(body, &list)
+	out := make([]gin.H, 0, len(list.Items))
+	for _, p := range list.Items {
+		restarts := 0
+		for _, cs := range p.Status.ContainerStatuses {
+			restarts += cs.RestartCount
+		}
+		out = append(out, gin.H{
+			"name": p.Metadata.Name, "namespace": p.Metadata.Namespace, "phase": p.Status.Phase,
+			"node": p.Spec.NodeName, "restarts": restarts, "created_at": p.Metadata.CreationTimestamp,
+		})
+	}
+	SendSuccess(c, out)
+}
+
+// GetK8sOverview 集群概览（节点就绪/总数、Pod 运行/总数、版本）
+func GetK8sOverview(c *gin.Context) {
+	cl, ok := loadCluster(c)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(cl.APIToken) == "" {
+		SendSuccess(c, gin.H{"has_token": false})
+		return
+	}
+	nodeBody, nc, _ := kubeGet(cl, "/api/v1/nodes")
+	podBody, pc, _ := kubeGet(cl, "/api/v1/pods?limit=2000")
+	if nc != 200 || pc != 200 {
+		SendError(c, 502, "kube API 调用失败，请检查 API Server 地址与 Token 权限")
+		return
+	}
+	var nl kubeNodeList
+	var pl kubePodList
+	_ = json.Unmarshal(nodeBody, &nl)
+	_ = json.Unmarshal(podBody, &pl)
+	nodesReady, version := 0, ""
+	for _, n := range nl.Items {
+		for _, cond := range n.Status.Conditions {
+			if cond.Type == "Ready" && cond.Status == "True" {
+				nodesReady++
+			}
+		}
+		if version == "" {
+			version = n.Status.NodeInfo.KubeletVersion
+		}
+	}
+	podsRunning := 0
+	for _, p := range pl.Items {
+		if p.Status.Phase == "Running" {
+			podsRunning++
+		}
+	}
+	store.GlobalDB.Create(&model.AuditLog{
+		Actor: currentUsername(c), Action: "K8S_API",
+		Path:   fmt.Sprintf("集群#%d 拉取实时看板", cl.ID),
+		Status: 200, IP: c.ClientIP(),
+	})
+	SendSuccess(c, gin.H{
+		"has_token": true, "version": version,
+		"nodes_total": len(nl.Items), "nodes_ready": nodesReady,
+		"pods_total": len(pl.Items), "pods_running": podsRunning,
+	})
 }
 
 // mergeTagJSON 把 tag 并入 JSON 字符串数组（去重）

@@ -261,6 +261,7 @@ export interface K8sCluster {
   console_port?: number;
   console_path?: string;
   api_server?: string;
+  api_token?: string; // 仅写入（ServiceAccount Bearer Token），后端不回传；留空=不变
   credential_id?: number | null;
   description?: string;
   // 展示字段
@@ -269,6 +270,18 @@ export interface K8sCluster {
   owner_name?: string;
   cred_name?: string;
   online?: boolean;
+  has_token?: boolean;
+}
+export interface K8sLiveNode {
+  name: string; ready: string; role: string; ip: string;
+  version: string; os: string; arch: string; created_at: string;
+}
+export interface K8sLivePod {
+  name: string; namespace: string; phase: string; node: string; restarts: number; created_at: string;
+}
+export interface K8sOverview {
+  has_token: boolean; version?: string;
+  nodes_total?: number; nodes_ready?: number; pods_total?: number; pods_running?: number;
 }
 export const getK8sClusters = (): Promise<K8sCluster[]> => api.get('/k8s/clusters');
 export const createK8sCluster = (data: K8sCluster): Promise<K8sCluster> => api.post('/k8s/clusters', data);
@@ -282,6 +295,11 @@ export const unassignK8sNode = (clusterId: number, assetId: number): Promise<voi
   api.delete(`/k8s/clusters/${clusterId}/nodes/${assetId}`);
 export const getK8sConsole = (clusterId: number): Promise<{ url: string; username: string; password: string }> =>
   api.get(`/k8s/clusters/${clusterId}/console`);
+// Phase 3：实时看板（调 kube-apiserver）
+export const getK8sOverview = (id: number): Promise<K8sOverview> => api.get(`/k8s/clusters/${id}/overview`);
+export const getK8sLiveNodes = (id: number): Promise<K8sLiveNode[]> => api.get(`/k8s/clusters/${id}/live/nodes`);
+export const getK8sLivePods = (id: number, namespace?: string): Promise<K8sLivePod[]> =>
+  api.get(`/k8s/clusters/${id}/live/pods`, { params: namespace ? { namespace } : {} });
 
 // ── SFTP 文件传输 ─────────────────────────────
 export interface SftpEntry {

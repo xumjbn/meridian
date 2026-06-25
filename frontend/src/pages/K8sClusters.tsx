@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Button, Card, Modal, Form, Input, InputNumber, Select, message, Table, Tag, Space,
-  Popconfirm, Drawer, Empty, Tooltip,
+  Popconfirm, Drawer, Empty, Tooltip, Tabs, Statistic, Alert,
 } from 'antd';
 import {
   CloudServerOutlined, PlusOutlined, ReloadOutlined, LinkOutlined, EditOutlined,
@@ -10,7 +10,8 @@ import {
 import {
   getK8sClusters, createK8sCluster, updateK8sCluster, deleteK8sCluster, getK8sCluster,
   getUnassignedK8sNodes, assignK8sNodes, unassignK8sNode, getK8sConsole, getCredentials,
-  type K8sCluster, type Asset, type Credential,
+  getK8sOverview, getK8sLiveNodes, getK8sLivePods,
+  type K8sCluster, type Asset, type Credential, type K8sLiveNode, type K8sLivePod, type K8sOverview,
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
 import { palette, cardStyle } from '../theme';
@@ -41,6 +42,12 @@ export const K8sClusters: React.FC = () => {
 
   const [drawerCluster, setDrawerCluster] = useState<K8sCluster | null>(null);
   const [drawerNodes, setDrawerNodes] = useState<Asset[]>([]);
+  // Phase 3 实时看板
+  const [overview, setOverview] = useState<K8sOverview | null>(null);
+  const [liveNodes, setLiveNodes] = useState<K8sLiveNode[]>([]);
+  const [livePods, setLivePods] = useState<K8sLivePod[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveErr, setLiveErr] = useState('');
 
   const [selectedNodeIds, setSelectedNodeIds] = useState<React.Key[]>([]);
   const [assignClusterId, setAssignClusterId] = useState<number | undefined>();
@@ -122,12 +129,34 @@ export const K8sClusters: React.FC = () => {
   };
 
   const openNodes = async (cl: K8sCluster) => {
+    setOverview(null); setLiveNodes([]); setLivePods([]); setLiveErr('');
     try {
       const { cluster, nodes } = await getK8sCluster(cl.id!);
       setDrawerCluster(cluster);
       setDrawerNodes(nodes);
+      if (cluster.has_token) loadLive(cluster.id!);
     } catch (e: any) {
       message.error(e?.message || '加载节点失败');
+    }
+  };
+
+  // 拉取实时看板（kube API）
+  const loadLive = async (id: number) => {
+    setLiveLoading(true);
+    setLiveErr('');
+    try {
+      const [ov, ns, pods] = await Promise.all([
+        getK8sOverview(id),
+        getK8sLiveNodes(id).catch(() => [] as K8sLiveNode[]),
+        getK8sLivePods(id).catch(() => [] as K8sLivePod[]),
+      ]);
+      setOverview(ov);
+      setLiveNodes(ns);
+      setLivePods(pods);
+    } catch (e: any) {
+      setLiveErr(e?.message || '拉取实时数据失败');
+    } finally {
+      setLiveLoading(false);
     }
   };
   const unassign = async (assetId: number) => {
@@ -154,6 +183,25 @@ export const K8sClusters: React.FC = () => {
   };
 
   const toTerminal = (a: Asset) => a.id && openTerminal({ id: a.id, name: a.name, ip: a.ip });
+
+  const phaseColor = (p: string) =>
+    p === 'Running' ? 'green' : p === 'Pending' ? 'gold' : p === 'Succeeded' ? 'blue' : p === 'Failed' ? 'red' : 'default';
+
+  const liveNodeCols = [
+    { title: '名称', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span> },
+    { title: '就绪', dataIndex: 'ready', key: 'ready', width: 90, render: (v: string) => <Tag color={v === 'Ready' ? 'green' : 'red'}>{v}</Tag> },
+    { title: '角色', dataIndex: 'role', key: 'role', width: 130, render: roleTag },
+    { title: '内网 IP', dataIndex: 'ip', key: 'ip', render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v || '-'}</span> },
+    { title: '版本', dataIndex: 'version', key: 'ver', width: 110 },
+  ];
+
+  const livePodCols = [
+    { title: '命名空间', dataIndex: 'namespace', key: 'ns', width: 130 },
+    { title: 'Pod', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
+    { title: '状态', dataIndex: 'phase', key: 'phase', width: 100, render: (v: string) => <Tag color={phaseColor(v)}>{v}</Tag> },
+    { title: '节点', dataIndex: 'node', key: 'node', width: 150, render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v || '-'}</span> },
+    { title: '重启', dataIndex: 'restarts', key: 're', width: 70 },
+  ];
 
   const unassignedCols = [
     { title: 'IP', dataIndex: 'ip', key: 'ip', render: (ip: string) => <span style={{ fontFamily: 'monospace' }}>{ip}</span> },
@@ -228,7 +276,7 @@ export const K8sClusters: React.FC = () => {
                   <Tooltip title="打开 VIP:443 控制台并复制绑定密码">
                     <Button type="primary" size="small" icon={<LinkOutlined />} onClick={() => openConsole(cl.id!)}>打开控制台</Button>
                   </Tooltip>
-                  <Button size="small" onClick={() => openNodes(cl)}>节点</Button>
+                  <Button size="small" onClick={() => openNodes(cl)}>节点{cl.has_token ? ' / 看板' : ''}</Button>
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(cl)} />
                   <Popconfirm title={`删除集群「${cl.name}」？节点会被解除归属但保留`} onConfirm={() => remove(cl.id!)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
                     <Button size="small" danger icon={<DeleteOutlined />} />
@@ -306,30 +354,75 @@ export const K8sClusters: React.FC = () => {
           <Form.Item label="API Server（可选）" name="api_server" tooltip="默认 VIP:6443">
             <Input placeholder="如 10.0.0.250:6443" />
           </Form.Item>
+          <Form.Item label="API Token（实时看板用）" name="api_token"
+            tooltip="ServiceAccount Bearer Token，仅用于服务端调 kube-apiserver 拉实时节点/Pod；留空=保持不变。建议建只读 SA：kubectl create token <sa>">
+            <Input.Password placeholder={editing?.has_token ? '已配置（留空保持不变）' : 'kube-apiserver ServiceAccount Token'} autoComplete="new-password" />
+          </Form.Item>
           <Form.Item label="描述" name="description">
             <Input.TextArea rows={2} placeholder="备注用途、环境等" />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* 集群节点抽屉 */}
+      {/* 集群节点 + 实时看板抽屉 */}
       <Drawer
         open={!!drawerCluster}
         onClose={() => setDrawerCluster(null)}
-        width={680}
-        title={drawerCluster ? `集群节点 · ${drawerCluster.name}` : ''}
+        width={760}
+        title={drawerCluster ? `${drawerCluster.name}` : ''}
         extra={drawerCluster && (
-          <Button type="primary" icon={<LinkOutlined />} onClick={() => openConsole(drawerCluster.id!)}>打开控制台</Button>
+          <Space>
+            {drawerCluster.has_token && (
+              <Button icon={<ReloadOutlined />} loading={liveLoading} onClick={() => loadLive(drawerCluster.id!)}>刷新看板</Button>
+            )}
+            <Button type="primary" icon={<LinkOutlined />} onClick={() => openConsole(drawerCluster.id!)}>打开控制台</Button>
+          </Space>
         )}
       >
         {drawerCluster && (
           <div style={{ marginBottom: 12, fontSize: 13, color: palette.textSub }}>
             VIP <span style={{ fontFamily: 'monospace' }}>{drawerCluster.vip}:{drawerCluster.console_port}</span>
+            　·　API <span style={{ fontFamily: 'monospace' }}>{drawerCluster.api_server || `${drawerCluster.vip}:6443`}</span>
             　·　凭据 {drawerCluster.cred_name || '未绑定'}
           </div>
         )}
-        <Table columns={nodeCols} dataSource={drawerNodes} rowKey="id" size="small"
-          pagination={false} locale={{ emptyText: '该集群暂无节点，请在「未归类 K8s 节点」中归类' }} />
+
+        {/* 概览统计 */}
+        {overview?.has_token && (
+          <div style={{ display: 'flex', gap: 24, padding: '10px 4px 14px', borderBottom: '1px solid var(--mrd-border)' }}>
+            <Statistic title="节点(就绪/总)" value={`${overview.nodes_ready ?? 0}/${overview.nodes_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
+            <Statistic title="Pod(运行/总)" value={`${overview.pods_running ?? 0}/${overview.pods_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
+            <Statistic title="版本" value={overview.version || '-'} valueStyle={{ fontSize: 16 }} />
+          </div>
+        )}
+
+        {drawerCluster && !drawerCluster.has_token && (
+          <Alert style={{ marginBottom: 12 }} type="info" showIcon
+            message="未配置 API Token，无法显示实时看板"
+            description="编辑该集群、填入 kube-apiserver 的 ServiceAccount Bearer Token，即可拉取实时节点 / Pod。" />
+        )}
+        {liveErr && <Alert style={{ marginBottom: 12 }} type="error" showIcon message={liveErr} />}
+
+        <Tabs
+          defaultActiveKey={drawerCluster?.has_token ? 'nodes' : 'assigned'}
+          items={[
+            ...(drawerCluster?.has_token ? [
+              {
+                key: 'nodes', label: `实时节点 (${liveNodes.length})`,
+                children: <Table size="small" rowKey="name" loading={liveLoading} dataSource={liveNodes} pagination={false} columns={liveNodeCols} scroll={{ y: 420 }} />,
+              },
+              {
+                key: 'pods', label: `Pod (${livePods.length})`,
+                children: <Table size="small" rowKey={(r: K8sLivePod) => `${r.namespace}/${r.name}`} loading={liveLoading} dataSource={livePods} pagination={{ pageSize: 15, showSizeChanger: false }} columns={livePodCols} scroll={{ y: 420 }} />,
+              },
+            ] : []),
+            {
+              key: 'assigned', label: `归类节点 (${drawerNodes.length})`,
+              children: <Table columns={nodeCols} dataSource={drawerNodes} rowKey="id" size="small" pagination={false}
+                locale={{ emptyText: '该集群暂无归类节点，请在「未归类 K8s 节点」中归类' }} />,
+            },
+          ]}
+        />
       </Drawer>
     </div>
   );
