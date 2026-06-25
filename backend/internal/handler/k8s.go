@@ -3,13 +3,29 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"backend/internal/model"
 	"backend/internal/store"
 	"github.com/gin-gonic/gin"
 )
+
+// probeClusterOnline 探测 VIP:console_port 连通性（TCP，1.5s 超时）
+func probeClusterOnline(cl *model.K8sCluster) {
+	if strings.TrimSpace(cl.VIP) == "" {
+		return
+	}
+	addr := net.JoinHostPort(cl.VIP, strconv.Itoa(cl.ConsolePort))
+	conn, err := net.DialTimeout("tcp", addr, 1500*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		cl.Online = true
+	}
+}
 
 // ==========================================
 // Kubernetes 集群管理
@@ -57,9 +73,13 @@ func ListK8sClusters(c *gin.Context) {
 		q = q.Where("owner_id = ?", currentUserID(c))
 	}
 	q.Find(&clusters)
+	var wg sync.WaitGroup
 	for i := range clusters {
 		enrichCluster(&clusters[i])
+		wg.Add(1)
+		go func(cl *model.K8sCluster) { defer wg.Done(); probeClusterOnline(cl) }(&clusters[i])
 	}
+	wg.Wait()
 	SendSuccess(c, clusters)
 }
 
@@ -150,6 +170,7 @@ func GetK8sCluster(c *gin.Context) {
 		return
 	}
 	enrichCluster(cl)
+	probeClusterOnline(cl)
 	var nodes []model.Asset
 	store.GlobalDB.Where("k8s_cluster_id = ?", cl.ID).Order("k8s_role desc, ip asc").Find(&nodes)
 	SendSuccess(c, gin.H{"cluster": cl, "nodes": nodes})

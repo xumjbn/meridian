@@ -65,14 +65,22 @@ export const K8sClusters: React.FC = () => {
     getCredentials().then(setCreds).catch(() => {});
   }, []);
 
-  // 一键打开控制台：复制绑定密码 + 新标签打开 VIP:443
+  // 一键打开控制台：
+  // - console_path 含 {username}/{password} 占位符 → 用绑定凭据替换，真·一键免登
+  // - 否则复制绑定密码 + 新标签打开（浏览器不能跨域自动填表单）
   const openConsole = async (id: number) => {
     try {
       const { url, username, password } = await getK8sConsole(id);
-      if (password) await navigator.clipboard?.writeText(password).catch(() => {});
-      window.open(url, '_blank', 'noopener');
+      const hasTpl = url.includes('{username}') || url.includes('{password}');
+      const finalUrl = url
+        .replace(/\{username\}/g, encodeURIComponent(username || ''))
+        .replace(/\{password\}/g, encodeURIComponent(password || ''));
+      if (!hasTpl && password) await navigator.clipboard?.writeText(password).catch(() => {});
+      window.open(finalUrl, '_blank', 'noopener');
       message.success(
-        password
+        hasTpl
+          ? '已打开控制台（已用绑定凭据自动登录）'
+          : password
           ? `已打开控制台，密码已复制到剪贴板（账号：${username || '-'}），粘贴即可登录`
           : '已打开控制台（该集群未绑定凭据）',
       );
@@ -205,6 +213,7 @@ export const K8sClusters: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   <ClusterOutlined style={{ color: '#326ce5', fontSize: 18 }} />
                   <span style={{ fontSize: 15, fontWeight: 700, color: palette.text }}>{cl.name}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.textSub }}>{statusDot(cl.online ? 'online' : 'offline')}</span>
                 </div>
                 <div style={{ fontSize: 13, color: palette.textSub, marginBottom: 4 }}>
                   <ApiOutlined /> VIP <span style={{ fontFamily: 'monospace' }}>{cl.vip}:{cl.console_port}</span>
@@ -285,8 +294,9 @@ export const K8sClusters: React.FC = () => {
             <Form.Item label="控制台端口" name="console_port" style={{ width: 140 }}>
               <InputNumber min={1} max={65535} style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item label="控制台路径" name="console_path" style={{ flex: 1, minWidth: 260 }} tooltip="如 /#/login、/dashboard/，默认 /">
-              <Input placeholder="/" />
+            <Form.Item label="控制台路径" name="console_path" style={{ flex: 1, minWidth: 260 }}
+              tooltip="如 /#/login、/dashboard/，默认 /。支持占位符 {username}/{password}：控制台若接受 URL 传凭据/Token（如 /login?token={password}），即可真·一键免登；否则点开后自动复制密码粘贴登录。">
+              <Input placeholder="/  或  /login?token={password}" />
             </Form.Item>
           </Space>
           <Form.Item label="绑定登录凭据" name="credential_id" tooltip="点「打开控制台」时复制该凭据的密码到剪贴板">

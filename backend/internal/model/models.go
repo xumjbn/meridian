@@ -197,5 +197,6 @@ type K8sCluster struct {
 	MasterCount int    `gorm:"-" json:"master_count"`
 	OwnerName   string `gorm:"-" json:"owner_name"`
 	CredName    string `gorm:"-" json:"cred_name"`
+	Online      bool   `gorm:"-" json:"online"` // VIP:console_port 连通性（探测得到）
 }
 
