@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Table, Button, Space, Modal, Form, Input, Badge, Popconfirm, message, Select, Spin, Tag } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, Badge, Popconfirm, message, Select, Spin, Tag, Checkbox } from 'antd';
 import { PlusOutlined, PlayCircleOutlined, HistoryOutlined, EditOutlined, DeleteOutlined, CloseOutlined, RadarChartOutlined } from '@ant-design/icons';
 import { getScanTasks, createScanTask, updateScanTask, deleteScanTask, runScanTask, stopScanTask, getScanLogs, getScanStreamUrl, type ScanTask, type ScanLog } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
@@ -495,6 +495,10 @@ export const ScanTasks: React.FC = () => {
             rules={[{ required: true, message: '请输入需要扫描的端口' }]}
           >
             <Input placeholder="例如: 22,23,80,443" />
+          </Form.Item>
+
+          <Form.Item name="detect_k8s" valuePropName="checked" style={{ marginBottom: 8 }}>
+            <Checkbox>探测 Kubernetes 节点（自动并入 6443/10250，命中打 <code>k8s</code> 标签与角色）</Checkbox>
           </Form.Item>
 
           <Form.Item label="定时计划" help="到点自动执行；「不启用」则仅手动运行">

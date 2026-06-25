@@ -54,6 +54,8 @@ type Asset struct {
 	Tags          string     `gorm:"type:text" json:"tags"`  // JSON 字符串数组，如 ["生产","DMZ"]
 	Description   string     `gorm:"type:text" json:"description"`
 	CredentialID  *uint      `json:"credential_id"` // 关联凭证ID
+	K8sRole       string     `gorm:"size:20;index" json:"k8s_role"`     // "" | control-plane | worker（扫描探测得到）
+	K8sClusterID  *uint      `gorm:"index" json:"k8s_cluster_id"`       // 归属 K8s 集群（可空=未归类）
 	LastScannedAt *time.Time `json:"last_scanned_at"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
@@ -88,6 +90,7 @@ type ScanTask struct {
 	TargetRange string     `gorm:"size:100;not null" json:"target_range"` // 192.168.1.0/24 或 192.168.1.1-192.168.1.100
 	Ports       string     `gorm:"size:200;default:'22,23,80,443'" json:"ports"` // 逗号分隔的端口
 	Kind        string     `gorm:"size:20;default:'discovery'" json:"kind"`      // 扫描类型: discovery（端口发现） | vuln（nuclei 漏扫）
+	DetectK8s   bool       `gorm:"default:false" json:"detect_k8s"`              // 是否探测 Kubernetes 节点（并入 6443/10250）
 	Schedule    string     `gorm:"size:50" json:"schedule"`                      // 定时计划: "@every 1h" | "daily:HH:MM"
 	Status      string     `gorm:"size:20;default:'idle'" json:"status"` // idle, running, completed, failed
 	LastRunAt   *time.Time `json:"last_run_at"`
@@ -173,5 +176,26 @@ type AgentSession struct {
 	LastErr     string    `gorm:"type:text" json:"error"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// K8sCluster 代表一个 Kubernetes 集群（用户手动建立的归类单元）
+// 节点复用 Asset（通过 Asset.K8sClusterID 归属）；集群带 VIP + 控制台端口 + 绑定凭据用于一键登录
+type K8sCluster struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	OwnerID      uint      `gorm:"index" json:"owner_id"` // 多租户隔离
+	Name         string    `gorm:"size:120;not null" json:"name"`
+	VIP          string    `gorm:"size:100" json:"vip"`           // 控制台/控制平面虚拟 IP
+	ConsolePort  int       `gorm:"default:443" json:"console_port"`
+	ConsolePath  string    `gorm:"size:200" json:"console_path"`  // 控制台路径，如 "/#/login"，默认 "/"
+	APIServer    string    `gorm:"size:120" json:"api_server"`    // 可选，默认 VIP:6443
+	CredentialID *uint     `json:"credential_id"`                 // 绑定的控制台登录凭据
+	Description  string    `gorm:"type:text" json:"description"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	// 非持久化展示字段
+	NodeCount   int    `gorm:"-" json:"node_count"`
+	MasterCount int    `gorm:"-" json:"master_count"`
+	OwnerName   string `gorm:"-" json:"owner_name"`
+	CredName    string `gorm:"-" json:"cred_name"`
 }
 

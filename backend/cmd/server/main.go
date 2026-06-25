@@ -106,6 +106,17 @@ func main() {
 		api.GET("/ai/agent/sessions", handler.ListAgentSessions)
 		api.GET("/ai/agent/sessions/:id", handler.GetAgentSessionDetail)
 
+		// Kubernetes 集群管理（owner 隔离）
+		api.GET("/k8s/clusters", handler.ListK8sClusters)
+		api.POST("/k8s/clusters", handler.CreateK8sCluster)
+		api.GET("/k8s/clusters/:id", handler.GetK8sCluster)
+		api.PUT("/k8s/clusters/:id", handler.UpdateK8sCluster)
+		api.DELETE("/k8s/clusters/:id", handler.DeleteK8sCluster)
+		api.POST("/k8s/clusters/:id/nodes", handler.AssignK8sNodes)
+		api.DELETE("/k8s/clusters/:id/nodes/:assetId", handler.UnassignK8sNode)
+		api.GET("/k8s/clusters/:id/console", handler.GetK8sConsole)
+		api.GET("/k8s/nodes/unassigned", handler.ListUnassignedK8sNodes)
+
 		// 资产管理
 		api.GET("/assets", handler.ListAssets)
 		api.POST("/assets/import", handler.ImportAssets) // CSV 批量导入（须在 :id 之前的静态路由）
