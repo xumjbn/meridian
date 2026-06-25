@@ -289,6 +289,14 @@ export const updateK8sCluster = (id: number, data: K8sCluster): Promise<K8sClust
 export const deleteK8sCluster = (id: number): Promise<void> => api.delete(`/k8s/clusters/${id}`);
 export const getK8sCluster = (id: number): Promise<{ cluster: K8sCluster; nodes: Asset[] }> => api.get(`/k8s/clusters/${id}`);
 export const getUnassignedK8sNodes = (): Promise<Asset[]> => api.get('/k8s/nodes/unassigned');
+export interface AutoClassifyResult {
+  processed: number;
+  assigned: number;
+  clusters_created: number;
+  details: { ip: string; ok: boolean; msg?: string; vip?: string; cluster?: string }[];
+}
+// 自动归类：读节点 /etc/hosts 的 cluster-vip 标记，按 VIP 归类到集群（无则建，控制台路径 /uc）
+export const autoClassifyK8s = (): Promise<AutoClassifyResult> => api.post('/k8s/auto-classify');
 export const assignK8sNodes = (clusterId: number, assetIds: number[], role?: string): Promise<{ assigned: number }> =>
   api.post(`/k8s/clusters/${clusterId}/nodes`, { asset_ids: assetIds, role });
 export const unassignK8sNode = (clusterId: number, assetId: number): Promise<void> =>

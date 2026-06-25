@@ -10,7 +10,7 @@ import {
 import {
   getK8sClusters, createK8sCluster, updateK8sCluster, deleteK8sCluster, getK8sCluster,
   getUnassignedK8sNodes, assignK8sNodes, unassignK8sNode, getK8sConsole, getCredentials,
-  getK8sOverview, getK8sLiveNodes, getK8sLivePods,
+  getK8sOverview, getK8sLiveNodes, getK8sLivePods, autoClassifyK8s,
   type K8sCluster, type Asset, type Credential, type K8sLiveNode, type K8sLivePod, type K8sOverview,
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
@@ -182,6 +182,38 @@ export const K8sClusters: React.FC = () => {
     }
   };
 
+  const [autoLoading, setAutoLoading] = useState(false);
+  // 自动归类：读 K8s 节点 /etc/hosts 的 cluster-vip 标记 → 按 VIP 建/并集群
+  const runAutoClassify = async () => {
+    setAutoLoading(true);
+    try {
+      const r = await autoClassifyK8s();
+      const failed = r.details.filter((d) => !d.ok);
+      Modal.info({
+        title: '自动归类结果',
+        width: 560,
+        content: (
+          <div style={{ marginTop: 8 }}>
+            <p>处理 {r.processed} 个节点，归类 {r.assigned} 个，新建集群 {r.clusters_created} 个。</p>
+            {failed.length > 0 && (
+              <div style={{ marginTop: 8, maxHeight: 240, overflowY: 'auto' }}>
+                <div style={{ color: '#f59e0b', marginBottom: 4 }}>未归类 {failed.length} 个：</div>
+                {failed.map((d) => (
+                  <div key={d.ip} style={{ fontSize: 12, fontFamily: 'monospace', color: '#64748b' }}>{d.ip} — {d.msg}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        ),
+      });
+      load();
+    } catch (e: any) {
+      message.error(e?.message || '自动归类失败');
+    } finally {
+      setAutoLoading(false);
+    }
+  };
+
   const toTerminal = (a: Asset) => a.id && openTerminal({ id: a.id, name: a.name, ip: a.ip });
 
   const phaseColor = (p: string) =>
@@ -242,6 +274,9 @@ export const K8sClusters: React.FC = () => {
         icon={<CloudServerOutlined />}
         extra={
           <Space>
+            <Tooltip title="读取各 K8s 节点 /etc/hosts 的 cluster-vip 标记，按 VIP 自动建/并集群（控制台路径 /uc）">
+              <Button icon={<ApiOutlined />} loading={autoLoading} onClick={runAutoClassify}>自动归类</Button>
+            </Tooltip>
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建集群</Button>
           </Space>

@@ -510,6 +510,125 @@ func GetK8sOverview(c *gin.Context) {
 	})
 }
 
+// ── 自动归类：从节点 /etc/hosts 的 cluster-vip 标记推断集群 VIP，按 VIP 分组建/并集群 ──
+// 标记格式（示例）：
+//   ### 97.cluster-vip ###
+//   172.16.4.24 004024.hc   ← 该 IP 即前端 VIP，控制台路径默认 /uc
+
+// parseClusterVIP 从 /etc/hosts 文本里解析 cluster-vip 标记下方的 VIP 与主机名
+func parseClusterVIP(hosts string) (vip string, hostname string, ok bool) {
+	lines := strings.Split(hosts, "\n")
+	for i, ln := range lines {
+		if !strings.Contains(strings.ToLower(ln), "cluster-vip") {
+			continue
+		}
+		// 取标记下方第一条「非空、非注释」的数据行
+		for j := i + 1; j < len(lines); j++ {
+			t := strings.TrimSpace(lines[j])
+			if t == "" || strings.HasPrefix(t, "#") {
+				continue
+			}
+			fields := strings.Fields(t)
+			if len(fields) >= 1 && net.ParseIP(fields[0]) != nil {
+				h := ""
+				if len(fields) >= 2 {
+					h = fields[1]
+				}
+				return fields[0], h, true
+			}
+			break // 标记后首条数据行不是 IP，放弃
+		}
+	}
+	return "", "", false
+}
+
+// fetchClusterVIP SSH 到节点 cat /etc/hosts 并解析 VIP
+func fetchClusterVIP(node *model.Asset) (string, string, error) {
+	if node.CredentialID == nil {
+		return "", "", fmt.Errorf("未绑定凭据")
+	}
+	var cred model.Credential
+	if store.GlobalDB.First(&cred, *node.CredentialID).Error != nil {
+		return "", "", fmt.Errorf("凭据不存在")
+	}
+	if cred.Type == "telnet" {
+		return "", "", fmt.Errorf("telnet 不支持")
+	}
+	client, err := dialSSHForAsset(node, &cred)
+	if err != nil {
+		return "", "", fmt.Errorf("SSH 连接失败: %v", err)
+	}
+	defer client.Close()
+	sess, err := client.NewSession()
+	if err != nil {
+		return "", "", err
+	}
+	defer sess.Close()
+	out, err := sess.CombinedOutput("cat /etc/hosts")
+	if err != nil {
+		return "", "", fmt.Errorf("读取 /etc/hosts 失败: %v", err)
+	}
+	vip, host, ok := parseClusterVIP(string(out))
+	if !ok {
+		return "", "", fmt.Errorf("未找到 cluster-vip 标记")
+	}
+	return vip, host, nil
+}
+
+// AutoClassifyK8s 对有凭据的 K8s 节点逐个读 /etc/hosts 取 VIP，按 VIP 归类到集群（无则建）
+func AutoClassifyK8s(c *gin.Context) {
+	db := store.GlobalDB
+	var nodes []model.Asset
+	q := db.Where("k8s_role <> '' AND credential_id IS NOT NULL")
+	if !isAdmin(c) {
+		q = q.Where("owner_id = ?", currentUserID(c))
+	}
+	q.Find(&nodes)
+
+	assigned, created := 0, 0
+	cache := map[string]*model.K8sCluster{} // vip(owner) -> cluster
+	details := make([]gin.H, 0, len(nodes))
+
+	for i := range nodes {
+		node := &nodes[i]
+		vip, host, err := fetchClusterVIP(node)
+		if err != nil {
+			details = append(details, gin.H{"ip": node.IP, "ok": false, "msg": err.Error()})
+			continue
+		}
+		key := fmt.Sprintf("%d/%s", node.OwnerID, vip)
+		cl := cache[key]
+		if cl == nil {
+			var existing model.K8sCluster
+			if db.Where("owner_id = ? AND vip = ?", node.OwnerID, vip).First(&existing).Error == nil {
+				cl = &existing
+			} else {
+				name := host
+				if name == "" {
+					name = "cluster-" + vip
+				}
+				nc := model.K8sCluster{OwnerID: node.OwnerID, Name: name, VIP: vip, ConsolePort: 443, ConsolePath: "/uc"}
+				db.Create(&nc)
+				cl = &nc
+				created++
+			}
+			cache[key] = cl
+		}
+		node.K8sClusterID = &cl.ID
+		node.Tags = mergeTagJSON(node.Tags, "k8s")
+		db.Save(node)
+		assigned++
+		details = append(details, gin.H{"ip": node.IP, "ok": true, "vip": vip, "cluster": cl.Name})
+	}
+
+	db.Create(&model.AuditLog{
+		Actor: currentUsername(c), Action: "K8S_AUTOCLASSIFY",
+		Path:   fmt.Sprintf("自动归类：处理 %d，归类 %d，新建集群 %d", len(nodes), assigned, created),
+		Status: 200, IP: c.ClientIP(),
+	})
+	SendSuccess(c, gin.H{"processed": len(nodes), "assigned": assigned, "clusters_created": created, "details": details})
+}
+
 // mergeTagJSON 把 tag 并入 JSON 字符串数组（去重）
 func mergeTagJSON(existing, tag string) string {
 	arr := []string{}
