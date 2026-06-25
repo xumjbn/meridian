@@ -188,6 +188,7 @@ type K8sCluster struct {
 	ConsolePort  int       `gorm:"default:443" json:"console_port"`
 	ConsolePath  string    `gorm:"size:200" json:"console_path"`  // 控制台路径，如 "/#/login"，默认 "/"
 	APIServer    string    `gorm:"size:120" json:"api_server"`    // 可选，默认 VIP:6443
+	APIToken     string    `gorm:"type:text" json:"-"`            // kube-apiserver ServiceAccount Bearer Token（不回传前端）
 	CredentialID *uint     `json:"credential_id"`                 // 绑定的控制台登录凭据
 	Description  string    `gorm:"type:text" json:"description"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -197,6 +198,7 @@ type K8sCluster struct {
 	MasterCount int    `gorm:"-" json:"master_count"`
 	OwnerName   string `gorm:"-" json:"owner_name"`
 	CredName    string `gorm:"-" json:"cred_name"`
-	Online      bool   `gorm:"-" json:"online"` // VIP:console_port 连通性（探测得到）
+	Online      bool   `gorm:"-" json:"online"`     // VIP:console_port 连通性（探测得到）
+	HasToken    bool   `gorm:"-" json:"has_token"`  // 是否已配置 kube API Token
 }
 
