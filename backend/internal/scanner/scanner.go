@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -49,6 +50,7 @@ type ScanResult struct {
 	Vendor    string // Cisco, Huawei, Ubuntu, Windows等
 	Version   string // 操作系统或固件版本
 	Status    string // online, offline
+	K8sRole   string // "" | control-plane | worker（探测得到）
 }
 
 var (
@@ -124,6 +126,10 @@ func runDiscoveryScan(db *gorm.DB, taskID uint) {
 		finishTask(db, &task, &scanLog, "failed", "无可扫描的有效端口")
 		return
 	}
+	// 探测 K8s：并入 API Server(6443) 与 kubelet(10250)
+	if task.DetectK8s {
+		ports = appendUniquePorts(ports, 6443, 10250)
+	}
 
 	// 3. 扫描参数：优先采用「系统设置」中用户配置的并发数与超时；大网段额外限流
 	concurrency, timeout := loadScanParams(db)
@@ -174,6 +180,9 @@ func runDiscoveryScan(db *gorm.DB, taskID uint) {
 						return
 					}
 					res := scanHost(ip, ports, timeout, hijackedPorts, testedOffline)
+					if task.DetectK8s && res.Status == "online" {
+						probeK8s(ip, &res, timeout)
+					}
 					select {
 					case <-ctx.Done():
 						return
@@ -326,6 +335,139 @@ func parsePorts(portsStr string) []int {
 		ports = []int{22, 23, 80, 443}
 	}
 	return ports
+}
+
+// mergeTag 把 tag 并入 JSON 字符串数组（去重），返回新的 JSON
+func mergeTag(existing, tag string) string {
+	var arr []string
+	if strings.TrimSpace(existing) != "" {
+		_ = json.Unmarshal([]byte(existing), &arr)
+	}
+	for _, t := range arr {
+		if t == tag {
+			b, _ := json.Marshal(arr)
+			return string(b)
+		}
+	}
+	arr = append(arr, tag)
+	b, _ := json.Marshal(arr)
+	return string(b)
+}
+
+// ensureTag 确保全局标签存在（便于前端按色展示）
+func ensureTag(db *gorm.DB, name, color string) {
+	var t model.Tag
+	db.Where("name = ?", name).FirstOrCreate(&t, model.Tag{Name: name, Color: color})
+}
+
+// appendUniquePorts 把若干端口并入列表（去重）
+func appendUniquePorts(ports []int, extra ...int) []int {
+	seen := make(map[int]bool, len(ports))
+	for _, p := range ports {
+		seen[p] = true
+	}
+	for _, p := range extra {
+		if !seen[p] {
+			ports = append(ports, p)
+			seen[p] = true
+		}
+	}
+	return ports
+}
+
+// ── Kubernetes 节点探测 ─────────────────────────────────
+// probeK8s 在已发现开放 6443/10250 的主机上判定是否 K8s 节点并定角色
+func probeK8s(ip string, res *ScanResult, timeout time.Duration) {
+	has := func(p int) bool {
+		for _, op := range res.OpenPorts {
+			if op == p {
+				return true
+			}
+		}
+		return false
+	}
+	if has(6443) && isK8sAPIServer(ip, res, timeout) {
+		res.K8sRole = "control-plane"
+		return
+	}
+	if has(10250) && isKubelet(ip, timeout) {
+		res.K8sRole = "worker"
+	}
+}
+
+func k8sHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:   timeout + 2*time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
+}
+
+// isK8sAPIServer 判定 6443 是否 kube-apiserver：优先 TLS 证书 SAN（最可靠），其次 /version
+func isK8sAPIServer(ip string, res *ScanResult, timeout time.Duration) bool {
+	addr := net.JoinHostPort(ip, "6443")
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
+	if err == nil {
+		for _, cert := range conn.ConnectionState().PeerCertificates {
+			for _, dns := range cert.DNSNames {
+				d := strings.ToLower(dns)
+				if d == "kubernetes" || strings.HasPrefix(d, "kubernetes.default") {
+					conn.Close()
+					tryReadK8sVersion(ip, res, timeout)
+					return true
+				}
+			}
+			cn := strings.ToLower(cert.Subject.CommonName)
+			if cn == "kube-apiserver" || strings.Contains(cn, "kubernetes") {
+				conn.Close()
+				tryReadK8sVersion(ip, res, timeout)
+				return true
+			}
+		}
+		conn.Close()
+	}
+	// 证书未命中：用 /version 兜底
+	return tryReadK8sVersion(ip, res, timeout)
+}
+
+// tryReadK8sVersion 访问 /version；匿名放行时取 gitVersion，匿名拒绝时凭 K8s Status JSON 判定
+func tryReadK8sVersion(ip string, res *ScanResult, timeout time.Duration) bool {
+	resp, err := k8sHTTPClient(timeout).Get(fmt.Sprintf("https://%s:6443/version", ip))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(body)
+	if strings.Contains(s, "gitVersion") {
+		var v struct {
+			GitVersion string `json:"gitVersion"`
+		}
+		if json.Unmarshal(body, &v) == nil && v.GitVersion != "" && res.Version == "" {
+			res.Version = "Kubernetes " + v.GitVersion
+		}
+		return true
+	}
+	// 匿名被拒：kube-apiserver 返回的 Status JSON 形状（kind:Status + apiVersion）
+	if strings.Contains(s, "\"kind\"") && strings.Contains(s, "Status") && strings.Contains(s, "apiVersion") {
+		return true
+	}
+	return false
+}
+
+// isKubelet 弱判定 10250 为 kubelet：TLS 握手成功 + /healthz 有 HTTP 响应（200/401/403 均可）
+func isKubelet(ip string, timeout time.Duration) bool {
+	addr := net.JoinHostPort(ip, "10250")
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	resp, err := k8sHTTPClient(timeout).Get(fmt.Sprintf("https://%s:10250/healthz", ip))
+	if err != nil {
+		return true // TLS 成功但 HTTP 失败，仍按弱判定为 kubelet
+	}
+	resp.Body.Close()
+	return true
 }
 
 // detectHijackedPorts 探测目标网段中是否存在被本地代理/VPN劫持或异常阻断的端口
@@ -618,6 +760,11 @@ func saveSingleAsset(db *gorm.DB, r ScanResult) (bool, error) {
 		if r.Type != "other" {
 			asset.Type = r.Type
 		}
+		if r.K8sRole != "" {
+			asset.K8sRole = r.K8sRole
+			asset.Tags = mergeTag(asset.Tags, "k8s")
+			ensureTag(db, "k8s", "#326ce5")
+		}
 		if err := db.Save(&asset).Error; err != nil {
 			log.Printf("Scanner db save error for ip %s: %v", r.IP, err)
 			return false, err
@@ -641,6 +788,11 @@ func saveSingleAsset(db *gorm.DB, r ScanResult) (bool, error) {
 			OSVersion:     r.Version,
 			Ports:         string(portsJSON),
 			LastScannedAt: &now,
+		}
+		if r.K8sRole != "" {
+			newAsset.K8sRole = r.K8sRole
+			newAsset.Tags = mergeTag("", "k8s")
+			ensureTag(db, "k8s", "#326ce5")
 		}
 		if err := db.Create(&newAsset).Error; err != nil {
 			log.Printf("Scanner db create error for ip %s: %v", r.IP, err)
