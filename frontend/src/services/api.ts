@@ -224,12 +224,15 @@ export interface AgentState {
   error: string;
   work_dir: string;
 }
-// 启动一次 Agent 任务
-export const aiAgentStart = (assetId: number, prompt: string): Promise<AgentState> =>
-  api.post('/ai/agent/start', { asset_id: assetId, prompt });
+// 启动一次 Agent 任务（可传前端预生成的 sessionId，便于首轮即可停止）
+export const aiAgentStart = (assetId: number, prompt: string, sessionId?: string): Promise<AgentState> =>
+  api.post('/ai/agent/start', { asset_id: assetId, prompt, session_id: sessionId });
 // 对高危命令确认(true)/中止(false)
 export const aiAgentContinue = (sessionId: string, approve: boolean): Promise<AgentState> =>
   api.post('/ai/agent/continue', { session_id: sessionId, approve });
+// 立即停止运行中的 Agent 任务（误操作后中止）
+export const aiAgentStop = (sessionId: string): Promise<{ ok: boolean }> =>
+  api.post('/ai/agent/stop', { session_id: sessionId });
 // 多轮追加指令（带上下文记忆继续推进）
 export const aiAgentMessage = (sessionId: string, prompt: string): Promise<AgentState> =>
   api.post('/ai/agent/message', { session_id: sessionId, prompt });
