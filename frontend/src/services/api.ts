@@ -268,6 +268,7 @@ export interface K8sCluster {
   master_count?: number;
   owner_name?: string;
   cred_name?: string;
+  online?: boolean;
 }
 export const getK8sClusters = (): Promise<K8sCluster[]> => api.get('/k8s/clusters');
 export const createK8sCluster = (data: K8sCluster): Promise<K8sCluster> => api.post('/k8s/clusters', data);

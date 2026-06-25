@@ -194,7 +194,10 @@ DetectK8s bool `gorm:"default:false" json:"detect_k8s"`
 - 量级：后端 ~1 文件新增(handler/k8s.go) + 模型/扫描小改；前端 1 个新页 + api.ts。约中等。
 
 **Phase 2（增强）**
-- worker(10250) 探测开关；控制台 `console_type` + 反代免登（先做 k8s Dashboard token 或 Rancher）；集群健康探测（VIP:443 / 6443 在线）；`console_path` 模板化 token 免登。
+- [x] **集群健康探测**：列表/详情并发探测 VIP:console_port 连通性，卡片显示在线/离线。
+- [x] **`console_path` 模板化免登**：路径支持 `{username}`/`{password}` 占位符；命中即用绑定凭据拼 URL 真·一键免登，否则回退「复制密码+打开」。
+- [ ] worker(10250) 探测开关（系统设置）。
+- [ ] 控制台 `console_type` + 后端反代免登（k8s Dashboard token / Rancher / KubeSphere，逐个适配）。
 
 **Phase 3（深度，可选）**
 - 绑定 kubeconfig/ServiceAccount token 凭据，调用 kube-apiserver 拉 **节点/Pod/Deployment** 只读看板；在线 `kubectl`/exec。
