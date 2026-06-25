@@ -116,6 +116,7 @@ func main() {
 		api.DELETE("/k8s/clusters/:id/nodes/:assetId", handler.UnassignK8sNode)
 		api.GET("/k8s/clusters/:id/console", handler.GetK8sConsole)
 		api.GET("/k8s/nodes/unassigned", handler.ListUnassignedK8sNodes)
+		api.POST("/k8s/auto-classify", handler.AutoClassifyK8s)
 		// Phase 3：调 kube-apiserver 拉实时看板（需集群配置 API Token）
 		api.GET("/k8s/clusters/:id/overview", handler.GetK8sOverview)
 		api.GET("/k8s/clusters/:id/live/nodes", handler.GetK8sLiveNodes)
