@@ -5,6 +5,7 @@ import {
   DashboardOutlined,
   DatabaseOutlined,
   RadarChartOutlined,
+  CloudServerOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -32,6 +33,7 @@ const Credentials = lazy(() => import('./pages/Credentials').then((m) => ({ defa
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const Users = lazy(() => import('./pages/Users').then((m) => ({ default: m.Users })));
 const Audit = lazy(() => import('./pages/Audit').then((m) => ({ default: m.Audit })));
+const K8sClusters = lazy(() => import('./pages/K8sClusters').then((m) => ({ default: m.K8sClusters })));
 const TerminalPage = lazy(() => import('./pages/TerminalPage').then((m) => ({ default: m.TerminalPage })));
 
 const { Sider, Content } = Layout;
@@ -49,6 +51,7 @@ const COLLAPSED = 76;
 const navItems = [
   { key: '/', icon: <DashboardOutlined style={{ fontSize: 16 }} />, label: '控制台' },
   { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 16 }} />, label: '资产清单 (CMDB)' },
+  { key: '/k8s', icon: <CloudServerOutlined style={{ fontSize: 16 }} />, label: 'Kubernetes 集群' },
   { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 16 }} />, label: '自动发现' },
   { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 16 }} />, label: '凭据保管箱' },
   { key: '/users', icon: <TeamOutlined style={{ fontSize: 16 }} />, label: '用户管理' },
@@ -267,6 +270,7 @@ const AppLayout: React.FC = () => {
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/assets" element={<Assets />} />
+                  <Route path="/k8s" element={<K8sClusters />} />
                   {isAdmin && <Route path="/tasks" element={<ScanTasks />} />}
                   {isAdmin && <Route path="/vulns" element={<Vulns />} />}
                   <Route path="/credentials" element={<Credentials />} />

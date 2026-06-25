@@ -87,6 +87,8 @@ export interface Asset {
   tags?: string; // JSON array string e.g. '["生产","DMZ"]'
   owner_id?: number;
   owner_name?: string; // 归属用户名（后端展示用，非持久化）
+  k8s_role?: string; // "" | control-plane | worker（扫描探测得到）
+  k8s_cluster_id?: number | null; // 归属 K8s 集群
 }
 
 export interface ScanTask {
@@ -95,6 +97,7 @@ export interface ScanTask {
   target_range: string;
   ports: string;
   kind?: 'discovery' | 'vuln'; // 扫描类型：端口发现 / nuclei 漏扫
+  detect_k8s?: boolean; // 是否探测 Kubernetes 节点（并入 6443/10250）
   status?: 'idle' | 'running' | 'completed' | 'failed';
   last_run_at?: string;
   schedule?: string; // "@every 1h" | "daily:HH:MM"
@@ -249,6 +252,35 @@ export interface AgentSessionMeta {
 }
 export const aiAgentSessions = (): Promise<AgentSessionMeta[]> => api.get('/ai/agent/sessions');
 export const aiAgentSession = (id: string): Promise<AgentState> => api.get(`/ai/agent/sessions/${id}`);
+
+// ── Kubernetes 集群管理 ───────────────────────
+export interface K8sCluster {
+  id?: number;
+  name: string;
+  vip: string;
+  console_port?: number;
+  console_path?: string;
+  api_server?: string;
+  credential_id?: number | null;
+  description?: string;
+  // 展示字段
+  node_count?: number;
+  master_count?: number;
+  owner_name?: string;
+  cred_name?: string;
+}
+export const getK8sClusters = (): Promise<K8sCluster[]> => api.get('/k8s/clusters');
+export const createK8sCluster = (data: K8sCluster): Promise<K8sCluster> => api.post('/k8s/clusters', data);
+export const updateK8sCluster = (id: number, data: K8sCluster): Promise<K8sCluster> => api.put(`/k8s/clusters/${id}`, data);
+export const deleteK8sCluster = (id: number): Promise<void> => api.delete(`/k8s/clusters/${id}`);
+export const getK8sCluster = (id: number): Promise<{ cluster: K8sCluster; nodes: Asset[] }> => api.get(`/k8s/clusters/${id}`);
+export const getUnassignedK8sNodes = (): Promise<Asset[]> => api.get('/k8s/nodes/unassigned');
+export const assignK8sNodes = (clusterId: number, assetIds: number[], role?: string): Promise<{ assigned: number }> =>
+  api.post(`/k8s/clusters/${clusterId}/nodes`, { asset_ids: assetIds, role });
+export const unassignK8sNode = (clusterId: number, assetId: number): Promise<void> =>
+  api.delete(`/k8s/clusters/${clusterId}/nodes/${assetId}`);
+export const getK8sConsole = (clusterId: number): Promise<{ url: string; username: string; password: string }> =>
+  api.get(`/k8s/clusters/${clusterId}/console`);
 
 // ── SFTP 文件传输 ─────────────────────────────
 export interface SftpEntry {

@@ -58,6 +58,7 @@ func InitDB() *gorm.DB {
 		&model.AssetHistory{},
 		&model.Tag{},
 		&model.AgentSession{},
+		&model.K8sCluster{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
