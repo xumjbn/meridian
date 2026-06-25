@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -73,6 +74,27 @@ type agentSession struct {
 	LastErr     string
 	LastUsed    time.Time
 	mu          sync.Mutex
+
+	// 停止控制：与 mu 分离，使 /stop 在 runLoop 持锁运行时也能立即生效
+	cancelMu    sync.Mutex
+	cancel      context.CancelFunc // 运行中为非 nil，可取消在途 LLM/SSH 调用
+	stopRequest bool
+}
+
+// requestStop 标记并取消当前运行（无需 s.mu，可在 runLoop 持锁时调用）
+func (s *agentSession) requestStop() {
+	s.cancelMu.Lock()
+	s.stopRequest = true
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.cancelMu.Unlock()
+}
+
+func (s *agentSession) stopped() bool {
+	s.cancelMu.Lock()
+	defer s.cancelMu.Unlock()
+	return s.stopRequest
 }
 
 var (
@@ -201,7 +223,7 @@ func dialSSHForAsset(asset *model.Asset, cred *model.Credential) (*ssh.Client, e
 
 // runRemoteCmd 在独立 SSH 会话中执行一条命令；保留工作目录、合并 stdout/stderr、带超时。
 // 返回输出、退出码、新的工作目录。
-func runRemoteCmd(client *ssh.Client, workDir, command string, timeout time.Duration) (string, int, string) {
+func runRemoteCmd(ctx context.Context, client *ssh.Client, workDir, command string, timeout time.Duration) (string, int, string) {
 	sess, err := client.NewSession()
 	if err != nil {
 		return "会话创建失败: " + err.Error(), -1, workDir
@@ -248,6 +270,10 @@ func runRemoteCmd(client *ssh.Client, workDir, command string, timeout time.Dura
 			out = strings.TrimRight(out[:idx], "\r\n")
 		}
 		return out, exitCode, newWorkDir
+	case <-ctx.Done():
+		_ = sess.Signal(ssh.SIGKILL)
+		_ = sess.Close()
+		return "■ 已被用户停止", -1, workDir
 	case <-time.After(timeout):
 		_ = sess.Signal(ssh.SIGKILL)
 		_ = sess.Close()
@@ -269,8 +295,8 @@ func parseAgentAction(s string) agentAction {
 	return agentAction{Done: true, Summary: strings.TrimSpace(s)}
 }
 
-// callOpenAIMessages 带完整消息历史的 OpenAI 兼容调用（多轮上下文）
-func callOpenAIMessages(baseURL, apiKey, model string, messages []chatMsg, maxTokens int) (string, error) {
+// callOpenAIMessages 带完整消息历史的 OpenAI 兼容调用（多轮上下文，支持 ctx 取消）
+func callOpenAIMessages(ctx context.Context, baseURL, apiKey, model string, messages []chatMsg, maxTokens int) (string, error) {
 	url := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if !strings.HasSuffix(url, "/chat/completions") {
 		url += "/chat/completions"
@@ -287,7 +313,7 @@ func callOpenAIMessages(baseURL, apiKey, model string, messages []chatMsg, maxTo
 		"stream":      false,
 	}
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -344,8 +370,30 @@ func (s *agentSession) runLoop() {
 	apiKey := getSettingValue(db, "ai_api_key", "")
 	aiModel := getSettingValue(db, "ai_model", "")
 
+	// 建立可取消的上下文：/stop 调用 s.cancel() 即可中止在途 LLM/SSH 调用
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelMu.Lock()
+	s.stopRequest = false
+	s.cancel = cancel
+	s.cancelMu.Unlock()
+	defer func() {
+		s.cancelMu.Lock()
+		s.cancel = nil
+		s.cancelMu.Unlock()
+		cancel()
+	}()
+
+	markStopped := func() {
+		s.Status = "aborted"
+		s.Summary = "已停止：用户中止了任务。可继续追加指令或新建对话。"
+	}
+
 	client, err := dialSSHForAsset(&s.Asset, &s.Cred)
 	if err != nil {
+		if s.stopped() {
+			markStopped()
+			return
+		}
 		s.Status = "error"
 		s.LastErr = "SSH 连接失败: " + err.Error()
 		return
@@ -354,6 +402,10 @@ func (s *agentSession) runLoop() {
 
 	s.Status = "running"
 	for len(s.Steps) < maxAgentSteps {
+		if s.stopped() {
+			markStopped()
+			return
+		}
 		var action agentAction
 
 		if s.Pending != "" {
@@ -363,7 +415,11 @@ func (s *agentSession) runLoop() {
 			s.PendingNote = ""
 			s.PendingWarn = ""
 		} else {
-			reply, err := callOpenAIMessages(baseURL, apiKey, aiModel, s.Messages, agentMaxTokens)
+			reply, err := callOpenAIMessages(ctx, baseURL, apiKey, aiModel, s.Messages, agentMaxTokens)
+			if s.stopped() {
+				markStopped()
+				return
+			}
 			if err != nil {
 				s.Status = "error"
 				s.LastErr = "AI 调用失败: " + err.Error()
@@ -391,7 +447,11 @@ func (s *agentSession) runLoop() {
 		}
 
 		// 执行命令
-		out, code, newWD := runRemoteCmd(client, s.WorkDir, action.Command, agentCmdTimeout)
+		out, code, newWD := runRemoteCmd(ctx, client, s.WorkDir, action.Command, agentCmdTimeout)
+		if s.stopped() {
+			markStopped()
+			return
+		}
 		s.WorkDir = newWD
 		danger, _ := checkDangerousCommand(action.Command)
 		s.Steps = append(s.Steps, agentStepRec{
@@ -443,8 +503,9 @@ func agentStateResp(s *agentSession) gin.H {
 func StartAgent(c *gin.Context) {
 	db := store.GlobalDB
 	var req struct {
-		AssetID uint   `json:"asset_id"`
-		Prompt  string `json:"prompt"`
+		AssetID   uint   `json:"asset_id"`
+		Prompt    string `json:"prompt"`
+		SessionID string `json:"session_id"` // 前端预生成，便于首轮即可调用 /stop
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		SendError(c, 400, "参数格式错误")
@@ -496,8 +557,14 @@ func StartAgent(c *gin.Context) {
 		osHint = asset.OSVersion
 	}
 
+	// 优先使用前端预生成的 session_id（格式校验 + 防撞内存中会话）；否则后端生成
+	sid := strings.TrimSpace(req.SessionID)
+	if !strings.HasPrefix(sid, "agent-") || len(sid) < 8 || len(sid) > 80 || getAgentSession(sid) != nil {
+		sid = newSessionID()
+	}
+
 	s := &agentSession{
-		ID:          newSessionID(),
+		ID:          sid,
 		RequesterID: currentUserID(c),
 		Actor:       currentUsername(c),
 		IP:          c.ClientIP(),
@@ -640,6 +707,29 @@ func MessageAgent(c *gin.Context) {
 	s.LastUsed = time.Now()
 	persistSession(s)
 	SendSuccess(c, agentStateResp(s))
+}
+
+// StopAgent 立即中止运行中的 Agent 任务（误操作后停止）：取消在途 LLM/SSH 调用，
+// runLoop 在下一个检查点收尾为 aborted。无需 s.mu，运行中也能即时生效。
+func StopAgent(c *gin.Context) {
+	var req struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		SendError(c, 400, "参数格式错误")
+		return
+	}
+	s := getAgentSession(req.SessionID)
+	if s == nil {
+		SendError(c, 404, "会话不存在或已结束")
+		return
+	}
+	if s.RequesterID != currentUserID(c) && !isAdmin(c) {
+		SendError(c, 403, "无权操作该会话")
+		return
+	}
+	s.requestStop()
+	SendSuccess(c, gin.H{"ok": true})
 }
 
 // ListAgentSessions 当前用户的历史 Agent 会话（最近在前，供前端切换历史对话）

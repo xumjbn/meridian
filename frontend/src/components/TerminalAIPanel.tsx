@@ -2,12 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Select, Space, Tooltip, message } from 'antd';
 import {
   RobotOutlined, ThunderboltOutlined, PlusOutlined,
-  HistoryOutlined, SyncOutlined, MinusOutlined,
+  HistoryOutlined, SyncOutlined, MinusOutlined, StopOutlined,
 } from '@ant-design/icons';
 import {
-  aiStatus, aiAgentStart, aiAgentContinue, aiAgentMessage, aiAgentSessions, aiAgentSession,
+  aiStatus, aiAgentStart, aiAgentContinue, aiAgentMessage, aiAgentSessions, aiAgentSession, aiAgentStop,
   type Asset, type AgentState, type AgentSessionMeta,
 } from '../services/api';
+
+const genAgentId = () => `agent-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
 interface Props {
   assets: Asset[];
@@ -34,6 +36,7 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState<AgentState | null>(null);
   const [history, setHistory] = useState<AgentSessionMeta[]>([]);
+  const [runningId, setRunningId] = useState<string | null>(null); // 运行中的会话 id，用于停止
 
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -84,20 +87,23 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
     const p = prompt.trim();
     if (!p) return;
     if (!target) { message.warning('请先选择要操作的资产'); return; }
+    const sid = genAgentId();
+    setRunningId(sid);
     setLoading(true);
     try {
-      const st = await aiAgentStart(target, p);
+      const st = await aiAgentStart(target, p, sid);
       setActive(st);
       setPrompt('');
       loadHistory();
     } catch (e: any) {
       message.error(e?.message || 'AI 任务启动失败');
-    } finally { setLoading(false); }
+    } finally { setLoading(false); setRunningId(null); }
   };
 
   const runFollowup = async () => {
     const p = prompt.trim();
     if (!p || !active) return;
+    setRunningId(active.session_id);
     setLoading(true);
     try {
       const st = await aiAgentMessage(active.session_id, p);
@@ -106,11 +112,12 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
       loadHistory();
     } catch (e: any) {
       message.error(e?.message || '发送失败');
-    } finally { setLoading(false); }
+    } finally { setLoading(false); setRunningId(null); }
   };
 
   const confirm = async (approve: boolean) => {
     if (!active) return;
+    setRunningId(active.session_id);
     setLoading(true);
     try {
       const st = await aiAgentContinue(active.session_id, approve);
@@ -118,7 +125,19 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
       loadHistory();
     } catch (e: any) {
       message.error(e?.message || '操作失败');
-    } finally { setLoading(false); }
+    } finally { setLoading(false); setRunningId(null); }
+  };
+
+  // 立即停止运行中的任务（误操作中止）；运行中的 start/continue/message 请求会随之返回 aborted
+  const stop = async () => {
+    const sid = runningId || active?.session_id;
+    if (!sid) return;
+    try {
+      await aiAgentStop(sid);
+      message.info('正在停止…');
+    } catch (e: any) {
+      message.error(e?.message || '停止失败');
+    }
   };
 
   const openSession = async (id: string) => {
@@ -250,8 +269,11 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
         ))}
 
         {loading && (
-          <div style={{ fontSize: 11, color: '#818cf8', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <SyncOutlined spin /> AI 执行中…（自动运行命令并读取输出推进任务）
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: 11, color: '#818cf8', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <SyncOutlined spin /> AI 执行中…（自动运行命令并读取输出推进任务）
+            </span>
+            <Button size="small" danger icon={<StopOutlined />} onClick={stop}>停止</Button>
           </div>
         )}
 
