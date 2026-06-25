@@ -126,9 +126,9 @@ func runDiscoveryScan(db *gorm.DB, taskID uint) {
 		finishTask(db, &task, &scanLog, "failed", "无可扫描的有效端口")
 		return
 	}
-	// 探测 K8s：并入 API Server(6443) 与 kubelet(10250)
+	// 探测 K8s：并入 API Server(6443 / 非标 2070) 与 kubelet(10250)
 	if task.DetectK8s {
-		ports = appendUniquePorts(ports, 6443, 10250)
+		ports = appendUniquePorts(ports, 6443, 2070, 10250)
 	}
 
 	// 3. 扫描参数：优先采用「系统设置」中用户配置的并发数与超时；大网段额外限流
@@ -376,7 +376,10 @@ func appendUniquePorts(ports []int, extra ...int) []int {
 }
 
 // ── Kubernetes 节点探测 ─────────────────────────────────
-// probeK8s 在已发现开放 6443/10250 的主机上判定是否 K8s 节点并定角色
+// k8sAPIPorts 是 kube-apiserver 候选端口：标准 6443 + 非标 2070
+var k8sAPIPorts = []int{6443, 2070}
+
+// probeK8s 在已发现开放 apiserver/kubelet 端口的主机上判定是否 K8s 节点并定角色
 func probeK8s(ip string, res *ScanResult, timeout time.Duration) {
 	has := func(p int) bool {
 		for _, op := range res.OpenPorts {
@@ -386,9 +389,11 @@ func probeK8s(ip string, res *ScanResult, timeout time.Duration) {
 		}
 		return false
 	}
-	if has(6443) && isK8sAPIServer(ip, res, timeout) {
-		res.K8sRole = "control-plane"
-		return
+	for _, port := range k8sAPIPorts {
+		if has(port) && isK8sAPIServer(ip, port, res, timeout) {
+			res.K8sRole = "control-plane"
+			return
+		}
 	}
 	if has(10250) && isKubelet(ip, timeout) {
 		res.K8sRole = "worker"
@@ -402,9 +407,9 @@ func k8sHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
-// isK8sAPIServer 判定 6443 是否 kube-apiserver：优先 TLS 证书 SAN（最可靠），其次 /version
-func isK8sAPIServer(ip string, res *ScanResult, timeout time.Duration) bool {
-	addr := net.JoinHostPort(ip, "6443")
+// isK8sAPIServer 判定指定端口是否 kube-apiserver：优先 TLS 证书 SAN（最可靠），其次 /version
+func isK8sAPIServer(ip string, port int, res *ScanResult, timeout time.Duration) bool {
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
 	if err == nil {
 		for _, cert := range conn.ConnectionState().PeerCertificates {
@@ -412,26 +417,26 @@ func isK8sAPIServer(ip string, res *ScanResult, timeout time.Duration) bool {
 				d := strings.ToLower(dns)
 				if d == "kubernetes" || strings.HasPrefix(d, "kubernetes.default") {
 					conn.Close()
-					tryReadK8sVersion(ip, res, timeout)
+					tryReadK8sVersion(ip, port, res, timeout)
 					return true
 				}
 			}
 			cn := strings.ToLower(cert.Subject.CommonName)
 			if cn == "kube-apiserver" || strings.Contains(cn, "kubernetes") {
 				conn.Close()
-				tryReadK8sVersion(ip, res, timeout)
+				tryReadK8sVersion(ip, port, res, timeout)
 				return true
 			}
 		}
 		conn.Close()
 	}
 	// 证书未命中：用 /version 兜底
-	return tryReadK8sVersion(ip, res, timeout)
+	return tryReadK8sVersion(ip, port, res, timeout)
 }
 
 // tryReadK8sVersion 访问 /version；匿名放行时取 gitVersion，匿名拒绝时凭 K8s Status JSON 判定
-func tryReadK8sVersion(ip string, res *ScanResult, timeout time.Duration) bool {
-	resp, err := k8sHTTPClient(timeout).Get(fmt.Sprintf("https://%s:6443/version", ip))
+func tryReadK8sVersion(ip string, port int, res *ScanResult, timeout time.Duration) bool {
+	resp, err := k8sHTTPClient(timeout).Get(fmt.Sprintf("https://%s:%d/version", ip, port))
 	if err != nil {
 		return false
 	}
