@@ -68,7 +68,7 @@ const buildMenu = (isAdmin: boolean) => {
   const pick = (keys: string[]) => flat.filter((i) => keys.includes(i.key));
   const grouped: MenuProps['items'] = [
     { type: 'group' as const, label: '概览', children: pick(['/']) },
-    { type: 'group' as const, label: '资产中心', children: pick(['/assets', '/tasks']) },
+    { type: 'group' as const, label: '资产中心', children: pick(['/assets', '/k8s', '/tasks']) },
     { type: 'group' as const, label: '接入与系统', children: pick(['/credentials', '/users', '/audit', '/settings']) },
   ].filter((g) => g.children.length > 0);
   return { flat, grouped };
