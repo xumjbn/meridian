@@ -142,12 +142,14 @@ const AppLayout: React.FC = () => {
                 itemHoverBg: palette.siderHover,
                 itemHoverColor: '#ffffff',
                 itemActiveBg: palette.siderActive,
-                itemHeight: 42,
+                itemHeight: 34,
+                fontSize: 13,
                 itemBorderRadius: 9,
                 itemMarginInline: 0,
                 groupTitleColor: '#5b6680',
                 groupTitleFontSize: 11,
-                iconSize: 16,
+                iconSize: 15,
+                subMenuItemBg: 'transparent',
               },
               Tooltip: {
                 colorBgSpotlight: '#1e293b',
@@ -225,7 +227,10 @@ const AppLayout: React.FC = () => {
                   inlineCollapsed={collapsed}
                   selectedKeys={[selectedKey]}
                   items={collapsed ? menuNavItems : groupedItems}
-                  onClick={(info) => navigate(info.key)}
+                  onClick={(info) => {
+                    navigate(info.key);
+                    setActive(null); // 离开终端、显示所选页面（否则终端常驻挡住页面）
+                  }}
                   style={{ background: 'transparent', borderRight: 0 }}
                 />
               </div>
