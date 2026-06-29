@@ -263,6 +263,127 @@ const RAW_SNIPPETS: RawSnippet[] = [
   ['', 'date', '当前时间'],
   ['', 'reboot', '⚠️ 重启系统'],
   ['', 'shutdown -h now', '⚠️ 关机'],
+
+  // ── Git（进阶）─────────────────────────────
+  ['gca', 'git commit -am ""', '暂存已跟踪并提交'],
+  ['gcm', 'git commit -m ""', '提交并写信息'],
+  ['gamend', 'git commit --amend', '修改上次提交'],
+  ['gsw', 'git switch ', '切换分支'],
+  ['gswc', 'git switch -c ', '新建并切换分支'],
+  ['grs', 'git restore ', '撤销工作区改动'],
+  ['grss', 'git restore --staged ', '取消暂存'],
+  ['gsp', 'git stash pop', '恢复最近暂存'],
+  ['gst', 'git stash list', '暂存列表'],
+  ['grb', 'git rebase ', '变基'],
+  ['grbi', 'git rebase -i HEAD~3', '交互式变基'],
+  ['gcp', 'git cherry-pick ', '拣选提交'],
+  ['glg', 'git log --oneline --graph --all -30', '全分支图谱'],
+  ['gbl', 'git blame ', '逐行追溯'],
+  ['gtag', 'git tag -a v1.0.0 -m ""', '打标签'],
+  ['greflog', 'git reflog', '引用日志(找回提交)'],
+  ['gclean', 'git clean -fd', '⚠️ 清理未跟踪文件'],
+  ['gconf', 'git config --global -l', '查看全局配置'],
+
+  // ── Docker（进阶）──────────────────────────
+  ['dcp', 'docker compose ps', 'Compose 容器状态'],
+  ['dcr', 'docker compose restart ', 'Compose 重启'],
+  ['dcb', 'docker compose up -d --build', 'Compose 重建启动'],
+  ['dexsh', 'docker exec -it  sh', '进入容器(sh)'],
+  ['dcpf', 'docker cp  :', '容器内外拷贝'],
+  ['', 'docker restart ', '重启容器'],
+  ['', 'docker top ', '容器内进程'],
+  ['', 'docker network ls', '网络列表'],
+  ['', 'docker volume ls', '卷列表'],
+  ['', 'docker image prune -af', '⚠️ 清理悬空镜像'],
+  ['', 'docker run --rm -it  bash', '临时容器'],
+  ['', 'docker tag  ', '镜像打标'],
+  ['', 'docker save  | gzip > image.tar.gz', '导出镜像'],
+  ['', 'docker load -i ', '导入镜像'],
+
+  // ── Kubernetes（进阶）─────────────────────
+  ['kga', 'kubectl get all -A', '全部资源'],
+  ['kgi', 'kubectl get ingress -A', '查看 Ingress'],
+  ['kgd', 'kubectl get deploy -o wide', '查看 Deployment'],
+  ['kpf', 'kubectl port-forward svc/  8080:80', '端口转发'],
+  ['kro', 'kubectl rollout restart deploy/', '滚动重启'],
+  ['krs', 'kubectl rollout status deploy/', '发布状态'],
+  ['ksc', 'kubectl scale deploy/  --replicas=3', '扩缩容'],
+  ['kdp', 'kubectl delete pod ', '删除 Pod'],
+  ['kdn', 'kubectl describe node ', '节点详情'],
+  ['ktn', 'kubectl top nodes', '节点资源占用'],
+  ['kns', 'kubectl config set-context --current --namespace=', '切换命名空间'],
+  ['kctx', 'kubectl config get-contexts', '查看上下文'],
+  ['kaf', 'kubectl apply -f ', '应用配置'],
+  ['kdf', 'kubectl delete -f ', '删除配置'],
+  ['kex', 'kubectl exec -it  -- sh', '进入 Pod(sh)'],
+
+  // ── 文本检索（现代工具）────────────────────
+  ['rg', 'rg -n ', 'ripgrep 快速搜索'],
+  ['rgi', 'rg -ni ', 'ripgrep 忽略大小写'],
+  ['fd', 'fd ', 'fd 文件查找'],
+  ['bat', 'bat ', '高亮分页查看'],
+  ['', "awk -F',' '{print $1,$3}' ", 'awk 按逗号取列'],
+  ['', "sed -i '/pattern/d' ", '删除匹配行'],
+  ['', "grep -rIl '' .", '列出含匹配的文件'],
+  ['', "tr -d '\\r' < dos.txt > unix.txt", '去除回车(CRLF→LF)'],
+  ['', "jq '.[] | .name' ", 'jq 取字段'],
+  ['', "yq '.spec' ", 'yq 读取 YAML'],
+
+  // ── 网络（进阶）────────────────────────────
+  ['', 'ss -tnp state established', '已建立连接'],
+  ['', 'ip -s link', '网卡流量统计'],
+  ['', 'ip route add  via ', '添加路由'],
+  ['', 'dig +short ', 'DNS 简洁解析'],
+  ['', 'host ', '域名解析'],
+  ['', 'curl -X POST -H "Content-Type: application/json" -d \'{}\' ', 'POST JSON'],
+  ['', 'curl -fsSL  | bash', '⚠️ 下载并执行脚本'],
+  ['', 'nmap -sS -p 1-1000 ', '端口扫描'],
+  ['', 'speedtest-cli', '测网速'],
+  ['', 'ethtool ', '网卡参数'],
+
+  // ── SSH / 远程 ─────────────────────────────
+  ['', 'ssh-keygen -t ed25519 -C ""', '生成密钥'],
+  ['', 'ssh-copy-id user@host', '免密下发公钥'],
+  ['', 'ssh -L 8080:localhost:80 user@host', '本地端口转发'],
+  ['', 'ssh -D 1080 user@host', 'SOCKS 代理'],
+  ['', 'scp -r  user@host:/path', '递归远程拷贝'],
+  ['', 'rsync -avzP -e ssh  user@host:/path', 'SSH 增量同步'],
+
+  // ── 证书 / OpenSSL ────────────────────────
+  ['', 'openssl x509 -in cert.pem -noout -text', '查看证书'],
+  ['', 'openssl x509 -in cert.pem -noout -dates', '证书有效期'],
+  ['', 'openssl s_client -connect host:443 -servername host', '探测 TLS'],
+  ['', 'openssl req -new -newkey rsa:2048 -nodes -keyout key.pem -out csr.pem', '生成 CSR'],
+  ['', 'echo | openssl s_client -connect host:443 2>/dev/null | openssl x509 -noout -dates', '远端证书到期'],
+
+  // ── 数据库 CLI ─────────────────────────────
+  ['', 'mysql -u root -p ', 'MySQL 登录'],
+  ['', 'mysqldump -u root -p db > db.sql', 'MySQL 备份'],
+  ['', 'psql -U postgres -d ', 'PostgreSQL 登录'],
+  ['', 'redis-cli -h 127.0.0.1 -p 6379', 'Redis 连接'],
+  ['', 'redis-cli info | grep used_memory_human', 'Redis 内存'],
+  ['', 'mongosh ', 'MongoDB Shell'],
+
+  // ── 性能 / 排障 ────────────────────────────
+  ['', 'iotop -o', 'IO 占用进程'],
+  ['', 'dstat -tcmndy 1', '综合资源采样'],
+  ['', 'cat /proc/loadavg', '负载快照'],
+  ['', 'ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head', '内存 Top'],
+  ['', 'ps -eo pid,cmd,%cpu --sort=-%cpu | head', 'CPU Top'],
+  ['', 'tail -f /var/log/syslog', '跟踪系统日志'],
+  ['', 'tail -f /var/log/messages', '跟踪系统日志(RHEL)'],
+  ['', 'dmesg -wH', '实时内核日志'],
+
+  // ── 终端复用 / 杂项 ────────────────────────
+  ['', 'tmux new -s work', '新建 tmux 会话'],
+  ['', 'tmux attach -t work', '接入 tmux 会话'],
+  ['', 'tmux ls', 'tmux 会话列表'],
+  ['', 'screen -S work', '新建 screen'],
+  ['', 'timeout 10 ', '限时执行'],
+  ['', 'yes | ', '自动确认 y'],
+  ['', '!! ', '上一条命令'],
+  ['', 'sudo !!', 'sudo 重跑上条'],
+  ['', 'cd -', '回上一目录'],
 ];
 
 const DEFAULT_SNIPPETS: CmdSnippet[] = RAW_SNIPPETS.map(([keyword, cmd, desc], i) => ({
@@ -320,30 +441,114 @@ export function defaultSnippets(): CmdSnippet[] {
   return DEFAULT_SNIPPETS;
 }
 
+// ── 使用频率学习：记录被采纳的命令，匹配时按频率/近期加权 ──────────
+const USAGE_KEY = 'term_cmd_usage';
+type Usage = Record<string, { n: number; t: number }>;
+let usageCache: Usage | null = null;
+
+function loadUsage(): Usage {
+  if (usageCache) return usageCache;
+  try {
+    const raw = localStorage.getItem(USAGE_KEY);
+    usageCache = raw ? (JSON.parse(raw) as Usage) : {};
+  } catch {
+    usageCache = {};
+  }
+  return usageCache!;
+}
+
+/** 记录一次命令采纳，用于后续补全的频率/近期加权。 */
+export function recordSnippetUsage(cmd: string): void {
+  if (!cmd) return;
+  const u = loadUsage();
+  const e = u[cmd] || { n: 0, t: 0 };
+  e.n += 1;
+  e.t = Date.now();
+  u[cmd] = e;
+  try {
+    localStorage.setItem(USAGE_KEY, JSON.stringify(u));
+  } catch {
+    /* ignore 配额 */
+  }
+}
+
+// 命令首字母缩写（含子命令，忽略以 - 开头的选项）：git commit -m → gc
+const acronymOf = (cmd: string): string =>
+  cmd
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t && !t.startsWith('-'))
+    .map((t) => t[0])
+    .join('')
+    .toLowerCase();
+
+// 模糊子序列：q 的字符按序出现在 target 中即匹配，越紧凑得分越高（2..18），否则 -1
+const fuzzyScore = (q: string, target: string): number => {
+  if (!q || !target) return -1;
+  let ti = 0;
+  let first = -1;
+  let last = -1;
+  for (let qi = 0; qi < q.length; qi++) {
+    const ch = q[qi];
+    let found = -1;
+    for (; ti < target.length; ti++) {
+      if (target[ti] === ch) {
+        found = ti;
+        ti++;
+        break;
+      }
+    }
+    if (found < 0) return -1;
+    if (first < 0) first = found;
+    last = found;
+  }
+  const span = last - first + 1;
+  return Math.max(2, 18 - (span - q.length));
+};
+
 /**
- * 按当前输入缓冲匹配片段并打分排序：
- *   关键字精确 > 关键字前缀 > 命令前缀 > 关键字包含 > 命令包含。
- * 按命令去重，返回前 limit 条。
+ * 按当前输入缓冲智能匹配片段并打分排序，综合：
+ *   关键字精确/前缀 > 命令前缀 > 首字母缩写 > 词边界前缀 > 关键字/命令包含 > 模糊子序列 > 说明包含；
+ * 并叠加使用频率与近期加权。忽略前导 sudo；按命令去重，返回前 limit 条。
  */
-export function matchSnippets(buffer: string, list: CmdSnippet[], limit = 7): CmdSnippet[] {
-  const w = buffer.trim().toLowerCase();
+export function matchSnippets(buffer: string, list: CmdSnippet[], limit = 8): CmdSnippet[] {
+  const cleaned = buffer.replace(/^\s*sudo\s+/, '');
+  const w = cleaned.trim().toLowerCase();
   if (!w) return [];
+  const lastTok = w.split(/\s+/).pop() || w;
+  const usage = loadUsage();
+  const now = Date.now();
 
   const scored: { s: CmdSnippet; score: number }[] = [];
   for (const s of list) {
     const cmd = s.cmd.toLowerCase();
-    // 已完整输入该命令则无需提示
-    if (cmd === w) continue;
+    if (cmd === w) continue; // 已完整输入
     const kw = (s.keyword || '').toLowerCase();
+    const acr = acronymOf(s.cmd);
+    const desc = (s.desc || '').toLowerCase();
 
     let score = -1;
     if (kw && kw === w) score = 100;
-    else if (kw && kw.startsWith(w)) score = 90;
-    else if (cmd.startsWith(w)) score = 80;
-    else if (kw && kw.includes(w)) score = 35;
-    else if (cmd.includes(w)) score = 30;
+    else if (kw && kw.startsWith(w)) score = 92;
+    else if (cmd.startsWith(w)) score = 84;
+    else if (acr && w.length >= 2 && acr.startsWith(w)) score = 76;
+    else if (lastTok.length >= 2 && cmd.split(/\s+/).some((t) => t.startsWith(lastTok))) score = 58;
+    else if (kw && kw.includes(w)) score = 42;
+    else if (cmd.includes(w)) score = 36;
+    else {
+      const f = Math.max(fuzzyScore(w, cmd), acr ? fuzzyScore(w, acr) : -1);
+      if (f > 0) score = f;
+      else if (desc && desc.includes(w)) score = 14;
+    }
 
-    if (score >= 0) scored.push({ s, score });
+    if (score < 0) continue;
+
+    const u = usage[s.cmd];
+    if (u) {
+      score += Math.min(u.n, 25); // 频率加权（上限 25）
+      if (now - u.t < 6 * 3600 * 1000) score += 8; // 近 6 小时用过，再加权
+    }
+    scored.push({ s, score });
   }
 
   scored.sort((a, b) => b.score - a.score || a.s.cmd.length - b.s.cmd.length);

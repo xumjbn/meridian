@@ -10,7 +10,7 @@ import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
 import { SnippetManager } from '../components/SnippetManager';
 import { TerminalAIPanel } from '../components/TerminalAIPanel';
-import { loadSnippets, matchSnippets, type CmdSnippet } from '../commandSnippets';
+import { loadSnippets, matchSnippets, recordSnippetUsage, type CmdSnippet } from '../commandSnippets';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -860,6 +860,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     // 退格清掉当前已输入缓冲后插入完整命令；行首多余退格会被 readline 安全忽略
     const erase = '\x7f'.repeat(lineBufferRef.current.length);
     sendToShell(erase + snippet.cmd);
+    recordSnippetUsage(snippet.cmd); // 频率学习：常用命令后续排更前
     lineBufferRef.current = snippet.cmd;
     setSuggestions([]);
     setActiveIdx(0);
