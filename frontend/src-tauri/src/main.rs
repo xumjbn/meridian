@@ -32,6 +32,7 @@ fn main() {
                 .expect("未找到 meridian-backend sidecar（请先构建 Go 后端到 binaries/）")
                 .env("LISTEN_ADDR", "127.0.0.1:8765")
                 .env("MERIDIAN_DB", db_str)
+                .env("MERIDIAN_LOCAL_SHELL", "1") // 桌面端=本机，启用本地终端
                 .env("TZ", "Asia/Shanghai");
 
             let (mut rx, child) = sidecar.spawn().expect("启动后端 sidecar 失败");
