@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Layout, Menu, ConfigProvider, theme, Tooltip, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -13,6 +13,8 @@ import {
   GithubOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Logo } from './components/Logo';
@@ -20,6 +22,7 @@ import { TerminalTabBar } from './components/TerminalTabBar';
 import { QuickConnect } from './components/QuickConnect';
 import { GlobalSearch } from './components/GlobalSearch';
 import { TerminalProvider, useTerminals } from './terminalSessions';
+import { login, isTauri } from './services/api';
 import { brand, palette, antdLightToken } from './theme';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
@@ -206,11 +209,9 @@ const AppLayout: React.FC = () => {
 
             {/* 主体：快速连接（展开时）+ 管理导航 */}
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: collapsed ? '12px 10px' : '12px 12px' }}>
-              {!collapsed && (
-                <div style={{ flex: 1, minHeight: 0, marginBottom: 8 }}>
-                  <QuickConnect />
-                </div>
-              )}
+              <div style={{ flex: 1, minHeight: 0, marginBottom: 8 }}>
+                <QuickConnect collapsed={collapsed} />
+              </div>
               <div
                 style={{
                   flexShrink: 0,
@@ -279,6 +280,35 @@ const AppLayout: React.FC = () => {
           </Sider>
         </ConfigProvider>
 
+        {/* 右侧边缘的展开/收起把手（「展开标签放在右侧」） */}
+        <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
+          <div
+            onClick={() => setCollapsed((c) => !c)}
+            style={{
+              position: 'fixed',
+              left: siderWidth - 1,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 18,
+              height: 56,
+              zIndex: 101,
+              cursor: 'pointer',
+              background: palette.siderBg2,
+              border: `1px solid ${palette.siderBorder}`,
+              borderLeft: 'none',
+              borderRadius: '0 10px 10px 0',
+              color: palette.siderText,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '2px 0 8px rgba(0,0,0,0.18)',
+              transition: 'left 0.2s cubic-bezier(0.4,0,0.2,1)',
+            }}
+          >
+            {collapsed ? <RightOutlined style={{ fontSize: 12 }} /> : <LeftOutlined style={{ fontSize: 12 }} />}
+          </div>
+        </Tooltip>
+
         <Layout style={{ marginLeft: siderWidth, background: palette.bg, transition: 'margin-left 0.2s cubic-bezier(0.4,0,0.2,1)' }}>
           <Content style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {sessions.length > 0 && (
@@ -332,6 +362,33 @@ const AppLayout: React.FC = () => {
 export const App: React.FC = () => {
   const [authed, setAuthed] = useState(localStorage.getItem('mrd-auth') === '1');
   const [mustChange, setMustChange] = useState(localStorage.getItem('mrd-must-change') === '1');
+  // 桌面端（Tauri）：本机单用户实例，自动以默认账户登录，免登录页
+  const [autoLoginTried, setAutoLoginTried] = useState(!(isTauri && localStorage.getItem('mrd-auth') !== '1'));
+
+  useEffect(() => {
+    if (autoLoginTried) return;
+    let cancelled = false;
+    (async () => {
+      // 后端 sidecar 首启迁移 DB 可能短暂不可用，失败重试几次；凭据被改则回退登录页
+      for (let i = 0; i < 8 && !cancelled; i++) {
+        try {
+          const r = await login('admin', 'admin');
+          localStorage.setItem('mrd-auth', '1');
+          localStorage.setItem('mrd-token', r.token || '');
+          localStorage.setItem('mrd-user', r.username || 'admin');
+          localStorage.setItem('mrd-role', r.role || 'admin');
+          localStorage.removeItem('mrd-must-change'); // 桌面端忽略强制改密
+          if (!cancelled) { setMustChange(false); setAuthed(true); }
+          break;
+        } catch (e: any) {
+          if (/密码|password|用户|账户|account/i.test(String(e?.message || ''))) break;
+          await new Promise((res) => setTimeout(res, 600));
+        }
+      }
+      if (!cancelled) setAutoLoginTried(true);
+    })();
+    return () => { cancelled = true; };
+  }, [autoLoginTried]);
 
   // 独立标签页打开的全屏终端模式
   const isTerminalView = window.location.pathname.startsWith('/terminal/');
@@ -345,6 +402,11 @@ export const App: React.FC = () => {
         </Suspense>
       </ConfigProvider>
     );
+  }
+
+  // 桌面端自动登录进行中：显示加载，不闪现登录页
+  if (!authed && isTauri && !autoLoginTried) {
+    return <PageFallback />;
   }
 
   // 登录门禁：未登录时渲染登录页

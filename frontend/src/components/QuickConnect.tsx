@@ -27,8 +27,13 @@ const parseTags = (s?: string): string[] => {
 
 const statusColor = (s?: string) => (s === 'online' ? palette.success : s === 'offline' ? palette.danger : '#64748b');
 
+interface Props {
+  /** 侧栏折叠态：渲染为窄图标条（仍可快速连接，标签走 tooltip） */
+  collapsed?: boolean;
+}
+
 // 左侧栏「快速连接」：按标签分组的主机树 + 本地终端，点击即开终端标签并连接
-export const QuickConnect: React.FC = () => {
+export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const { open, sessions, activeId } = useTerminals();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,6 +111,57 @@ export const QuickConnect: React.FC = () => {
   };
 
   const localActive = activeId !== null && activeId < 0;
+
+  // ── 折叠态：窄图标条（主机首字母头像 + 状态点，tooltip 显示名称/IP/标签）──
+  if (collapsed) {
+    const iconBtn = (active: boolean, accent: boolean): React.CSSProperties => ({
+      width: 38,
+      height: 38,
+      borderRadius: 9,
+      flexShrink: 0,
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+      background: active ? palette.siderActive : accent ? 'rgba(34,211,238,0.08)' : 'transparent',
+      border: `1px solid ${active ? palette.accent : accent ? 'rgba(34,211,238,0.18)' : 'transparent'}`,
+    });
+    const sorted = [...assets].sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, alignItems: 'center', gap: 6 }}>
+        {localShell && (
+          <Tooltip title="新建本地终端" placement="right">
+            <div onClick={connectLocal} style={iconBtn(localActive, true)}>
+              <DesktopOutlined style={{ color: palette.accent, fontSize: 16 }} />
+            </div>
+          </Tooltip>
+        )}
+        <div style={{ width: 24, height: 1, background: palette.siderBorder, flexShrink: 0 }} />
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          {sorted.map((a) => {
+            const active = activeId === a.id;
+            const tags = parseTags(a.tags);
+            return (
+              <Tooltip key={a.id} placement="right" title={`${a.name} · ${a.ip}${tags.length ? ` · ${tags.join(' / ')}` : ''}`}>
+                <div onClick={() => connect(a)} style={iconBtn(active, false)}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: active ? '#fff' : palette.siderText }}>
+                    {(a.name || a.ip).slice(0, 1).toUpperCase()}
+                  </span>
+                  <span
+                    style={{
+                      position: 'absolute', right: 3, bottom: 3, width: 8, height: 8, borderRadius: '50%',
+                      background: statusColor(a.status), border: `1.5px solid ${palette.siderBg}`,
+                    }}
+                  />
+                </div>
+              </Tooltip>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>

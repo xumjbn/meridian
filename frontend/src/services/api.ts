@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // 桌面端（Tauri）：前端由 Tauri 加载（tauri://），后端 Go 以 sidecar 监听本地端口；
 // Web/容器部署：同源（nginx 反代 /api）。BACKEND_ORIGIN 据此切换。
-const isTauri = typeof window !== 'undefined' &&
+export const isTauri = typeof window !== 'undefined' &&
   ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 export const DESKTOP_BACKEND = 'http://127.0.0.1:8765';
 export const BACKEND_ORIGIN = isTauri ? DESKTOP_BACKEND : '';

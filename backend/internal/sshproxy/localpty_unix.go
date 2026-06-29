@@ -54,6 +54,10 @@ func startLocalPty(cols, rows int) (localPty, string, error) {
 
 	cmd := exec.Command(shell, args...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8")
+	// 默认工作目录为用户家目录（~），而非后端进程的启动目录
+	if home, herr := os.UserHomeDir(); herr == nil && home != "" {
+		cmd.Dir = home
+	}
 
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
 	if err != nil {

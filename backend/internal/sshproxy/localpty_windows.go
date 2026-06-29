@@ -27,9 +27,15 @@ func startLocalPty(cols, rows int) (localPty, string, error) {
 		candidates = append(candidates, cs)
 	}
 
+	// 默认工作目录为用户家目录（%USERPROFILE%），而非后端进程的启动目录
+	opts := []conpty.ConPtyOption{conpty.ConPtyDimensions(cols, rows)}
+	if home, herr := os.UserHomeDir(); herr == nil && home != "" {
+		opts = append(opts, conpty.ConPtyWorkDir(home))
+	}
+
 	var lastErr error
 	for _, shell := range candidates {
-		cpty, err := conpty.Start(shell, conpty.ConPtyDimensions(cols, rows))
+		cpty, err := conpty.Start(shell, opts...)
 		if err == nil {
 			return &winPty{c: cpty}, shell, nil
 		}
