@@ -176,8 +176,13 @@ func main() {
 		// 最近活动日志
 		api.GET("/activity/recent", handler.GetRecentActivity)
 
+		// 前端能力开关（如本地终端是否可用）
+		api.GET("/capabilities", handler.GetCapabilities)
+
 		// WebSocket 终端连接
 		api.GET("/ws/terminal/:id", handler.ConnectTerminal)
+		// 本机 Shell 终端（本地终端，桌面端/回环自用）
+		api.GET("/ws/local-terminal", handler.ConnectLocalTerminal)
 	}
 
 	// 5. 启动服务：默认仅监听本机 127.0.0.1:8080；容器部署时由 LISTEN_ADDR

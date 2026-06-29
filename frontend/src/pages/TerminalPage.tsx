@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import { getAsset, getTerminalWsUrl, getAssets, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined } from '@ant-design/icons';
+import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, LOCAL_ASSET_ID, type Asset } from '../services/api';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
@@ -427,23 +427,24 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
 
       {/* 顶部全局状态栏 */}
       <div style={{
-        height: '48px',
+        minHeight: '48px',
         background: '#ffffff',
         borderBottom: '1px solid #e2e8f0',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 16px',
+        gap: 12,
+        padding: '6px 16px',
         zIndex: 50,
       }}>
-        <Space size="middle">
+        <Space size="small" style={{ flexShrink: 0 }}>
           <LogoMark size={22} />
-          <span style={{ fontWeight: 600, fontSize: 14, color: palette.text }}>
+          <span style={{ fontWeight: 600, fontSize: 14, color: palette.text, whiteSpace: 'nowrap' }}>
             Meridian 远程终端多屏中心
           </span>
         </Space>
-        
-        <Space size="middle">
+
+        <Space size="small" wrap style={{ rowGap: 6, justifyContent: 'flex-end' }}>
           {/* 分屏布局控制 */}
           <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
             布局:
@@ -510,58 +511,68 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             </Checkbox>
           </Tooltip>
 
-          <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
-            字体:
-            <Select
-              size="small"
-              value={fontFamily}
-              onChange={(val) => setFontFamily(val)}
-              options={fontFamilies}
-              style={{ width: 130, marginLeft: 6 }}
-              popupMatchSelectWidth={false}
-            />
-          </span>
-
-          <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
-            字号:
-            <Select
-              size="small"
-              value={fontSize}
-              onChange={(val) => setFontSize(val)}
-              options={fontSizes.map((s) => ({ label: `${s}px`, value: s }))}
-              style={{ width: 75, marginLeft: 6 }}
-            />
-          </span>
-
-          <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
-            配色:
-            <Select
-              size="small"
-              value={termThemeKey}
-              onChange={(val) => { setTermThemeKey(val); localStorage.setItem('term_theme', val); }}
-              options={termThemes.map((t) => ({ label: t.label, value: t.value }))}
-              style={{ width: 110, marginLeft: 6 }}
-              popupMatchSelectWidth={false}
-            />
-          </span>
-
-          <Tooltip title="远端中文乱码时切到 GBK（如本地 Windows / GB18030 主机）；切换后建议重新连接">
-            <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
-              编码:
-              <Select
-                size="small"
-                value={termEncoding}
-                onChange={(val) => { setTermEncoding(val); localStorage.setItem('term_encoding', val); }}
-                options={[{ label: 'UTF-8', value: 'utf-8' }, { label: 'GBK', value: 'gbk' }]}
-                style={{ width: 84, marginLeft: 6 }}
-                popupMatchSelectWidth={false}
-              />
-            </span>
-          </Tooltip>
-
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>
-            右键粘贴 · Ctrl+Shift+C / V
-          </span>
+          {/* 外观与编码设置（收进 Popover，避免顶栏拥挤） */}
+          <Popover
+            trigger="click"
+            placement="bottomRight"
+            title="外观与编码"
+            content={(
+              <div style={{ width: 260, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, color: '#475569' }}>字体</span>
+                  <Select
+                    size="small"
+                    value={fontFamily}
+                    onChange={(val) => setFontFamily(val)}
+                    options={fontFamilies}
+                    style={{ width: 170 }}
+                    popupMatchSelectWidth={false}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, color: '#475569' }}>字号</span>
+                  <Select
+                    size="small"
+                    value={fontSize}
+                    onChange={(val) => setFontSize(val)}
+                    options={fontSizes.map((s) => ({ label: `${s}px`, value: s }))}
+                    style={{ width: 170 }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, color: '#475569' }}>配色</span>
+                  <Select
+                    size="small"
+                    value={termThemeKey}
+                    onChange={(val) => { setTermThemeKey(val); localStorage.setItem('term_theme', val); }}
+                    options={termThemes.map((t) => ({ label: t.label, value: t.value }))}
+                    style={{ width: 170 }}
+                    popupMatchSelectWidth={false}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Tooltip title="远端中文乱码时切到 GBK（如本地 Windows / GB18030 主机）；切换后建议重新连接">
+                    <span style={{ fontSize: 12, color: '#475569', cursor: 'help' }}>编码</span>
+                  </Tooltip>
+                  <Select
+                    size="small"
+                    value={termEncoding}
+                    onChange={(val) => { setTermEncoding(val); localStorage.setItem('term_encoding', val); }}
+                    options={[{ label: 'UTF-8', value: 'utf-8' }, { label: 'GBK', value: 'gbk' }]}
+                    style={{ width: 170 }}
+                    popupMatchSelectWidth={false}
+                  />
+                </div>
+                <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
+                  右键粘贴 · 复制/粘贴 Ctrl+Shift+C / V
+                </div>
+              </div>
+            )}
+          >
+            <Button size="small" type="text" icon={<SettingOutlined />} style={{ fontSize: 12, color: '#475569' }}>
+              外观
+            </Button>
+          </Popover>
 
           <Button
             type="text"
@@ -835,8 +846,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     };
   }, [status, assetId, registerGlobalWS, instanceId]);
 
+  // 本地终端：assetId 为哨兵值 LOCAL_ASSET_ID，连后端本机 Shell，不走资产/SSH 流程
+  const isLocal = assetId === LOCAL_ASSET_ID;
+
   // 2. 同步加载被分配的资产详情
   useEffect(() => {
+    if (isLocal) {
+      // 合成一个「本地终端」资产，驱动下方 WebSocket 建联（不发请求）
+      setAsset({ id: LOCAL_ASSET_ID, name: '本地终端', ip: '本机', type: 'server' } as Asset);
+      return;
+    }
     if (assetId <= 0) {
       setAsset(null);
       setStatus('idle');
@@ -858,7 +877,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   // 3. 建立 WebSocket 隧道
   useEffect(() => {
-    if (!asset || assetId <= 0) return;
+    if (!asset) return;
+    if (!isLocal && assetId <= 0) return;
 
     setConnecting(true);
     setAuthRequired(false);
@@ -871,7 +891,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     let onContextMenu: ((e: MouseEvent) => void) | null = null;
     const containerEl = terminalRef.current;
 
-    const wsUrl = getTerminalWsUrl(asset.id!);
+    const wsUrl = isLocal ? getLocalTerminalWsUrl() : getTerminalWsUrl(asset.id!);
     const socket = new WebSocket(wsUrl);
     socket.binaryType = 'arraybuffer';
     wsRef.current = socket;
@@ -977,7 +997,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       resizeObserverRef.current = observer;
     }
 
-    term.write('\x1b[36m[SYSTEM]\x1b[0m 正在建立远程 WebSocket 连接通道...\r\n');
+    term.write(`\x1b[36m[SYSTEM]\x1b[0m 正在建立${isLocal ? '本地终端' : '远程 WebSocket'}连接通道...\r\n`);
 
     const pingInterval = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) {
@@ -986,8 +1006,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     }, 20000);
 
     socket.onopen = () => {
-      setStatusText('通道开启，正在进行 SSH 连接拨号...');
-      term.write('\x1b[36m[SYSTEM]\x1b[0m WebSocket 通道连接成功，开始拨号远程主机端口 22...\r\n');
+      setStatusText(isLocal ? '通道开启，正在启动本机 Shell...' : '通道开启，正在进行 SSH 连接拨号...');
+      term.write(isLocal
+        ? '\x1b[36m[SYSTEM]\x1b[0m WebSocket 通道连接成功，正在启动本机 Shell...\r\n'
+        : '\x1b[36m[SYSTEM]\x1b[0m WebSocket 通道连接成功，开始拨号远程主机端口 22...\r\n');
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
       }
@@ -1020,7 +1042,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               setConnecting(false);
               setAuthRequired(false);
               setStatus('connected');
-              term.write('\x1b[32m[SYSTEM] SSH 会话连接成功，终端开始接受输入！\x1b[0m\r\n\r\n');
+              term.write(isLocal
+                ? '\x1b[32m[SYSTEM] 本地终端已就绪，开始接受输入！\x1b[0m\r\n\r\n'
+                : '\x1b[32m[SYSTEM] SSH 会话连接成功，终端开始接受输入！\x1b[0m\r\n\r\n');
             } else {
               setStatusText(msg.message);
               term.write(`\x1b[36m[SYSTEM]\x1b[0m ${msg.message}\r\n`);
@@ -1161,7 +1185,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   const handleReconnect = () => {
     setAsset(null);
-    if (assetId > 0) {
+    if (isLocal) {
+      // 先卸载再于下一拍重建，触发 WebSocket 重连
+      setTimeout(() => setAsset({ id: LOCAL_ASSET_ID, name: '本地终端', ip: '本机', type: 'server' } as Asset), 0);
+    } else if (assetId > 0) {
       getAsset(assetId).then(setAsset);
     }
   };
@@ -1234,17 +1261,20 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             </span>
           </Checkbox>
 
-          <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>资产:</span>
+          <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>{isLocal ? '终端:' : '资产:'}</span>
           <Select
             showSearch
             size="small"
             placeholder="选择资产..."
-            value={assetId > 0 ? assetId : undefined}
+            value={assetId > 0 || isLocal ? assetId : undefined}
             onChange={(val) => onAssetChange(val)}
             filterOption={(input, option) =>
               (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
             }
-            options={assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id }))}
+            options={[
+              { label: '💻 本地终端 · 本机', value: LOCAL_ASSET_ID },
+              ...assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id })),
+            ]}
             style={{ flex: 1, minWidth: 150, maxWidth: 300 }}
             dropdownStyle={{ zIndex: 3000 }}
             popupMatchSelectWidth={280}
@@ -1309,10 +1339,18 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
                 filterOption={(input, option) =>
                   (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                 }
-                options={assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id }))}
+                options={[
+                  { label: '💻 本地终端 · 本机', value: LOCAL_ASSET_ID },
+                  ...assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id })),
+                ]}
                 style={{ width: '100%' }}
                 dropdownStyle={{ zIndex: 3000 }}
               />
+              <div style={{ marginTop: 10 }}>
+                <Button size="small" type="primary" ghost block onClick={() => onAssetChange(LOCAL_ASSET_ID)}>
+                  💻 打开本地终端
+                </Button>
+              </div>
             </div>
           </div>
         )}

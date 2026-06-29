@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -706,6 +707,46 @@ func ConnectTerminal(c *gin.Context) {
 	} else {
 		go sshproxy.ProxyTerminal(ws, &asset, credPtr)
 	}
+}
+
+// LocalShellEnabled 本地终端是否允许：桌面端 sidecar 显式置 MERIDIAN_LOCAL_SHELL=1 时开；
+// 否则仅当后端监听在回环地址（本机自用场景）时开。多用户服务器（0.0.0.0）默认关，
+// 避免把运行后端那台机器的 Shell 暴露给任意登录用户（提权风险）。
+func LocalShellEnabled() bool {
+	if v := strings.TrimSpace(os.Getenv("MERIDIAN_LOCAL_SHELL")); v == "1" || strings.EqualFold(v, "true") {
+		return true
+	}
+	addr := strings.TrimSpace(os.Getenv("LISTEN_ADDR"))
+	if addr == "" {
+		return true // 默认 127.0.0.1:8080，回环自用
+	}
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	return host == "" || host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
+// GetCapabilities 暴露前端按需展示的能力开关（如本地终端是否可用）
+func GetCapabilities(c *gin.Context) {
+	SendSuccess(c, gin.H{
+		"local_shell": LocalShellEnabled(),
+	})
+}
+
+// ConnectLocalTerminal 打开运行后端的本机 Shell 终端（本地终端）
+func ConnectLocalTerminal(c *gin.Context) {
+	if !LocalShellEnabled() {
+		c.String(http.StatusForbidden, "本地终端在当前部署下未启用（仅桌面端/本机可用）")
+		return
+	}
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("ConnectLocalTerminal: WebSocket Upgrade failed: %v", err)
+		return
+	}
+	go sshproxy.ProxyLocal(ws)
 }
 
 // wsStatus 向终端 WebSocket 推送一条 status 消息（前端会渲染到终端）

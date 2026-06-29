@@ -3,6 +3,8 @@ module backend
 go 1.22
 
 require (
+	github.com/UserExistsError/conpty v0.1.4
+	github.com/creack/pty v1.1.21
 	github.com/gin-gonic/gin v1.10.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/gorilla/websocket v1.5.3

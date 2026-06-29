@@ -1,6 +1,7 @@
-import React from 'react';
-import { AppstoreOutlined, CodeOutlined, CloseOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
+import { LOCAL_ASSET_ID } from '../services/api';
 import type { TermSession } from '../terminalSessions';
 
 interface Props {
@@ -10,11 +11,13 @@ interface Props {
   onSelectPage: () => void;
   onSelect: (id: number) => void;
   onClose: (id: number) => void;
+  /** 拖拽重排：把 dragId 移动到 overId 处 */
+  onReorder?: (dragId: number, overId: number) => void;
 }
 
 const TAB_BAR_HEIGHT = 42;
 
-// 项目内部的会话标签栏：左侧是「当前页面」，右侧是已打开的终端会话标签
+// 项目内部的会话标签栏：左侧是「当前页面」，右侧是已打开的终端会话标签（可拖拽调序）
 export const TerminalTabBar: React.FC<Props> = ({
   sessions,
   activeId,
@@ -22,7 +25,11 @@ export const TerminalTabBar: React.FC<Props> = ({
   onSelectPage,
   onSelect,
   onClose,
+  onReorder,
 }) => {
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
+
   const tabBase: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',
@@ -34,7 +41,7 @@ export const TerminalTabBar: React.FC<Props> = ({
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     border: '1px solid transparent',
-    transition: 'background 0.15s, border-color 0.15s',
+    transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
   };
 
   const activeStyle: React.CSSProperties = {
@@ -69,17 +76,46 @@ export const TerminalTabBar: React.FC<Props> = ({
 
       <span style={{ width: 1, height: 18, background: palette.border, margin: '0 2px' }} />
 
-      {/* 终端会话标签 */}
+      {/* 终端会话标签（HTML5 拖拽重排） */}
       {sessions.map((s) => {
         const active = activeId === s.id;
+        const isLocal = s.id === LOCAL_ASSET_ID;
+        const isDropTarget = overId === s.id && dragId !== null && dragId !== s.id;
         return (
           <div
             key={s.id}
-            style={{ ...tabBase, ...(active ? activeStyle : idleStyle) }}
+            draggable={!!onReorder}
+            onDragStart={() => setDragId(s.id)}
+            onDragOver={(e) => {
+              if (dragId === null) return;
+              e.preventDefault();
+              if (overId !== s.id) setOverId(s.id);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragId !== null && dragId !== s.id) onReorder?.(dragId, s.id);
+              setDragId(null);
+              setOverId(null);
+            }}
+            onDragEnd={() => {
+              setDragId(null);
+              setOverId(null);
+            }}
+            style={{
+              ...tabBase,
+              ...(active ? activeStyle : idleStyle),
+              opacity: dragId === s.id ? 0.4 : 1,
+              // 拖拽悬停目标：左侧高亮一条指示线
+              boxShadow: isDropTarget ? `inset 3px 0 0 ${palette.primary}` : undefined,
+            }}
             onClick={() => onSelect(s.id)}
-            title={`${s.name} (${s.ip})`}
+            title={isLocal ? '本地终端（本机）' : `${s.name} (${s.ip})`}
           >
-            <CodeOutlined style={{ fontSize: 14, color: active ? palette.primary : palette.textMute }} />
+            {isLocal ? (
+              <DesktopOutlined style={{ fontSize: 14, color: active ? palette.primary : palette.accent }} />
+            ) : (
+              <CodeOutlined style={{ fontSize: 14, color: active ? palette.primary : palette.textMute }} />
+            )}
             <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
             <CloseOutlined
               style={{ fontSize: 11, color: palette.textMute, marginLeft: 2 }}
