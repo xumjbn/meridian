@@ -79,7 +79,7 @@ export const TerminalTabBar: React.FC<Props> = ({
       {sessions.map((s) => {
         const active = activeId === s.id;
         const isLocal = s.id < 0;
-        const isDropTarget = overId === s.id && dragId !== null && dragId !== s.id;
+        const isDropTarget = overId === s.id && dragId !== s.id;
         return (
           <div
             key={s.id}
@@ -88,17 +88,21 @@ export const TerminalTabBar: React.FC<Props> = ({
               setDragId(s.id);
               // 必须写入 dataTransfer，否则 WebKit / Tauri WebView 不会真正发起拖拽
               e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('application/x-mrd-tab', String(s.id));
               e.dataTransfer.setData('text/plain', String(s.id));
             }}
             onDragOver={(e) => {
-              if (dragId === null) return;
+              // 必须始终 preventDefault 才能成为合法放置目标（不可依赖异步的 dragId 状态）
               e.preventDefault();
               e.dataTransfer.dropEffect = 'move';
               if (overId !== s.id) setOverId(s.id);
             }}
             onDrop={(e) => {
               e.preventDefault();
-              if (dragId !== null && dragId !== s.id) onReorder?.(dragId, s.id);
+              // 源 id 从 dataTransfer 读，避免拖拽过程中 React 状态滞后导致丢失
+              const raw = e.dataTransfer.getData('application/x-mrd-tab') || e.dataTransfer.getData('text/plain');
+              const from = parseInt(raw, 10);
+              if (!Number.isNaN(from) && from !== s.id) onReorder?.(from, s.id);
               setDragId(null);
               setOverId(null);
             }}

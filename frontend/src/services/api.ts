@@ -41,8 +41,9 @@ api.interceptors.response.use(
     if (res.code === 200) {
       return res.data;
     }
-    // 会话失效 / 未登录：清理本地状态并回到登录页
-    if (res.code === 401) {
+    // 会话失效 / 未登录：清理本地状态并回到登录页。
+    // 桌面端例外：静默拒绝，不清理、不刷新——避免与后台自动登录竞争清掉刚拿到的 token、或陷入刷新循环。
+    if (res.code === 401 && !isTauri) {
       clearSession();
       if (!window.location.pathname.startsWith('/terminal/')) {
         window.location.reload();
