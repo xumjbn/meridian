@@ -33,6 +33,15 @@ npm run tauri icon path/to/logo-1024.png    # 生成 src-tauri/icons/ 全套
 ## 三、本地构建（在目标 OS 上）
 > macOS 包必须在 macOS 上出；Windows 包在 Windows 上出（Apple 签名/平台限制）。
 
+### macOS：用 Makefile（推荐，一条命令）
+```bash
+make deps                      # 装前端依赖（含 Tauri CLI），一次即可
+make icons SRC=path/1024.png   # 首次必须：生成并提交 src-tauri/icons/
+make desktop                   # 当前架构 → .dmg / .app
+make desktop-universal         # Intel + Apple Silicon 通用包（推荐分发，自动 lipo 合并 sidecar）
+```
+`make help` 看全部目标。下面是等价的手动步骤：
+
 ```bash
 # 1) 构建 Go 后端 sidecar（按当前 Rust 宿主三元组命名到 src-tauri/binaries/）
 #    Windows:
