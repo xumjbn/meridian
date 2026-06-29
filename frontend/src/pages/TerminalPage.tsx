@@ -683,15 +683,15 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       )}
 
       <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: '#0B0F19' }}>
-        {/* 工具栏收起态：左上角悬浮的展开按钮 */}
+        {/* 工具栏收起态：右上角悬浮的展开按钮（与收起按钮同侧） */}
         {toolbarCollapsed && (
-          <Tooltip title="展开工具栏" placement="right">
+          <Tooltip title="展开工具栏" placement="left">
             <Button
               size="small"
               icon={<DownOutlined />}
               onClick={() => toggleToolbar(false)}
               style={{
-                position: 'absolute', top: 6, left: 6, zIndex: 1400,
+                position: 'absolute', top: 6, right: 10, zIndex: 1400,
                 background: 'rgba(30,41,59,0.92)', color: '#cbd5e1', border: '1px solid #334155',
               }}
             />

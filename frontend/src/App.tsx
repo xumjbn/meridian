@@ -386,44 +386,46 @@ const AppLayout: React.FC = () => {
 };
 
 export const App: React.FC = () => {
-  const [authed, setAuthed] = useState(localStorage.getItem('mrd-auth') === '1');
-  const [mustChange, setMustChange] = useState(localStorage.getItem('mrd-must-change') === '1');
-  // 桌面端（Tauri）：本机单用户实例，自动以默认账户登录，免登录页
-  const [autoLoginTried, setAutoLoginTried] = useState(!(isTauri && localStorage.getItem('mrd-auth') !== '1'));
+  // 桌面端（Tauri）：本机单用户实例，免登录页——直接进入，token 后台静默获取，
+  // 永不因后端未就绪而卡转圈或弹登录页。
+  const [authed, setAuthed] = useState(localStorage.getItem('mrd-auth') === '1' || isTauri);
+  const [mustChange, setMustChange] = useState(!isTauri && localStorage.getItem('mrd-must-change') === '1');
 
   useEffect(() => {
-    if (autoLoginTried) return;
+    if (!isTauri || localStorage.getItem('mrd-token')) return;
+    // 乐观角色：先按 admin 显示菜单，真实角色登录成功后覆盖
+    if (!localStorage.getItem('mrd-role')) localStorage.setItem('mrd-role', 'admin');
     let cancelled = false;
-    // 桌面端默认账户候选（按序尝试）：admin/admin、admin/123456
     const creds: Array<[string, string]> = [['admin', 'admin'], ['admin', '123456']];
+    // 单次登录最多等 8s，避免连接挂死导致永远不返回
+    const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
     (async () => {
-      // 后端 sidecar 首启迁移 DB 可能短暂不可用，整轮重试几次；凭据全错则回退登录页
-      outer: for (let i = 0; i < 8 && !cancelled; i++) {
+      // 后台持续重试（后端 sidecar 晚起也能恢复），成功即广播让已挂载页面刷新数据
+      for (let i = 0; i < 40 && !cancelled; i++) {
         for (const [u, p] of creds) {
-          if (cancelled) break outer;
+          if (cancelled) return;
           try {
-            const r = await login(u, p);
+            const r = await withTimeout(login(u, p), 8000);
             localStorage.setItem('mrd-auth', '1');
             localStorage.setItem('mrd-token', r.token || '');
             localStorage.setItem('mrd-user', r.username || u);
             localStorage.setItem('mrd-role', r.role || 'admin');
-            localStorage.removeItem('mrd-must-change'); // 桌面端忽略强制改密
-            setMustChange(false);
-            setAuthed(true);
-            break outer;
+            localStorage.removeItem('mrd-must-change');
+            window.dispatchEvent(new CustomEvent('mrd-auth-ready'));
+            return;
           } catch (e: any) {
-            // 非凭据错误（如后端未就绪）→ 等待后重试整轮；凭据错误 → 试下一组
+            // 非凭据错误（后端未就绪/超时）→ 等待后重试整轮；凭据错误 → 试下一组
             if (!/密码|password|用户|账户|account|credential/i.test(String(e?.message || ''))) {
-              await new Promise((res) => setTimeout(res, 600));
+              await new Promise((res) => setTimeout(res, 1000));
               break;
             }
           }
         }
       }
-      if (!cancelled) setAutoLoginTried(true);
     })();
     return () => { cancelled = true; };
-  }, [autoLoginTried]);
+  }, []);
 
   // 独立标签页打开的全屏终端模式
   const isTerminalView = window.location.pathname.startsWith('/terminal/');
@@ -439,12 +441,7 @@ export const App: React.FC = () => {
     );
   }
 
-  // 桌面端自动登录进行中：显示加载，不闪现登录页
-  if (!authed && isTauri && !autoLoginTried) {
-    return <PageFallback />;
-  }
-
-  // 登录门禁：未登录时渲染登录页
+  // 登录门禁：未登录时渲染登录页（桌面端 authed 恒为 true，不会走到这里）
   if (!authed) {
     return (
       <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken }}>

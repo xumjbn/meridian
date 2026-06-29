@@ -78,10 +78,16 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   };
 
   useEffect(() => {
-    load();
-    getCapabilities()
-      .then((c) => setLocalShell(!!c.local_shell))
-      .catch(() => setLocalShell(false));
+    const init = () => {
+      load();
+      getCapabilities()
+        .then((c) => setLocalShell(!!c.local_shell))
+        .catch(() => setLocalShell(false));
+    };
+    init();
+    // 桌面端后台登录拿到 token 后会广播，此时再拉一次（首屏可能在拿到 token 前就挂载了）
+    window.addEventListener('mrd-auth-ready', init);
+    return () => window.removeEventListener('mrd-auth-ready', init);
   }, []);
 
   const openIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions]);
