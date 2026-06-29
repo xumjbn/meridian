@@ -495,6 +495,29 @@ export const getScanStreamUrl = (taskId: number): string => {
 
 
 
+// 本地终端哨兵 assetId：用于在分屏/标签中标识「连后端本机 Shell」的会话
+export const LOCAL_ASSET_ID = -1;
+
+// 后端能力开关（如本地终端是否可用——多用户服务器默认关闭）
+export interface Capabilities {
+  local_shell: boolean;
+}
+export const getCapabilities = (): Promise<Capabilities> => api.get('/capabilities');
+
+// 本地终端 WebSocket 地址（连后端本机 Shell）
+export const getLocalTerminalWsUrl = (): string => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const token = localStorage.getItem('mrd-token') || '';
+  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  if (BACKEND_ORIGIN) {
+    return `ws://127.0.0.1:8765/api/ws/local-terminal${q}`;
+  }
+  if (import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return `${protocol}//127.0.0.1:8080/api/ws/local-terminal${q}`;
+  }
+  return `${protocol}//${window.location.host}/api/ws/local-terminal${q}`;
+};
+
 // WebSocket URL 辅助函数（浏览器 WebSocket 无法设置请求头，token 走查询参数）
 export const getTerminalWsUrl = (assetId: number): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

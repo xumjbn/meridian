@@ -22,6 +22,8 @@ interface TerminalCtx {
   close: (id: number) => void;
   /** 切换当前激活的会话；传 null 表示回到普通页面 */
   setActive: (id: number | null) => void;
+  /** 拖拽重排：把 dragId 移动到 overId 所在位置 */
+  reorder: (dragId: number, overId: number) => void;
 
   // 全局终端协同同步交互支持
   globalSyncedIds: string[];
@@ -58,6 +60,19 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSessions((prev) => prev.filter((x) => x.id !== id));
     // 关闭的若是当前激活会话，则回到普通页面
     setActive((cur) => (cur === id ? null : cur));
+  }, []);
+
+  const reorder = useCallback((dragId: number, overId: number) => {
+    if (dragId === overId) return;
+    setSessions((prev) => {
+      const from = prev.findIndex((x) => x.id === dragId);
+      const to = prev.findIndex((x) => x.id === overId);
+      if (from < 0 || to < 0 || from === to) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
   }, []);
 
   const registerGlobalWS = useCallback((instanceId: string, handler: GlobalWSHandler | null) => {
@@ -105,6 +120,7 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       open,
       close,
       setActive,
+      reorder,
       globalSyncedIds,
       setGlobalSyncedIds,
       connectedIds,

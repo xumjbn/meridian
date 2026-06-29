@@ -17,6 +17,7 @@ import {
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Logo } from './components/Logo';
 import { TerminalTabBar } from './components/TerminalTabBar';
+import { QuickConnect } from './components/QuickConnect';
 import { GlobalSearch } from './components/GlobalSearch';
 import { TerminalProvider, useTerminals } from './terminalSessions';
 import { brand, palette, antdLightToken } from './theme';
@@ -63,14 +64,19 @@ const navItems = [
 const adminOnlyKeys = ['/tasks', '/users', '/audit', '/settings'];
 
 // 按角色过滤侧边栏：普通用户隐藏管理员专属项（分组子项亦随之过滤）
+// shell 优先：管理导航降级为可折叠子菜单，默认收起，给「快速连接」让位
 const buildMenu = (isAdmin: boolean) => {
   const flat = isAdmin ? navItems : navItems.filter((i) => !adminOnlyKeys.includes(i.key));
   const pick = (keys: string[]) => flat.filter((i) => keys.includes(i.key));
+  const submenu = (key: string, label: string, icon: React.ReactNode, keys: string[]) => {
+    const children = pick(keys);
+    return children.length ? [{ key, label, icon, children }] : [];
+  };
   const grouped: MenuProps['items'] = [
-    { type: 'group' as const, label: '概览', children: pick(['/']) },
-    { type: 'group' as const, label: '资产中心', children: pick(['/assets', '/k8s', '/tasks']) },
-    { type: 'group' as const, label: '接入与系统', children: pick(['/credentials', '/users', '/audit', '/settings']) },
-  ].filter((g) => g.children.length > 0);
+    ...pick(['/']),
+    ...submenu('g-asset', '资产中心', <DatabaseOutlined style={{ fontSize: 16 }} />, ['/assets', '/k8s', '/tasks']),
+    ...submenu('g-sys', '接入与系统', <SettingOutlined style={{ fontSize: 16 }} />, ['/credentials', '/users', '/audit', '/settings']),
+  ];
   return { flat, grouped };
 };
 
@@ -78,7 +84,7 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const { sessions, activeId, close, setActive } = useTerminals();
+  const { sessions, activeId, close, setActive, reorder } = useTerminals();
 
   const isAdmin = (localStorage.getItem('mrd-role') || 'admin') === 'admin';
   const { flat: menuNavItems, grouped: groupedItems } = buildMenu(isAdmin);
@@ -196,16 +202,33 @@ const AppLayout: React.FC = () => {
               <Logo size={34} collapsed={collapsed} />
             </div>
 
-            {/* 导航菜单 */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '12px 10px' : '12px 12px' }}>
-              <Menu
-                mode="inline"
-                inlineCollapsed={collapsed}
-                selectedKeys={[selectedKey]}
-                items={collapsed ? menuNavItems : groupedItems}
-                onClick={(info) => navigate(info.key)}
-                style={{ background: 'transparent', borderRight: 0 }}
-              />
+            {/* 主体：快速连接（展开时）+ 管理导航 */}
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: collapsed ? '12px 10px' : '12px 12px' }}>
+              {!collapsed && (
+                <div style={{ flex: 1, minHeight: 0, marginBottom: 8 }}>
+                  <QuickConnect />
+                </div>
+              )}
+              <div
+                style={{
+                  flexShrink: 0,
+                  ...(collapsed ? {} : { borderTop: `1px solid ${palette.siderBorder}`, paddingTop: 8 }),
+                }}
+              >
+                {!collapsed && (
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#5b6680', padding: '0 6px 4px', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                    管理
+                  </div>
+                )}
+                <Menu
+                  mode="inline"
+                  inlineCollapsed={collapsed}
+                  selectedKeys={[selectedKey]}
+                  items={collapsed ? menuNavItems : groupedItems}
+                  onClick={(info) => navigate(info.key)}
+                  style={{ background: 'transparent', borderRight: 0 }}
+                />
+              </div>
             </div>
 
             {/* 底部：源码 / 版本 / 折叠 */}
@@ -261,6 +284,7 @@ const AppLayout: React.FC = () => {
                 onSelectPage={() => setActive(null)}
                 onSelect={setActive}
                 onClose={close}
+                onReorder={reorder}
               />
             )}
 
