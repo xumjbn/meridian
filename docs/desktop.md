@@ -46,8 +46,22 @@ make desktop-universal         # Intel + Apple Silicon 通用 .app + .dmg
 > 再由 `scripts/make-dmg.sh` 用 `hdiutil` 直接打成「拖入 Applications 安装」的 dmg —— 无需 AppleScript，最稳。
 > 产物：`src-tauri/target/release/bundle/dmg/Meridian.dmg`。未签名，首次打开右键→打开。
 
-`make help` 看全部目标。下面是等价的手动步骤：
+`make help` 看全部目标。
 
+### Windows：一条命令（在 Windows 本机出 .exe / .msi）
+```powershell
+# 前置（仅首次）：装 Rust(含 MSVC C++ 生成工具)；Node/Go/WebView2(Win11 自带) 一般已具备
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+winget install Rustlang.Rustup
+rustup default stable-msvc
+
+# 一条命令：装前端依赖 → 构建 Go sidecar → tauri build
+powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1
+```
+产物在 `frontend/src-tauri/target/release/bundle/`：`nsis/*-setup.exe`（推荐分发）、`msi/*.msi`。
+> Windows 包必须在 Windows 上出；同理 macOS 包在 macOS 上出（平台/签名限制）。本仓库这台开发机即 Windows，可直接出 Win 包。
+
+### 等价的手动步骤（任意平台）
 ```bash
 # 1) 构建 Go 后端 sidecar（按当前 Rust 宿主三元组命名到 src-tauri/binaries/）
 #    Windows:
