@@ -50,31 +50,36 @@ const termThemes: { label: string; value: string; theme: TermTheme }[] = [
 ];
 const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value === v) || termThemes[0]).theme;
 
-// 复制到剪贴板：优先用 Clipboard API；在非安全上下文 / 桌面 WebView 下回退 execCommand，
-// 保证终端选区复制始终可用（解决「无法复制终端」）。
+// 同步 execCommand 复制：在用户手势内执行最稳，兼容桌面 WebView / 非安全上下文。
+// 返回是否成功；并还原焦点到原元素（终端），避免选区复制后丢失输入焦点。
+const execCopy = (text: string): boolean => {
+  try {
+    const prev = document.activeElement as HTMLElement | null;
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    if (prev && typeof prev.focus === 'function') prev.focus();
+    return ok;
+  } catch {
+    return false;
+  }
+};
+
+// 复制到剪贴板：同步 execCommand 优先（异步 Clipboard API 在 WebView 里常静默失败，
+// 且其 .catch 回退已脱离用户手势、execCommand 也会失效）。失败再退到异步 API。
 const writeClipboard = (text: string) => {
   if (!text) return;
-  const fallback = () => {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.top = '-9999px';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    } catch {
-      /* ignore */
-    }
-  };
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(fallback);
-  } else {
-    fallback();
-  }
+  if (execCopy(text)) return;
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => {});
 };
 
 // 从剪贴板读取（粘贴）：Clipboard API 不可用时返回空，调用方据此回退
