@@ -37,9 +37,15 @@ npm run tauri icon path/to/logo-1024.png    # 生成 src-tauri/icons/ 全套
 ```bash
 make deps                      # 装前端依赖（含 Tauri CLI），一次即可
 make icons SRC=path/1024.png   # 首次必须：生成并提交 src-tauri/icons/
-make desktop                   # 当前架构 → .dmg / .app
-make desktop-universal         # Intel + Apple Silicon 通用包（推荐分发，自动 lipo 合并 sidecar）
+make desktop                   # 当前架构 → .app（可靠）+ 分发用 zip
+make desktop-dmg               # 额外打 .dmg（可选；依赖 Finder 自动化权限，偶发失败可重试）
+make desktop-universal         # Intel + Apple Silicon 通用 .app（自动 lipo 合并 sidecar）
 ```
+> **为什么默认只出 `.app`**：Tauri 的 `bundle_dmg.sh` 用 `hdiutil` + AppleScript 驱动 Finder，
+> 对残留挂载卷、Finder 自动化权限很敏感，**易在最后一步失败**（`failed to run bundle_dmg.sh`）。
+> 而 `.app` 在 dmg 之前就已生成、可直接运行/压缩分发，所以默认目标只出 `.app` + zip，最稳。
+> 需要 `.dmg` 再单独 `make desktop-dmg`。
+
 `make help` 看全部目标。下面是等价的手动步骤：
 
 ```bash
@@ -74,7 +80,19 @@ npm run desktop:build
 - **Windows**：需代码签名证书避免 SmartScreen 拦截。
 - 未签名也能用（内网分发场景足够），只是首次启动有系统提示。
 
-## 六、已知点 / 后续
+## 六、故障排查
+### `failed to run bundle_dmg.sh`（打 dmg 时）
+`.app` 其实已经打好了（在 `target/release/bundle/macos/Meridian.app`，可直接运行）。dmg 步骤失败多为：
+1. **残留挂载卷**：上次失败留下 `/Volumes/Meridian`，先卸载再重试：
+   ```bash
+   hdiutil detach "/Volumes/Meridian" -force 2>/dev/null
+   make desktop-dmg
+   ```
+2. **Finder 自动化权限被拒**：`系统设置 → 隐私与安全性 → 自动化`，允许「终端 / iTerm」控制「访达(Finder)」。
+3. **没有图形会话**（纯 SSH/CI 跑）：dmg 的窗口排版用 AppleScript 需要 GUI；CI 用 `tauri-action` 或改出 `.app` 即可。
+> 实在不需要 dmg，就用 `make desktop`（只出 `.app` + zip），最稳。
+
+## 七、已知点 / 后续
 - 后端 sidecar 固定监听 `127.0.0.1:8765`；若与本机其它服务冲突，可改 `main.rs` 的 `LISTEN_ADDR` 与 `api.ts` 的 `DESKTOP_BACKEND`（后续可做随机端口 + 启动后回传前端）。
 - 首启后端迁移 DB 约 <1s，期间登录请求可能短暂失败，重试即可（后续可加就绪探测）。
 - 桌面端是**单机本地实例**（自带 SQLite），与服务器/容器多用户部署相互独立。
