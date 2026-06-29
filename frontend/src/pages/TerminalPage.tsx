@@ -163,7 +163,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const [assets, setAssets] = useState<Asset[]>([]);
 
   // 挂载全局终端会话的广播控制
-  const { globalSyncedIds, connectedIds, syncAllConnected } = useTerminals();
+  const { globalSyncedIds, connectedIds, syncAllConnected, activeId } = useTerminals();
 
   // 全局字体设置
   const [fontSize, setFontSize] = useState<number>(() => {
@@ -276,20 +276,32 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     });
   };
 
-  // 添加一个空窗格：优先填补不足 2 列的行，否则新增一行，上限 MAX_PANES
-  const addPane = () => {
+  // 添加一个窗格（可带初始资产）：优先填补不足 2 列的行，否则新增一行，上限 MAX_PANES
+  const addPane = (withAssetId: number = 0) => {
     setRows((prev) => {
       if (flatPanes(prev).length >= MAX_PANES) return prev;
       const next = prev.map((r) => ({ ...r, panes: [...r.panes] }));
       const rowWithSpace = next.find((r) => r.panes.length < 2);
       if (rowWithSpace) {
-        rowWithSpace.panes.push({ id: newPaneId(), assetId: 0, flex: 1 });
+        rowWithSpace.panes.push({ id: newPaneId(), assetId: withAssetId, flex: 1 });
       } else if (next.length < 2) {
-        next.push({ id: newRowId(), flex: 1, panes: [{ id: newPaneId(), assetId: 0, flex: 1 }] });
+        next.push({ id: newRowId(), flex: 1, panes: [{ id: newPaneId(), assetId: withAssetId, flex: 1 }] });
       }
       return next;
     });
   };
+
+  // 「在新分屏打开」：仅当前激活的终端页响应（侧栏右键菜单触发）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      if (!embedded || activeId !== assetId) return;
+      const id = (e as CustomEvent<number>).detail;
+      if (typeof id === 'number') addPane(id);
+    };
+    window.addEventListener('mrd-open-in-split', handler);
+    return () => window.removeEventListener('mrd-open-in-split', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, activeId, assetId]);
 
   // ── 拖拽缩放：相邻两元素按像素位移等量增减 flex 权重 ──────────
   const startDrag = () => {
@@ -527,7 +539,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
               size="small"
               type="text"
               icon={<PlusOutlined />}
-              onClick={addPane}
+              onClick={() => addPane()}
               disabled={totalPanes >= MAX_PANES}
               title="添加一个分屏"
               style={{ marginLeft: 6, fontSize: 12, color: '#475569' }}
@@ -731,6 +743,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   );
   const [errorDetail, setErrorDetail] = useState<string>('');
   const [form] = Form.useForm();
+
+  // 从侧栏拖拽主机到本分屏的高亮态
+  const [paneDragOver, setPaneDragOver] = useState(false);
 
   // 终端搜索（Ctrl+F）
   const searchAddonRef = useRef<SearchAddon | null>(null);
@@ -1321,19 +1336,57 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      width: '100%',
-      position: 'relative',
-      background: '#0B0F19',
-      // 当开启同步且连接成功时，提供微微泛发靛蓝光的边框指示
-      border: isSynced && status === 'connected' ? '1px solid #6366f1' : '1px solid #1e293b',
-      boxShadow: isSynced && status === 'connected' ? '0 0 8px rgba(99, 102, 241, 0.35)' : 'none',
-      boxSizing: 'border-box',
-      transition: 'all 0.25s ease',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        width: '100%',
+        position: 'relative',
+        background: '#0B0F19',
+        // 当开启同步且连接成功时，提供微微泛发靛蓝光的边框指示
+        border: paneDragOver
+          ? '1px solid #22d3ee'
+          : isSynced && status === 'connected'
+          ? '1px solid #6366f1'
+          : '1px solid #1e293b',
+        boxShadow: isSynced && status === 'connected' ? '0 0 8px rgba(99, 102, 241, 0.35)' : 'none',
+        boxSizing: 'border-box',
+        transition: 'all 0.25s ease',
+      }}
+      onDragOver={(e) => {
+        if (!Array.from(e.dataTransfer.types).includes('application/x-mrd-asset')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        if (!paneDragOver) setPaneDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setPaneDragOver(false);
+      }}
+      onDrop={(e) => {
+        setPaneDragOver(false);
+        const raw = e.dataTransfer.getData('application/x-mrd-asset') || e.dataTransfer.getData('text/plain');
+        const id = parseInt(raw, 10);
+        if (!Number.isNaN(id)) {
+          e.preventDefault();
+          onAssetChange(id);
+        }
+      }}
+    >
+      {/* 拖拽主机到此分屏的提示遮罩 */}
+      {paneDragOver && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 60, pointerEvents: 'none',
+            border: '2px dashed #22d3ee', borderRadius: 4, background: 'rgba(34,211,238,0.10)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <span style={{ background: 'rgba(15,23,42,0.88)', color: '#a5f3fc', fontSize: 13, padding: '6px 12px', borderRadius: 6 }}>
+            松开即在此分屏连接
+          </span>
+        </div>
+      )}
       {/* 分屏窗口头部小状态栏 */}
       <div style={{
         height: '32px',

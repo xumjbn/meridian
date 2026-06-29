@@ -84,10 +84,16 @@ export const TerminalTabBar: React.FC<Props> = ({
           <div
             key={s.id}
             draggable={!!onReorder}
-            onDragStart={() => setDragId(s.id)}
+            onDragStart={(e) => {
+              setDragId(s.id);
+              // 必须写入 dataTransfer，否则 WebKit / Tauri WebView 不会真正发起拖拽
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', String(s.id));
+            }}
             onDragOver={(e) => {
               if (dragId === null) return;
               e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
               if (overId !== s.id) setOverId(s.id);
             }}
             onDrop={(e) => {

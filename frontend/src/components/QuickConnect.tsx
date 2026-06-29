@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Input, Tooltip, Empty, Spin } from 'antd';
+import { Input, Tooltip, Empty, Spin, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   DesktopOutlined,
   ReloadOutlined,
@@ -8,18 +9,33 @@ import {
   TagsOutlined,
   ThunderboltOutlined,
   PlusOutlined,
+  HistoryOutlined,
+  CodeOutlined,
+  BlockOutlined,
+  FolderOpenOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { getAssets, getCapabilities, type Asset } from '../services/api';
 import { useTerminals } from '../terminalSessions';
 import { palette } from '../theme';
 
 const UNGROUPED = '未分组';
+const RECENT_KEY = 'mrd-recent-hosts';
 
 const parseTags = (s?: string): string[] => {
   if (!s) return [];
   try {
     const arr = JSON.parse(s);
     return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string' && x) : [];
+  } catch {
+    return [];
+  }
+};
+
+const loadRecent = (): number[] => {
+  try {
+    const arr = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === 'number' && x > 0) : [];
   } catch {
     return [];
   }
@@ -38,7 +54,8 @@ interface Props {
   collapsed?: boolean;
 }
 
-// 左侧栏「快速连接」：按标签分组的主机树 + 本地终端，点击即开终端标签并连接
+// 左侧栏「快速连接」：按标签分组的主机树 + 本地终端，点击即开终端标签并连接；
+// 支持「最近连接」置顶、右键菜单（新分屏/SFTP/资产）、拖拽主机到分屏直接连。
 export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const { open, sessions, activeId } = useTerminals();
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -46,6 +63,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const [q, setQ] = useState('');
   const [localShell, setLocalShell] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [recentIds, setRecentIds] = useState<number[]>(loadRecent);
 
   const load = async () => {
     setLoading(true);
@@ -67,6 +85,44 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   }, []);
 
   const openIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions]);
+
+  const pushRecent = (id?: number) => {
+    if (!id || id < 0) return;
+    setRecentIds((prev) => {
+      const next = [id, ...prev.filter((x) => x !== id)].slice(0, 8);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const connect = (a: Asset) => {
+    open({ id: a.id!, name: a.name, ip: a.ip });
+    pushRecent(a.id);
+  };
+  // 每次新建一个独立的本地终端：用更小的负数 id 保证唯一（可同时开多个）
+  const connectLocal = () => {
+    const localIds = sessions.filter((s) => s.id < 0).map((s) => s.id);
+    const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
+    const n = localIds.length + 1;
+    open({ id: nextId, name: n > 1 ? `本地终端 ${n}` : '本地终端', ip: '本机' });
+  };
+
+  // 右键菜单动作
+  const openInSplit = (a: Asset) => {
+    if (activeId !== null) {
+      window.dispatchEvent(new CustomEvent('mrd-open-in-split', { detail: a.id }));
+      pushRecent(a.id);
+    } else {
+      connect(a); // 没有活动终端则退化为新标签连接
+    }
+  };
+  const hostMenu = (a: Asset): MenuProps['items'] => [
+    { key: 'connect', icon: <CodeOutlined />, label: '连接（新标签）', onClick: () => connect(a) },
+    { key: 'split', icon: <BlockOutlined />, label: '在新分屏打开', onClick: () => openInSplit(a) },
+    { key: 'sftp', icon: <FolderOpenOutlined />, label: '文件传输 (SFTP)', onClick: () => window.dispatchEvent(new CustomEvent('mrd-open-sftp', { detail: a })) },
+    { type: 'divider' },
+    { key: 'assets', icon: <EditOutlined />, label: '在资产清单查看', onClick: () => window.dispatchEvent(new CustomEvent('mrd-navigate', { detail: '/assets' })) },
+  ];
 
   // 过滤 + 按标签分组（一台主机可出现在多个标签下；无标签归「未分组」）
   const groups = useMemo(() => {
@@ -90,7 +146,6 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         map.get(k)!.push(a);
       }
     }
-    // 标签名升序，未分组置底
     const keys = Array.from(map.keys()).sort((a, b) => {
       if (a === UNGROUPED) return 1;
       if (b === UNGROUPED) return -1;
@@ -99,14 +154,12 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     return keys.map((k) => ({ tag: k, hosts: map.get(k)!.sort(byOnlineThenName) }));
   }, [assets, q]);
 
-  const connect = (a: Asset) => open({ id: a.id!, name: a.name, ip: a.ip });
-  // 每次新建一个独立的本地终端：用更小的负数 id 保证唯一（可同时开多个）
-  const connectLocal = () => {
-    const localIds = sessions.filter((s) => s.id < 0).map((s) => s.id);
-    const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
-    const n = localIds.length + 1;
-    open({ id: nextId, name: n > 1 ? `本地终端 ${n}` : '本地终端', ip: '本机' });
-  };
+  const recentHosts = useMemo(() => {
+    return recentIds
+      .map((id) => assets.find((a) => a.id === id))
+      .filter((a): a is Asset => !!a)
+      .slice(0, 5);
+  }, [recentIds, assets]);
 
   const labelStyle: React.CSSProperties = {
     fontSize: 11,
@@ -117,6 +170,56 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   };
 
   const localActive = activeId !== null && activeId < 0;
+
+  const startHostDrag = (e: React.DragEvent, a: Asset) => {
+    e.dataTransfer.setData('application/x-mrd-asset', String(a.id));
+    e.dataTransfer.setData('text/plain', a.name);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+
+  // 展开态的单个主机行（可点连、可右键菜单、可拖到分屏）
+  const hostRow = (a: Asset, keyPrefix: string) => {
+    const active = activeId === a.id;
+    const opened = openIds.has(a.id!);
+    const tags = parseTags(a.tags);
+    return (
+      <Dropdown key={`${keyPrefix}-${a.id}`} trigger={['contextMenu']} menu={{ items: hostMenu(a) }}>
+        <div
+          draggable
+          onDragStart={(e) => startHostDrag(e, a)}
+          onClick={() => connect(a)}
+          title={`${a.name} · ${a.ip}${tags.length ? ` · ${tags.join(' / ')}` : ''}\n单击连接 · 右键更多 · 可拖到分屏`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 8px 6px 20px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: 13,
+            lineHeight: 1.2,
+            color: active ? '#ffffff' : palette.siderText,
+            background: active ? palette.siderActive : 'transparent',
+          }}
+          onMouseEnter={(e) => {
+            if (!active) (e.currentTarget as HTMLDivElement).style.background = palette.siderHover;
+          }}
+          onMouseLeave={(e) => {
+            if (!active) (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+          }}
+        >
+          <span
+            style={{
+              width: 7, height: 7, borderRadius: '50%', background: statusColor(a.status), flexShrink: 0,
+              boxShadow: opened ? `0 0 0 2px rgba(99,102,241,0.45)` : undefined,
+            }}
+          />
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+          <span style={{ fontSize: 10, color: '#5b6680', flexShrink: 0 }}>{a.ip}</span>
+        </div>
+      </Dropdown>
+    );
+  };
 
   // ── 折叠态：窄图标条（主机首字母头像 + 状态点，tooltip 显示名称/IP/标签）──
   if (collapsed) {
@@ -149,19 +252,21 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
             const active = activeId === a.id;
             const tags = parseTags(a.tags);
             return (
-              <Tooltip key={a.id} placement="right" title={`${a.name} · ${a.ip}${tags.length ? ` · ${tags.join(' / ')}` : ''}`}>
-                <div onClick={() => connect(a)} style={iconBtn(active, false)}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: active ? '#fff' : palette.siderText }}>
-                    {(a.name || a.ip).slice(0, 1).toUpperCase()}
-                  </span>
-                  <span
-                    style={{
-                      position: 'absolute', right: 3, bottom: 3, width: 8, height: 8, borderRadius: '50%',
-                      background: statusColor(a.status), border: `1.5px solid ${palette.siderBg}`,
-                    }}
-                  />
-                </div>
-              </Tooltip>
+              <Dropdown key={a.id} trigger={['contextMenu']} menu={{ items: hostMenu(a) }}>
+                <Tooltip placement="right" title={`${a.name} · ${a.ip}${tags.length ? ` · ${tags.join(' / ')}` : ''}`}>
+                  <div draggable onDragStart={(e) => startHostDrag(e, a)} onClick={() => connect(a)} style={iconBtn(active, false)}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: active ? '#fff' : palette.siderText }}>
+                      {(a.name || a.ip).slice(0, 1).toUpperCase()}
+                    </span>
+                    <span
+                      style={{
+                        position: 'absolute', right: 3, bottom: 3, width: 8, height: 8, borderRadius: '50%',
+                        background: statusColor(a.status), border: `1.5px solid ${palette.siderBg}`,
+                      }}
+                    />
+                  </div>
+                </Tooltip>
+              </Dropdown>
             );
           })}
         </div>
@@ -177,11 +282,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
           <ThunderboltOutlined style={{ color: palette.accent }} /> 快速连接
         </span>
         <Tooltip title="刷新主机" placement="right">
-          <ReloadOutlined
-            spin={loading}
-            onClick={load}
-            style={{ color: '#5b6680', cursor: 'pointer', fontSize: 12 }}
-          />
+          <ReloadOutlined spin={loading} onClick={load} style={{ color: '#5b6680', cursor: 'pointer', fontSize: 12 }} />
         </Tooltip>
       </div>
 
@@ -202,14 +303,8 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
           onClick={connectLocal}
           title="新建本地终端（连接运行本程序的这台机器，可同时开多个）"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '7px 8px',
-            marginBottom: 6,
-            borderRadius: 8,
-            cursor: 'pointer',
-            fontSize: 13,
+            display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', marginBottom: 6,
+            borderRadius: 8, cursor: 'pointer', fontSize: 13,
             color: localActive ? '#ffffff' : palette.siderText,
             background: localActive ? palette.siderActive : 'rgba(34,211,238,0.08)',
             border: `1px solid ${localActive ? palette.accent : 'rgba(34,211,238,0.18)'}`,
@@ -234,77 +329,39 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
             style={{ marginTop: 24 }}
           />
         ) : (
-          groups.map(({ tag, hosts }) => {
-            const folded = collapsedGroups[tag];
-            return (
-              <div key={tag} style={{ marginBottom: 4 }}>
-                <div
-                  onClick={() => setCollapsedGroups((p) => ({ ...p, [tag]: !p[tag] }))}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '4px 6px',
-                    cursor: 'pointer',
-                    color: '#7c8aa5',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    userSelect: 'none',
-                  }}
-                >
-                  {folded ? <CaretRightOutlined style={{ fontSize: 10 }} /> : <CaretDownOutlined style={{ fontSize: 10 }} />}
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tag}</span>
-                  <span style={{ fontSize: 10, color: '#5b6680' }}>{hosts.length}</span>
+          <>
+            {/* 最近连接（不搜索时置顶） */}
+            {!q && recentHosts.length > 0 && (
+              <div style={{ marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', color: '#7c8aa5', fontSize: 12, fontWeight: 600 }}>
+                  <HistoryOutlined style={{ fontSize: 11 }} />
+                  <span style={{ flex: 1 }}>最近</span>
                 </div>
-
-                {!folded &&
-                  hosts.map((a) => {
-                    const active = activeId === a.id;
-                    const opened = openIds.has(a.id!);
-                    return (
-                      <div
-                        key={`${tag}-${a.id}`}
-                        onClick={() => connect(a)}
-                        title={`${a.name} · ${a.ip}${a.status ? ` · ${a.status}` : ''}\n单击连接`}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          padding: '6px 8px 6px 20px',
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          lineHeight: 1.2,
-                          color: active ? '#ffffff' : palette.siderText,
-                          background: active ? palette.siderActive : 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!active) (e.currentTarget as HTMLDivElement).style.background = palette.siderHover;
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!active) (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 7,
-                            height: 7,
-                            borderRadius: '50%',
-                            background: statusColor(a.status),
-                            flexShrink: 0,
-                            boxShadow: opened ? `0 0 0 2px rgba(99,102,241,0.45)` : undefined,
-                          }}
-                        />
-                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {a.name}
-                        </span>
-                        <span style={{ fontSize: 10, color: '#5b6680', flexShrink: 0 }}>{a.ip}</span>
-                      </div>
-                    );
-                  })}
+                {recentHosts.map((a) => hostRow(a, 'recent'))}
+                <div style={{ height: 1, background: palette.siderBorder, margin: '6px 6px 2px' }} />
               </div>
-            );
-          })
+            )}
+
+            {groups.map(({ tag, hosts }) => {
+              const folded = collapsedGroups[tag];
+              return (
+                <div key={tag} style={{ marginBottom: 4 }}>
+                  <div
+                    onClick={() => setCollapsedGroups((p) => ({ ...p, [tag]: !p[tag] }))}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', cursor: 'pointer',
+                      color: '#7c8aa5', fontSize: 12, fontWeight: 600, userSelect: 'none',
+                    }}
+                  >
+                    {folded ? <CaretRightOutlined style={{ fontSize: 10 }} /> : <CaretDownOutlined style={{ fontSize: 10 }} />}
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tag}</span>
+                    <span style={{ fontSize: 10, color: '#5b6680' }}>{hosts.length}</span>
+                  </div>
+                  {!folded && hosts.map((a) => hostRow(a, tag))}
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
     </div>
