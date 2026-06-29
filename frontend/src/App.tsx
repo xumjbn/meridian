@@ -386,23 +386,27 @@ const AppLayout: React.FC = () => {
 };
 
 export const App: React.FC = () => {
-  // 桌面端（Tauri）：本机单用户实例，免登录页——直接进入，token 后台静默获取，
-  // 永不因后端未就绪而卡转圈或弹登录页。
-  const [authed, setAuthed] = useState(localStorage.getItem('mrd-auth') === '1' || isTauri);
+  // 桌面端（Tauri）：本机单用户实例，免登录页——直接进入，token 后台静默获取。
+  // 但「主动退出登录」(mrd-logged-out) 时不自动登录，落到登录页可切换账户。
+  const desktopAuto = isTauri && localStorage.getItem('mrd-logged-out') !== '1';
+  const [authed, setAuthed] = useState(localStorage.getItem('mrd-auth') === '1' || desktopAuto);
   const [mustChange, setMustChange] = useState(!isTauri && localStorage.getItem('mrd-must-change') === '1');
 
   useEffect(() => {
-    if (!isTauri || localStorage.getItem('mrd-token')) return;
+    if (!desktopAuto || localStorage.getItem('mrd-token')) return;
     // 乐观角色：先按 admin 显示菜单，真实角色登录成功后覆盖
     if (!localStorage.getItem('mrd-role')) localStorage.setItem('mrd-role', 'admin');
     let cancelled = false;
     const creds: Array<[string, string]> = [['admin', 'admin'], ['admin', '123456']];
+    const isCredErr = (e: any) => /密码|password|用户|账户|account|credential|invalid/i.test(String(e?.message || ''));
     // 单次登录最多等 8s，避免连接挂死导致永远不返回
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
       Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
     (async () => {
-      // 后台持续重试（后端 sidecar 晚起也能恢复），成功即广播让已挂载页面刷新数据
+      // 后台持续重试（后端 sidecar 晚起也能恢复）；默认密码全部不对则落登录页让用户手动输
       for (let i = 0; i < 40 && !cancelled; i++) {
+        let networkErr = false;
+        let credErr = false;
         for (const [u, p] of creds) {
           if (cancelled) return;
           try {
@@ -415,16 +419,17 @@ export const App: React.FC = () => {
             window.dispatchEvent(new CustomEvent('mrd-auth-ready'));
             return;
           } catch (e: any) {
-            // 非凭据错误（后端未就绪/超时）→ 等待后重试整轮；凭据错误 → 试下一组
-            if (!/密码|password|用户|账户|account|credential/i.test(String(e?.message || ''))) {
-              await new Promise((res) => setTimeout(res, 1000));
-              break;
-            }
+            if (isCredErr(e)) credErr = true;
+            else { networkErr = true; break; } // 后端未就绪/超时 → 等待后重试整轮
           }
         }
+        if (networkErr) { await new Promise((res) => setTimeout(res, 1000)); continue; }
+        // 没有网络错误、也没成功 → 默认账户密码不可用 → 弹登录页让用户手动登录
+        if (credErr && !cancelled) { setAuthed(false); return; }
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 独立标签页打开的全屏终端模式
@@ -448,6 +453,7 @@ export const App: React.FC = () => {
         <Suspense fallback={<PageFallback />}>
           <Login
             onSuccess={() => {
+              localStorage.removeItem('mrd-logged-out'); // 恢复桌面端自动登录
               setMustChange(localStorage.getItem('mrd-must-change') === '1');
               setAuthed(true);
             }}

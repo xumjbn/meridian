@@ -28,6 +28,8 @@ export const UserMenu: React.FC = () => {
     localStorage.removeItem('mrd-token');
     localStorage.removeItem('mrd-user');
     localStorage.removeItem('mrd-role');
+    // 标记主动退出：桌面端据此不再自动登录，落到登录页可切换账户
+    localStorage.setItem('mrd-logged-out', '1');
     window.location.reload(); // 重新加载后登录门禁会拦截到登录页
   };
 
