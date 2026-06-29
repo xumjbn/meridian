@@ -24,8 +24,25 @@ const clearSession = () => {
   localStorage.removeItem('mrd-role');
 };
 
-// 请求拦截：附带会话 token
-api.interceptors.request.use((config) => {
+// 等待 token 就绪（桌面端 token 由后台静默登录获取，最多等 timeoutMs）
+const waitForToken = (timeoutMs: number): Promise<void> =>
+  new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      if (localStorage.getItem('mrd-token') || Date.now() - start > timeoutMs) return resolve();
+      setTimeout(tick, 150);
+    };
+    tick();
+  });
+
+// 请求拦截：附带会话 token。桌面端首屏若 token 尚未就绪，先等后台登录拿到再发，
+// 避免页面在拿到 token 前就请求导致「获取数据失败」（401）。/login、/register 不等待，避免死锁。
+api.interceptors.request.use(async (config) => {
+  const url = config.url || '';
+  const isAuthCall = /\/login$|\/register$/.test(url);
+  if (isTauri && !isAuthCall && !localStorage.getItem('mrd-token')) {
+    await waitForToken(10000);
+  }
   const token = localStorage.getItem('mrd-token');
   if (token) {
     config.headers = config.headers || {};
