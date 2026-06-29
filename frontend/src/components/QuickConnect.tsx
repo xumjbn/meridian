@@ -27,6 +27,12 @@ const parseTags = (s?: string): string[] => {
 
 const statusColor = (s?: string) => (s === 'online' ? palette.success : s === 'offline' ? palette.danger : '#64748b');
 
+// 在线优先、其次未知、最后离线；同档按名称排序——常用的在线主机更易找到
+const byOnlineThenName = (a: Asset, b: Asset) => {
+  const rank = (s?: string) => (s === 'online' ? 0 : s === 'offline' ? 2 : 1);
+  return rank(a.status) - rank(b.status) || a.name.localeCompare(b.name, 'zh');
+};
+
 interface Props {
   /** 侧栏折叠态：渲染为窄图标条（仍可快速连接，标签走 tooltip） */
   collapsed?: boolean;
@@ -90,7 +96,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
       if (b === UNGROUPED) return -1;
       return a.localeCompare(b, 'zh');
     });
-    return keys.map((k) => ({ tag: k, hosts: map.get(k)!.sort((a, b) => a.name.localeCompare(b.name, 'zh')) }));
+    return keys.map((k) => ({ tag: k, hosts: map.get(k)!.sort(byOnlineThenName) }));
   }, [assets, q]);
 
   const connect = (a: Asset) => open({ id: a.id!, name: a.name, ip: a.ip });
@@ -127,7 +133,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
       background: active ? palette.siderActive : accent ? 'rgba(34,211,238,0.08)' : 'transparent',
       border: `1px solid ${active ? palette.accent : accent ? 'rgba(34,211,238,0.18)' : 'transparent'}`,
     });
-    const sorted = [...assets].sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    const sorted = [...assets].sort(byOnlineThenName);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, alignItems: 'center', gap: 6 }}>
         {localShell && (

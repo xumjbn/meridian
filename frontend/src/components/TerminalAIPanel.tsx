@@ -14,6 +14,8 @@ const genAgentId = () => `agent-${Math.random().toString(36).slice(2)}${Date.now
 interface Props {
   assets: Asset[];
   defaultAssetId: number;
+  /** 跳转到系统设置（用于未启用 AI 时引导配置） */
+  onOpenSettings?: () => void;
 }
 
 const MIN_W = 320;
@@ -23,8 +25,9 @@ const MAX_W = 760;
  * 悬浮式 AI 助手面板：默认收起为右下角悬浮按钮，点击展开；宽度可拖拽调节；
  * 支持新建 / 切换历史对话。Agent 在后端独立 SSH 通道执行命令（自动执行 + 高危拦截）。
  */
-export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => {
+export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId, onOpenSettings }) => {
   const [enabled, setEnabled] = useState(false);
+  const [statusChecked, setStatusChecked] = useState(false);
   const [open, setOpen] = useState(false);
   const [width, setWidth] = useState<number>(() => {
     const s = parseInt(localStorage.getItem('ai_panel_width') || '', 10);
@@ -41,24 +44,34 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    aiStatus().then((s) => setEnabled(!!s.enabled)).catch(() => {});
-  }, []);
+  const checkStatus = () => {
+    aiStatus()
+      .then((s) => setEnabled(!!s.enabled))
+      .catch(() => {})
+      .finally(() => setStatusChecked(true));
+  };
+  useEffect(() => { checkStatus(); }, []);
 
   useEffect(() => { setTarget(defaultAssetId); }, [defaultAssetId]);
 
-  // 展开时刷新历史列表
+  // 展开时刷新历史列表 + 重新检测 AI 是否已启用（便于刚在设置里配置完即生效）
   const loadHistory = () => {
     aiAgentSessions().then(setHistory).catch(() => {});
   };
-  useEffect(() => { if (open) loadHistory(); }, [open]);
+  useEffect(() => {
+    if (open) {
+      checkStatus();
+      loadHistory();
+    }
+  }, [open]);
 
   // 执行记录滚动到底
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [active, loading]);
 
-  if (!enabled) return null;
+  // 首次状态尚未返回前不闪现按钮；返回后无论是否启用都常驻入口（未启用则引导去配置）
+  if (!statusChecked) return null;
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -153,21 +166,25 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
   const newChat = () => { setActive(null); setPrompt(''); };
   const onSubmit = active ? runFollowup : runStart;
 
-  // ── 收起态：右下角悬浮按钮 ──────────────────────
+  // ── 收起态：右下角悬浮按钮（未启用也常驻，点开引导配置）──────────
   if (!open) {
     return (
-      <Button
-        type="primary"
-        icon={<RobotOutlined />}
-        onClick={() => setOpen(true)}
-        style={{
-          position: 'absolute', right: 16, bottom: 16, zIndex: 1500,
-          height: 40, borderRadius: 20, boxShadow: '0 6px 20px rgba(99,102,241,0.45)',
-          background: 'linear-gradient(135deg,#6366f1,#7c5cfb)', border: 'none',
-        }}
-      >
-        AI 助手
-      </Button>
+      <Tooltip title={enabled ? '' : 'AI 助手未启用，点击查看如何开启'} placement="left">
+        <Button
+          type="primary"
+          icon={<RobotOutlined />}
+          onClick={() => setOpen(true)}
+          style={{
+            position: 'absolute', right: 16, bottom: 16, zIndex: 1500,
+            height: 40, borderRadius: 20,
+            boxShadow: enabled ? '0 6px 20px rgba(99,102,241,0.45)' : '0 6px 20px rgba(100,116,139,0.35)',
+            background: enabled ? 'linear-gradient(135deg,#6366f1,#7c5cfb)' : 'linear-gradient(135deg,#64748b,#475569)',
+            border: 'none', opacity: enabled ? 1 : 0.92,
+          }}
+        >
+          AI 助手
+        </Button>
+      </Tooltip>
     );
   }
 
@@ -236,6 +253,22 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
         </Space>
       </div>
 
+      {!enabled ? (
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 12 }}>
+          <RobotOutlined style={{ fontSize: 32, color: '#64748b' }} />
+          <div style={{ fontSize: 13, color: '#cbd5e1', fontWeight: 600 }}>AI 助手未启用</div>
+          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.7 }}>
+            前往「系统设置 → AI」填写 API 地址 / Key / 模型并开启，即可在终端里用一句话自动完成运维任务。
+          </div>
+          <Space>
+            {onOpenSettings && (
+              <Button size="small" type="primary" onClick={() => { setOpen(false); onOpenSettings(); }}>去设置</Button>
+            )}
+            <Button size="small" onClick={checkStatus}>我已配置，重新检测</Button>
+          </Space>
+        </div>
+      ) : (
+      <>
       {/* 执行记录 */}
       <div ref={bodyRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 10px' }}>
         {!active && !loading && (
@@ -317,6 +350,8 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId }) => 
           </Button>
         </Space.Compact>
       </div>
+      </>
+      )}
     </div>
   );
 };

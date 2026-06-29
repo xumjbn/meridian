@@ -108,6 +108,12 @@ export const TerminalTabBar: React.FC<Props> = ({
               boxShadow: isDropTarget ? `inset 3px 0 0 ${palette.primary}` : undefined,
             }}
             onClick={() => onSelect(s.id)}
+            onAuxClick={(e) => {
+              if (e.button === 1) {
+                e.preventDefault();
+                onClose(s.id); // 中键关闭标签
+              }
+            }}
             title={isLocal ? '本地终端（本机）' : `${s.name} (${s.ip})`}
           >
             {isLocal ? (
