@@ -22,7 +22,8 @@ import { TerminalTabBar } from './components/TerminalTabBar';
 import { QuickConnect } from './components/QuickConnect';
 import { GlobalSearch } from './components/GlobalSearch';
 import { TerminalProvider, useTerminals } from './terminalSessions';
-import { login, isTauri } from './services/api';
+import { login, isTauri, type Asset } from './services/api';
+import { SftpDrawer } from './components/SftpDrawer';
 import { brand, palette, antdLightToken } from './theme';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
@@ -88,6 +89,23 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const { sessions, activeId, close, setActive, reorder } = useTerminals();
+
+  // 侧栏主机右键菜单触发的全局动作：打开 SFTP / 跳转页面
+  const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
+  const [sftpOpen, setSftpOpen] = useState(false);
+  useEffect(() => {
+    const onSftp = (e: Event) => { setSftpAsset((e as CustomEvent<Asset>).detail); setSftpOpen(true); };
+    const onNav = (e: Event) => {
+      const p = (e as CustomEvent<string>).detail;
+      if (p) { navigate(p); setActive(null); }
+    };
+    window.addEventListener('mrd-open-sftp', onSftp);
+    window.addEventListener('mrd-navigate', onNav);
+    return () => {
+      window.removeEventListener('mrd-open-sftp', onSftp);
+      window.removeEventListener('mrd-navigate', onNav);
+    };
+  }, [navigate, setActive]);
 
   const isAdmin = (localStorage.getItem('mrd-role') || 'admin') === 'admin';
   const { flat: menuNavItems, grouped: groupedItems } = buildMenu(isAdmin);
@@ -359,6 +377,9 @@ const AppLayout: React.FC = () => {
 
         {/* 全局搜索（Ctrl/Cmd + K） */}
         <GlobalSearch />
+
+        {/* 侧栏主机右键「文件传输」打开的 SFTP 抽屉 */}
+        <SftpDrawer asset={sftpAsset} open={sftpOpen} onClose={() => setSftpOpen(false)} />
       </Layout>
     </ConfigProvider>
   );
@@ -373,21 +394,30 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (autoLoginTried) return;
     let cancelled = false;
+    // 桌面端默认账户候选（按序尝试）：admin/admin、admin/123456
+    const creds: Array<[string, string]> = [['admin', 'admin'], ['admin', '123456']];
     (async () => {
-      // 后端 sidecar 首启迁移 DB 可能短暂不可用，失败重试几次；凭据被改则回退登录页
-      for (let i = 0; i < 8 && !cancelled; i++) {
-        try {
-          const r = await login('admin', 'admin');
-          localStorage.setItem('mrd-auth', '1');
-          localStorage.setItem('mrd-token', r.token || '');
-          localStorage.setItem('mrd-user', r.username || 'admin');
-          localStorage.setItem('mrd-role', r.role || 'admin');
-          localStorage.removeItem('mrd-must-change'); // 桌面端忽略强制改密
-          if (!cancelled) { setMustChange(false); setAuthed(true); }
-          break;
-        } catch (e: any) {
-          if (/密码|password|用户|账户|account/i.test(String(e?.message || ''))) break;
-          await new Promise((res) => setTimeout(res, 600));
+      // 后端 sidecar 首启迁移 DB 可能短暂不可用，整轮重试几次；凭据全错则回退登录页
+      outer: for (let i = 0; i < 8 && !cancelled; i++) {
+        for (const [u, p] of creds) {
+          if (cancelled) break outer;
+          try {
+            const r = await login(u, p);
+            localStorage.setItem('mrd-auth', '1');
+            localStorage.setItem('mrd-token', r.token || '');
+            localStorage.setItem('mrd-user', r.username || u);
+            localStorage.setItem('mrd-role', r.role || 'admin');
+            localStorage.removeItem('mrd-must-change'); // 桌面端忽略强制改密
+            setMustChange(false);
+            setAuthed(true);
+            break outer;
+          } catch (e: any) {
+            // 非凭据错误（如后端未就绪）→ 等待后重试整轮；凭据错误 → 试下一组
+            if (!/密码|password|用户|账户|account|credential/i.test(String(e?.message || ''))) {
+              await new Promise((res) => setTimeout(res, 600));
+              break;
+            }
+          }
         }
       }
       if (!cancelled) setAutoLoginTried(true);
