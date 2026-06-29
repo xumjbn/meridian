@@ -7,8 +7,9 @@ import {
   CaretRightOutlined,
   TagsOutlined,
   ThunderboltOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
-import { getAssets, getCapabilities, LOCAL_ASSET_ID, type Asset } from '../services/api';
+import { getAssets, getCapabilities, type Asset } from '../services/api';
 import { useTerminals } from '../terminalSessions';
 import { palette } from '../theme';
 
@@ -88,7 +89,13 @@ export const QuickConnect: React.FC = () => {
   }, [assets, q]);
 
   const connect = (a: Asset) => open({ id: a.id!, name: a.name, ip: a.ip });
-  const connectLocal = () => open({ id: LOCAL_ASSET_ID, name: '本地终端', ip: '本机' });
+  // 每次新建一个独立的本地终端：用更小的负数 id 保证唯一（可同时开多个）
+  const connectLocal = () => {
+    const localIds = sessions.filter((s) => s.id < 0).map((s) => s.id);
+    const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
+    const n = localIds.length + 1;
+    open({ id: nextId, name: n > 1 ? `本地终端 ${n}` : '本地终端', ip: '本机' });
+  };
 
   const labelStyle: React.CSSProperties = {
     fontSize: 11,
@@ -98,7 +105,7 @@ export const QuickConnect: React.FC = () => {
     textTransform: 'uppercase',
   };
 
-  const localActive = activeId === LOCAL_ASSET_ID;
+  const localActive = activeId !== null && activeId < 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -131,7 +138,7 @@ export const QuickConnect: React.FC = () => {
       {localShell && (
         <div
           onClick={connectLocal}
-          title="本地终端（连接运行本程序的这台机器）"
+          title="新建本地终端（连接运行本程序的这台机器，可同时开多个）"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -148,7 +155,7 @@ export const QuickConnect: React.FC = () => {
         >
           <DesktopOutlined style={{ color: palette.accent }} />
           <span style={{ flex: 1 }}>本地终端</span>
-          <span style={{ fontSize: 10, color: '#5b6680' }}>本机</span>
+          <PlusOutlined style={{ fontSize: 11, color: '#5b6680' }} />
         </div>
       )}
 

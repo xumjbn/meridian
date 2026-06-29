@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, LOCAL_ASSET_ID, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
@@ -49,6 +49,43 @@ const termThemes: { label: string; value: string; theme: TermTheme }[] = [
     green: '#28a745', yellow: '#dbab09', blue: '#0366d6', magenta: '#5a32a3', cyan: '#0598bc', white: '#6a737d' } },
 ];
 const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value === v) || termThemes[0]).theme;
+
+// 复制到剪贴板：优先用 Clipboard API；在非安全上下文 / 桌面 WebView 下回退 execCommand，
+// 保证终端选区复制始终可用（解决「无法复制终端」）。
+const writeClipboard = (text: string) => {
+  if (!text) return;
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.top = '-9999px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    } catch {
+      /* ignore */
+    }
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(fallback);
+  } else {
+    fallback();
+  }
+};
+
+// 从剪贴板读取（粘贴）：Clipboard API 不可用时返回空，调用方据此回退
+const readClipboard = async (): Promise<string> => {
+  try {
+    if (navigator.clipboard?.readText) return await navigator.clipboard.readText();
+  } catch {
+    /* ignore */
+  }
+  return '';
+};
 
 // 一个终端窗格（行内带宽度权重 flex）
 interface PaneNode {
@@ -115,6 +152,12 @@ interface TerminalPageProps {
 
 export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = false, onClose }) => {
   const [fullscreen, setFullscreen] = useState(false);
+  // 顶部工具栏折叠：收起后扩大终端输出区域（持久化）
+  const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => localStorage.getItem('term_toolbar_collapsed') === '1');
+  const toggleToolbar = (v: boolean) => {
+    setToolbarCollapsed(v);
+    localStorage.setItem('term_toolbar_collapsed', v ? '1' : '0');
+  };
   const [assets, setAssets] = useState<Asset[]>([]);
 
   // 挂载全局终端会话的广播控制
@@ -423,9 +466,29 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         .term-splitter-col:hover, .term-splitter-row:hover {
           background: rgba(99,102,241,0.55);
         }
+        /* 终端滚动条改深色，避免默认浅色滚动条在终端右侧显示为「白色竖线」 */
+        .terminal-container .xterm-viewport {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(148,163,184,0.35) transparent;
+        }
+        .terminal-container .xterm-viewport::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        .terminal-container .xterm-viewport::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
+          background: rgba(148,163,184,0.28);
+          border-radius: 6px;
+        }
+        .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
+          background: rgba(148,163,184,0.5);
+        }
       `}} />
 
-      {/* 顶部全局状态栏 */}
+      {/* 顶部全局状态栏（可折叠以扩大输出区域） */}
+      {!toolbarCollapsed && (
       <div style={{
         minHeight: '48px',
         background: '#ffffff',
@@ -583,6 +646,15 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             {fullscreen ? '退出全屏' : '全屏'}
           </Button>
 
+          <Tooltip title="收起工具栏，扩大输出区域">
+            <Button
+              type="text"
+              icon={<UpOutlined />}
+              onClick={() => toggleToolbar(true)}
+              style={{ color: '#475569', display: 'flex', alignItems: 'center' }}
+            />
+          </Tooltip>
+
           <Button
             type="text"
             danger
@@ -594,8 +666,23 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
           </Button>
         </Space>
       </div>
+      )}
 
       <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: '#0B0F19' }}>
+        {/* 工具栏收起态：左上角悬浮的展开按钮 */}
+        {toolbarCollapsed && (
+          <Tooltip title="展开工具栏" placement="right">
+            <Button
+              size="small"
+              icon={<DownOutlined />}
+              onClick={() => toggleToolbar(false)}
+              style={{
+                position: 'absolute', top: 6, left: 6, zIndex: 1400,
+                background: 'rgba(30,41,59,0.92)', color: '#cbd5e1', border: '1px solid #334155',
+              }}
+            />
+          </Tooltip>
+        )}
         {renderGrid()}
         {/* 悬浮 AI 助手（收起为右下角按钮，展开为可调宽浮层，带历史切换） */}
         <TerminalAIPanel assets={assets} defaultAssetId={assetId} />
@@ -846,14 +933,15 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     };
   }, [status, assetId, registerGlobalWS, instanceId]);
 
-  // 本地终端：assetId 为哨兵值 LOCAL_ASSET_ID，连后端本机 Shell，不走资产/SSH 流程
-  const isLocal = assetId === LOCAL_ASSET_ID;
+  // 本地终端：任意负数 assetId 都视为本地终端（连后端本机 Shell），
+  // 不同负数 id 即不同的本地终端会话/分屏，支持同时开多个。
+  const isLocal = assetId < 0;
 
   // 2. 同步加载被分配的资产详情
   useEffect(() => {
     if (isLocal) {
       // 合成一个「本地终端」资产，驱动下方 WebSocket 建联（不发请求）
-      setAsset({ id: LOCAL_ASSET_ID, name: '本地终端', ip: '本机', type: 'server' } as Asset);
+      setAsset({ id: assetId, name: '本地终端', ip: '本机', type: 'server' } as Asset);
       return;
     }
     if (assetId <= 0) {
@@ -919,11 +1007,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       const key = e.key.toLowerCase();
       if (e.ctrlKey && e.shiftKey && key === 'c') {
         const sel = term.getSelection();
-        if (sel) navigator.clipboard?.writeText(sel).catch(() => {});
+        if (sel) writeClipboard(sel);
         return false;
       }
       if (e.ctrlKey && e.shiftKey && key === 'v') {
-        navigator.clipboard?.readText().then((t) => { if (t) term.paste(t); }).catch(() => {});
+        readClipboard().then((t) => { if (t) term.paste(t); });
         return false;
       }
       // Ctrl+F 打开终端内搜索
@@ -969,11 +1057,18 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
       onMouseUp = () => {
         const sel = term.getSelection();
-        if (sel && sel.length > 0) navigator.clipboard?.writeText(sel).catch(() => {});
+        if (sel && sel.length > 0) writeClipboard(sel);
       };
       onContextMenu = (e: MouseEvent) => {
         e.preventDefault();
-        navigator.clipboard?.readText().then((t) => { if (t) term.paste(t); }).catch(() => {});
+        // 有选区则右键复制；否则右键粘贴（PuTTY 风格）
+        const sel = term.getSelection();
+        if (sel && sel.length > 0) {
+          writeClipboard(sel);
+          term.clearSelection();
+        } else {
+          readClipboard().then((t) => { if (t) term.paste(t); });
+        }
       };
       terminalRef.current.addEventListener('mouseup', onMouseUp);
       terminalRef.current.addEventListener('contextmenu', onContextMenu);
@@ -1187,7 +1282,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     setAsset(null);
     if (isLocal) {
       // 先卸载再于下一拍重建，触发 WebSocket 重连
-      setTimeout(() => setAsset({ id: LOCAL_ASSET_ID, name: '本地终端', ip: '本机', type: 'server' } as Asset), 0);
+      setTimeout(() => setAsset({ id: assetId, name: '本地终端', ip: '本机', type: 'server' } as Asset), 0);
     } else if (assetId > 0) {
       getAsset(assetId).then(setAsset);
     }
@@ -1272,7 +1367,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
             }
             options={[
-              { label: '💻 本地终端 · 本机', value: LOCAL_ASSET_ID },
+              { label: '💻 本地终端 · 本机', value: isLocal ? assetId : LOCAL_ASSET_ID },
               ...assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id })),
             ]}
             style={{ flex: 1, minWidth: 150, maxWidth: 300 }}

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
-import { LOCAL_ASSET_ID } from '../services/api';
 import type { TermSession } from '../terminalSessions';
 
 interface Props {
@@ -79,7 +78,7 @@ export const TerminalTabBar: React.FC<Props> = ({
       {/* 终端会话标签（HTML5 拖拽重排） */}
       {sessions.map((s) => {
         const active = activeId === s.id;
-        const isLocal = s.id === LOCAL_ASSET_ID;
+        const isLocal = s.id < 0;
         const isDropTarget = overId === s.id && dragId !== null && dragId !== s.id;
         return (
           <div
