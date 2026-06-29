@@ -23,7 +23,6 @@
       }
     ],
     "security": {
-      "comment": "桌面端：前端经 tauri:// 加载，API/WS 连本地 sidecar 127.0.0.1:8765；csp=null 放开本地连接",
       "csp": null
     }
   },
@@ -37,11 +36,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/meridian-backend"],
-    "windows": {
-      "nsis": {
-        "installMode": "perUser"
-      }
-    }
+    "externalBin": ["binaries/meridian-backend"]
   }
 }
