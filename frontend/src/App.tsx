@@ -345,7 +345,12 @@ const AppLayout: React.FC = () => {
             {sessions.map((s) => (
               <div key={s.id} style={{ flex: 1, minHeight: 0, position: 'relative', display: activeId === s.id ? 'block' : 'none' }}>
                 <Suspense fallback={<PageFallback />}>
-                  <TerminalPage assetId={s.id} embedded onClose={() => close(s.id)} />
+                  <TerminalPage
+                    assetId={s.id}
+                    embedded
+                    onClose={() => close(s.id)}
+                    onOpenSettings={() => { setActive(null); navigate('/settings'); }}
+                  />
                 </Suspense>
               </div>
             ))}

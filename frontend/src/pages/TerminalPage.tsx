@@ -148,9 +148,11 @@ interface TerminalPageProps {
   /** 在 App 内部以标签页形式嵌入（填满容器，关闭走回调而非关闭浏览器窗口） */
   embedded?: boolean;
   onClose?: () => void;
+  /** 跳转系统设置（AI 未启用时引导配置） */
+  onOpenSettings?: () => void;
 }
 
-export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = false, onClose }) => {
+export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = false, onClose, onOpenSettings }) => {
   const [fullscreen, setFullscreen] = useState(false);
   // 顶部工具栏折叠：收起后扩大终端输出区域（持久化）
   const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => localStorage.getItem('term_toolbar_collapsed') === '1');
@@ -685,7 +687,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         )}
         {renderGrid()}
         {/* 悬浮 AI 助手（收起为右下角按钮，展开为可调宽浮层，带历史切换） */}
-        <TerminalAIPanel assets={assets} defaultAssetId={assetId} />
+        <TerminalAIPanel assets={assets} defaultAssetId={assetId} onOpenSettings={onOpenSettings} />
       </div>
 
       <SnippetManager open={snippetModalOpen} onClose={() => setSnippetModalOpen(false)} />
