@@ -1,0 +1,85 @@
+name: desktop-build
+
+# 出 macOS(.dmg/.app)、Windows(.msi/.exe)、Linux(.AppImage/.deb) 桌面安装包。
+# 手动触发，或打 v* tag 时触发。产物上传为 workflow artifacts。
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest    # Apple Silicon
+            triple: aarch64-apple-darwin
+            goos: darwin
+            goarch: arm64
+          - os: macos-13        # Intel
+            triple: x86_64-apple-darwin
+            goos: darwin
+            goarch: amd64
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+            goos: windows
+            goarch: amd64
+            ext: .exe
+          - os: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            goos: linux
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Linux 依赖（WebKitGTK 等）
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: 构建 Go 后端 sidecar
+        shell: bash
+        run: |
+          mkdir -p frontend/src-tauri/binaries
+          cd backend
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -mod=mod -o "../frontend/src-tauri/binaries/meridian-backend-${{ matrix.triple }}${{ matrix.ext }}" ./cmd/server
+
+      - name: 前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: Tauri 构建（含 npm run build + 打包）
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: frontend
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: meridian-desktop-${{ matrix.triple }}
+          path: |
+            frontend/src-tauri/target/release/bundle/**/*.dmg
+            frontend/src-tauri/target/release/bundle/**/*.app
+            frontend/src-tauri/target/release/bundle/**/*.msi
+            frontend/src-tauri/target/release/bundle/**/*.exe
+            frontend/src-tauri/target/release/bundle/**/*.AppImage
+            frontend/src-tauri/target/release/bundle/**/*.deb
+          if-no-files-found: ignore

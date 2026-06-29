@@ -1,0 +1,20 @@
+[package]
+name = "meridian-desktop"
+version = "0.43.0"
+description = "Meridian 子午 — 桌面端（Tauri + Go sidecar）"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

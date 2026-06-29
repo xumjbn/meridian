@@ -1,0 +1,7 @@
+# Rust 构建产物
+/target
+# Tauri 生成目录
+/gen
+# Go sidecar 二进制（由构建脚本/CI 生成，按目标三元组命名）
+/binaries/*
+!/binaries/.gitkeep

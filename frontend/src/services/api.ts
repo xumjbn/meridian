@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api';
+// 桌面端（Tauri）：前端由 Tauri 加载（tauri://），后端 Go 以 sidecar 监听本地端口；
+// Web/容器部署：同源（nginx 反代 /api）。BACKEND_ORIGIN 据此切换。
+const isTauri = typeof window !== 'undefined' &&
+  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+export const DESKTOP_BACKEND = 'http://127.0.0.1:8765';
+export const BACKEND_ORIGIN = isTauri ? DESKTOP_BACKEND : '';
+
+const API_BASE_URL = `${BACKEND_ORIGIN}/api`;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -342,7 +349,7 @@ export const sftpRename = (assetId: number, from: string, to: string): Promise<{
 // 下载用原生 fetch（携带 token），区分二进制流与 JSON 错误响应
 export const sftpDownload = async (assetId: number, filePath: string): Promise<void> => {
   const token = localStorage.getItem('mrd-token') || '';
-  const res = await fetch(`/api/assets/${assetId}/sftp/download?path=${encodeURIComponent(filePath)}`, {
+  const res = await fetch(`${BACKEND_ORIGIN}/api/assets/${assetId}/sftp/download?path=${encodeURIComponent(filePath)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const ct = res.headers.get('content-type') || '';
@@ -483,7 +490,7 @@ export const getAuditLogs = (params?: { actor?: string; action?: string; limit?:
 export const getScanStreamUrl = (taskId: number): string => {
   const token = localStorage.getItem('mrd-token') || '';
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `/api/tasks/${taskId}/stream${q}`;
+  return `${BACKEND_ORIGIN}/api/tasks/${taskId}/stream${q}`;
 };
 
 
@@ -497,6 +504,10 @@ export const getTerminalWsUrl = (assetId: number): string => {
   const params = [token ? `token=${encodeURIComponent(token)}` : '', autoTry ? '' : 'autotry=0'].filter(Boolean);
   const q = params.length ? `?${params.join('&')}` : '';
 
+  // 桌面端（Tauri）：直连本地 sidecar 后端
+  if (BACKEND_ORIGIN) {
+    return `ws://127.0.0.1:8765/api/ws/terminal/${assetId}${q}`;
+  }
   // 仅在 Vite 开发模式下直连后端 8080，绕开 dev server 偶发的 ws 代理问题；
   // 生产 / 容器部署（vite build）一律走同源，由 nginx 反向代理到后端，
   // 这样无论用 localhost、内网 IP 还是域名访问，终端 WebSocket 都能正常握手
