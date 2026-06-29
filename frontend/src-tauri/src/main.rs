@@ -12,6 +12,7 @@ struct Backend(Mutex<Option<CommandChild>>);
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Backend(Mutex::new(None)))
         .setup(|app| {
             // 数据库放到系统应用数据目录，持久化、避免写到安装目录
