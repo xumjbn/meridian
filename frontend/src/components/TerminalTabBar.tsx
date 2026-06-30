@@ -12,6 +12,8 @@ interface Props {
   onClose: (id: number) => void;
   /** 拖拽重排：把 dragId 移动到 overId 处 */
   onReorder?: (dragId: number, overId: number) => void;
+  /** 有新输出的非激活会话 id（标签显示提示点） */
+  activityIds?: number[];
 }
 
 const TAB_BAR_HEIGHT = 42;
@@ -25,6 +27,7 @@ export const TerminalTabBar: React.FC<Props> = ({
   onSelect,
   onClose,
   onReorder,
+  activityIds = [],
 }) => {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
@@ -132,6 +135,12 @@ export const TerminalTabBar: React.FC<Props> = ({
               <CodeOutlined style={{ fontSize: 14, color: active ? palette.primary : palette.textMute }} />
             )}
             <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+            {!active && activityIds.includes(s.id) && (
+              <span
+                title="有新输出"
+                style={{ width: 7, height: 7, borderRadius: '50%', background: palette.accent, flexShrink: 0, animation: 'pulse 2s infinite' }}
+              />
+            )}
             <CloseOutlined
               style={{ fontSize: 11, color: palette.textMute, marginLeft: 2 }}
               onClick={(e) => {

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover, Modal } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, LOCAL_ASSET_ID, type Asset } from '../services/api';
+import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
@@ -12,6 +12,7 @@ import { SnippetManager } from '../components/SnippetManager';
 import { TerminalAIPanel } from '../components/TerminalAIPanel';
 import { loadSnippets, matchSnippets, recordSnippetUsage, type CmdSnippet } from '../commandSnippets';
 import { copyText, pasteText } from '../clipboard';
+import { CommandPalette } from '../components/CommandPalette';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -54,6 +55,31 @@ const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value =
 // 复制/粘贴统一走 ../clipboard：桌面端原生剪贴板优先，Web 端 execCommand + API 兜底。
 const writeClipboard = (text: string) => copyText(text);
 const readClipboard = (): Promise<string> => pasteText();
+
+// 粘贴到终端：多行内容先确认，避免误把脚本当多条命令一次性执行。
+const pasteIntoTerm = (term: Terminal, text: string) => {
+  if (!text) return;
+  const body = text.replace(/\r\n/g, '\n').replace(/\n+$/, '');
+  if (body.includes('\n')) {
+    Modal.confirm({
+      title: '确认粘贴多行内容',
+      content: `将粘贴 ${body.split('\n').length} 行文本，可能被 Shell 当作多条命令依次执行。`,
+      okText: '粘贴', cancelText: '取消', centered: true,
+      onOk: () => term.paste(text),
+    });
+  } else {
+    term.paste(text);
+  }
+};
+
+// 打开外部链接：桌面端走系统浏览器（shell.open），Web 端 window.open
+const openExternal = (url: string) => {
+  if (isTauri) {
+    import('@tauri-apps/plugin-shell').then((m) => m.open(url)).catch(() => window.open(url, '_blank'));
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};
 
 // 一个终端窗格（行内带宽度权重 flex）
 interface PaneNode {
@@ -131,7 +157,14 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const [assets, setAssets] = useState<Asset[]>([]);
 
   // 挂载全局终端会话的广播控制
-  const { globalSyncedIds, connectedIds, syncAllConnected, activeId } = useTerminals();
+  const { globalSyncedIds, connectedIds, syncAllConnected, activeId, markActivity } = useTerminals();
+
+  // 本会话非激活时有新输出 → 标记活动（标签提示点）。用 ref 取最新激活态，避免闭包过期。
+  const sessionActiveRef = useRef(activeId === assetId);
+  useEffect(() => { sessionActiveRef.current = activeId === assetId; }, [activeId, assetId]);
+  const notifyActivity = useCallback(() => {
+    if (!sessionActiveRef.current) markActivity(assetId);
+  }, [markActivity, assetId]);
 
   // 全局字体设置
   const [fontSize, setFontSize] = useState<number>(() => {
@@ -419,6 +452,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     onAssetChange={(newId) => handleAssetChange(pane.id, newId)}
                     onZoomFont={zoomFont}
                     onResetFont={resetFont}
+                    onActivity={notifyActivity}
                   />
                 </div>
               </React.Fragment>
@@ -701,6 +735,7 @@ interface TerminalItemProps {
   onAssetChange: (id: number) => void;
   onZoomFont: (delta: number) => void; // Ctrl+滚轮 / Ctrl± 调整字号
   onResetFont: () => void;             // Ctrl+0 复位字号
+  onActivity?: () => void;             // 有新输出时回调（非激活标签提示点）
 }
 
 // 判断一段输入是否为可见字符（含粘贴文本）；控制字符 / 转义序列返回 false
@@ -713,7 +748,7 @@ const isPrintableInput = (s: string): boolean => {
   return true;
 };
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont, onActivity }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -727,6 +762,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   // 从侧栏拖拽主机到本分屏的高亮态
   const [paneDragOver, setPaneDragOver] = useState(false);
+
+  // 命令面板（Ctrl/⌘+Shift+P）
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // 自动重连退避：异常断开后按指数退避自动重连，连上即清零
+  const autoReconnectRef = useRef(true);
+  const reconnAttemptsRef = useRef(0);
+  const reconnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 终端搜索（Ctrl+F）
   const searchAddonRef = useRef<SearchAddon | null>(null);
@@ -1031,7 +1074,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         return false;
       }
       if (e.ctrlKey && e.shiftKey && key === 'v') {
-        readClipboard().then((t) => { if (t) term.paste(t); });
+        readClipboard().then((t) => { if (t) pasteIntoTerm(term, t); });
+        return false;
+      }
+      // Ctrl/⌘+Shift+P 打开命令面板（模糊搜命令库并插入）
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && key === 'p') {
+        setPaletteOpen(true);
         return false;
       }
       // Ctrl+F 打开终端内搜索
@@ -1050,6 +1098,28 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     if (terminalRef.current) {
       term.open(terminalRef.current);
+
+      // 终端内 URL 可点击（http/https）→ 系统浏览器打开
+      term.registerLinkProvider({
+        provideLinks(bufferLineNumber, callback) {
+          const ln = term.buffer.active.getLine(bufferLineNumber - 1);
+          if (!ln) { callback(undefined); return; }
+          const text = ln.translateToString(true);
+          const re = /(https?:\/\/[^\s"'`<>()一-鿿]+)/g;
+          const links: { range: { start: { x: number; y: number }; end: { x: number; y: number } }; text: string; activate: () => void }[] = [];
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(text)) !== null) {
+            const url = m[1].replace(/[.,;:)]+$/, ''); // 去掉行尾标点
+            if (!url) continue;
+            links.push({
+              range: { start: { x: m.index + 1, y: bufferLineNumber }, end: { x: m.index + url.length, y: bufferLineNumber } },
+              text: url,
+              activate: () => openExternal(url),
+            });
+          }
+          callback(links.length ? links : undefined);
+        },
+      });
 
       // 重连时回放此前的终端历史输出（恢复以前的终端记录）
       if (outputBufRef.current.length > 0) {
@@ -1092,7 +1162,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           writeClipboard(sel);
           term.clearSelection();
         } else {
-          readClipboard().then((t) => { if (t) term.paste(t); });
+          readClipboard().then((t) => { if (t) pasteIntoTerm(term, t); });
         }
       };
       terminalRef.current.addEventListener('mouseup', onMouseUp);
@@ -1170,6 +1240,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               setConnecting(false);
               setAuthRequired(false);
               setStatus('connected');
+              reconnAttemptsRef.current = 0; // 连上即重置退避计数
+              if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
               term.write(isLocal
                 ? '\x1b[32m[SYSTEM] 本地终端已就绪，开始接受输入！\x1b[0m\r\n\r\n'
                 : '\x1b[32m[SYSTEM] SSH 会话连接成功，终端开始接受输入！\x1b[0m\r\n\r\n');
@@ -1191,6 +1263,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           appendBuf(event.data as string);
         }
       } else if (event.data instanceof ArrayBuffer) {
+        onActivity?.(); // 非激活标签有新输出 → 提示点
         const bytes = new Uint8Array(event.data);
         if (termEncodingRef.current === 'gbk' && gbkDecoder) {
           // GBK 主机：先解码为字符串再写入（xterm 默认按 UTF-8 解析字节，会乱码）
@@ -1235,6 +1308,15 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           return 'WebSocket 远程连接意外关闭，请检查目标机 SSH 服务或网络路由。';
         });
       }
+      // 异常断开自动重连（指数退避，最多 6 次；用户主动关闭则不重连）
+      if (autoReconnectRef.current && reconnAttemptsRef.current < 6) {
+        const n = ++reconnAttemptsRef.current;
+        const delay = Math.min(15000, 1000 * 2 ** (n - 1));
+        setStatusText(`连接断开，${Math.round(delay / 1000)}s 后自动重连（第 ${n}/6 次）…`);
+        term.write(`\x1b[33m[SYSTEM] ${Math.round(delay / 1000)}s 后自动重连（第 ${n}/6 次）…\x1b[0m\r\n`);
+        if (reconnTimerRef.current) clearTimeout(reconnTimerRef.current);
+        reconnTimerRef.current = setTimeout(() => { handleReconnect(); }, delay);
+      }
     };
 
     socket.onerror = () => {
@@ -1246,6 +1328,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     return () => {
       clearInterval(pingInterval);
+      if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
       if (socket) {
         socket.onopen = null;
         socket.onmessage = null;
@@ -1321,6 +1404,20 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       getAsset(assetId).then(setAsset);
     }
   };
+
+  // 用户手动重连：重置退避计数与开关，再走重连
+  const manualReconnect = () => {
+    if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
+    reconnAttemptsRef.current = 0;
+    autoReconnectRef.current = true;
+    handleReconnect();
+  };
+
+  // 组件真正卸载（关闭分屏/标签）时停止自动重连
+  useEffect(() => () => {
+    autoReconnectRef.current = false;
+    if (reconnTimerRef.current) clearTimeout(reconnTimerRef.current);
+  }, []);
 
   const handleSyncToggle = (checked: boolean) => {
     setGlobalSyncedIds((prev) => {
@@ -1472,7 +1569,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         
         <Space size={2} style={{ flexShrink: 0 }}>
           {status !== 'idle' && (
-            <Button size="small" type="link" onClick={handleReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
+            <Button size="small" type="link" onClick={manualReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
               重新连接
             </Button>
           )}
@@ -1545,7 +1642,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
                   {errorDetail || 'WebSocket 意外关闭，请校验主机状态或凭证'}
                 </p>
                 <Space>
-                  <Button size="small" type="primary" onClick={handleReconnect} style={{ borderRadius: 4 }}>重新连接</Button>
+                  <Button size="small" type="primary" onClick={manualReconnect} style={{ borderRadius: 4 }}>重新连接</Button>
                 </Space>
               </div>
             )}
@@ -1679,6 +1776,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         )}
       </div>
 
+      {/* 命令面板（Ctrl/⌘+Shift+P）：模糊搜命令库并插入 */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onPick={(cmd) => acceptSuggestion({ id: 'palette', cmd } as CmdSnippet)}
+      />
     </div>
   );
 };
