@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 
 	"github.com/creack/pty"
 )
@@ -25,7 +26,14 @@ func (u *unixPty) Resize(cols, rows int) error {
 
 func (u *unixPty) Close() error {
 	if u.cmd != nil && u.cmd.Process != nil {
-		_ = u.cmd.Process.Kill()
+		pid := u.cmd.Process.Pid
+		// creack/pty 以 Setsid 启动子进程，其为新会话/进程组组长（pgid==pid）。
+		// 向负 pid 发信号可终止整个进程组，连同 shell 派生的子进程一并清理，避免遗留孤儿进程。
+		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
+			_ = u.cmd.Process.Kill() // 回退：至少结束直接子进程
+		}
+		// 异步 Wait 回收，避免留下僵尸进程
+		go func() { _ = u.cmd.Wait() }()
 	}
 	return u.f.Close()
 }

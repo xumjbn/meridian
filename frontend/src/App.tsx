@@ -430,6 +430,8 @@ export const App: React.FC = () => {
         // 没有网络错误、也没成功 → 默认账户密码不可用 → 弹登录页让用户手动登录
         if (credErr && !cancelled) { setAuthed(false); return; }
       }
+      // 重试次数耗尽仍未拿到 token（后端持续超时/异常）→ 落登录页，避免卡死在空白/转圈
+      if (!cancelled && !localStorage.getItem('mrd-token')) setAuthed(false);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

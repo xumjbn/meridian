@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -77,6 +78,7 @@ func ProxyLocal(ws *websocket.Conn) {
 
 	// 主协程：WebSocket → PTY（含 resize / ping 控制信令）
 	for {
+		_ = ws.SetReadDeadline(time.Now().Add(wsReadIdleTimeout))
 		mt, message, err := ws.ReadMessage()
 		if err != nil {
 			closeAll()

@@ -57,7 +57,7 @@ func ParseIPRange(target string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		return expandCIDR(ip, ipNet), nil
+		return expandCIDR(ip, ipNet)
 	}
 
 	// 3. 判断是否是单个 IP
@@ -101,18 +101,24 @@ func expandIPRange(start, end net.IP) ([]string, error) {
 	return ips, nil
 }
 
-func expandCIDR(ip net.IP, ipNet *net.IPNet) []string {
+func expandCIDR(ip net.IP, ipNet *net.IPNet) ([]string, error) {
+	// 限制 CIDR 主机数上限（最多 /16 ≈ 65536），与区间写法保持一致的安全约束，
+	// 防止 /8 之类超大网段一次性展开成千万级字符串切片撑爆内存。
+	ones, bits := ipNet.Mask.Size()
+	if bits-ones > 16 {
+		return nil, fmt.Errorf("CIDR range too large (max /16, 65536 IPs)")
+	}
+
 	var ips []string
 	for ip := ip.Mask(ipNet.Mask); ipNet.Contains(ip); inc(ip) {
 		ips = append(ips, ip.String())
 	}
-	
+
 	// 对于包含网络号和广播地址的 CIDR 网段 (大于 /31)，去掉首尾
-	ones, _ := ipNet.Mask.Size()
 	if ones < 31 && len(ips) > 2 {
-		return ips[1 : len(ips)-1]
+		return ips[1 : len(ips)-1], nil
 	}
-	return ips
+	return ips, nil
 }
 
 func inc(ip net.IP) {

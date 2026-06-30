@@ -568,10 +568,24 @@ func UpdateScanTask(c *gin.Context) {
 		return
 	}
 
-	if err := c.ShouldBindJSON(&task); err != nil {
+	var req model.ScanTask
+	if err := c.ShouldBindJSON(&req); err != nil {
 		SendError(c, 400, err.Error())
 		return
 	}
+	if req.Name == "" || req.TargetRange == "" {
+		SendError(c, 400, "名称和扫描网段不能为空")
+		return
+	}
+
+	// 仅更新可编辑字段，避免请求体改写 ID / Status 等内部状态
+	// （否则可借 body 里的 ID 覆写另一条任务，或把 Status 改成 running 扰乱调度/取消映射）
+	task.Name = req.Name
+	task.TargetRange = req.TargetRange
+	task.Ports = req.Ports
+	task.Kind = req.Kind
+	task.DetectK8s = req.DetectK8s
+	task.Schedule = req.Schedule
 
 	if err := db.Save(&task).Error; err != nil {
 		SendError(c, 500, err.Error())

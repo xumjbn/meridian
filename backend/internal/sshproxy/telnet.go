@@ -82,6 +82,7 @@ func ProxyTelnet(ws *websocket.Conn, asset *model.Asset, cred *model.Credential)
 
 	// WS -> TCP
 	for {
+		_ = ws.SetReadDeadline(time.Now().Add(wsReadIdleTimeout))
 		mt, message, rerr := ws.ReadMessage()
 		if rerr != nil {
 			closeAll()

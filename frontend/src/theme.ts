@@ -8,7 +8,7 @@ export const brand = {
   name: 'Lynx',
   zh: '猞猁',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.60',
+  version: 'v0.61',
   repo: 'https://github.com/',
 } as const;
 

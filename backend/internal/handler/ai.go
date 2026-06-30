@@ -35,6 +35,24 @@ var dangerousCmdPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(sh|bash|zsh)\b`), // 远程脚本直接执行
 	regexp.MustCompile(`(?i)\brm\s+-rf\s+(/|/\*|~|\$HOME)\s*$`),
 	regexp.MustCompile(`(?i)\btruncate\s+-s\s*0\s+/`),
+	// —— 补充：覆盖更多破坏性/高危写法（命中仅触发人工二次确认，不阻断执行）——
+	regexp.MustCompile(`(?i)\brm\s+[^|]*--(recursive|force)`),                          // rm --recursive / --force
+	regexp.MustCompile(`(?i)\brm\s+-[a-z]*\s+-[a-z]*[rf]\b`),                           // rm -r -f 分开写
+	regexp.MustCompile(`(?i)\bfind\b[^|]*-delete\b`),                                   // find ... -delete
+	regexp.MustCompile(`(?i)\bfind\b[^|]*-exec\s+rm\b`),                                // find ... -exec rm
+	regexp.MustCompile(`(?i)\b(shred|wipefs)\b`),                                       // 安全擦除 / 抹设备签名
+	regexp.MustCompile(`(?i)\bdd\b[^|]*\bof=/(etc|var|usr|bin|sbin|boot|root|home)\b`), // dd 覆写系统路径
+	regexp.MustCompile(`(?i)\b(userdel|groupdel|deluser)\b`),                           // 删除账户
+	regexp.MustCompile(`(?i)\bchpasswd\b`),                                             // 批量改密
+	regexp.MustCompile(`(?i)\busermod\b[^|]*\s-L\b`),                                   // 锁定账户
+	regexp.MustCompile(`(?i)\biptables\b[^|]*(-F|-X|--flush)`),                         // 清空防火墙规则
+	regexp.MustCompile(`(?i)\bsystemctl\s+(stop|disable|mask)\b`),                      // 停用/屏蔽服务
+	regexp.MustCompile(`(?i)\bservice\s+\S+\s+stop\b`),                                 // service xxx stop
+	regexp.MustCompile(`(?i)\b(apt|apt-get|yum|dnf)\b[^|]*\b(remove|purge|erase)\b`),   // 批量卸载软件包
+	regexp.MustCompile(`(?i)\bcrontab\s+-r\b`),                                         // 删除全部定时任务
+	regexp.MustCompile(`(?i)/etc/shadow\b`),                                            // 访问影子口令文件
+	regexp.MustCompile(`(?i)>\s*/(etc|boot|bin|sbin|usr|lib)\b`),                       // 覆写系统目录文件
+	regexp.MustCompile(`(?i)\bmv\b\s+/(etc|var|usr|bin|sbin|boot|root)\b`),             // 移动系统目录
 }
 
 func checkDangerousCommand(cmd string) (bool, string) {
