@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Dropdown, Input } from 'antd';
 import type { MenuProps } from 'antd';
-import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
 import type { TermSession } from '../terminalSessions';
 
@@ -43,15 +43,13 @@ export const TerminalTabBar: React.FC<Props> = ({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editVal, setEditVal] = useState('');
 
-  // ── 拖拽排序：用 pointer 事件而非 HTML5 原生 DnD ──────────────────────────
-  // 原生 draggable 在 Tauri/WebView 下常被外层 Dropdown 包裹层吞掉而完全不触发，
-  // 改用 pointermove + 命中测试最稳，且能与单击/双击/右键/关闭按钮和平共存。
+  // ── 拖拽排序：pointer 事件 + setPointerCapture（不依赖 HTML5 原生 DnD）──────────
+  // 原生 draggable / window 级监听在 Tauri/WebView 下都可能被外层 Dropdown 包裹层吞掉；
+  // 这里按下即 setPointerCapture，把后续 move/up 强制派发到该标签本身，越过包裹层/滚动容器也不丢事件。
   const tabRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const dragRef = useRef<{ id: number; startX: number; started: boolean } | null>(null);
+  const dragRef = useRef<{ id: number; startX: number; started: boolean; pointerId: number } | null>(null);
   const overIdRef = useRef<number | null>(null);
   const justDraggedRef = useRef(false);          // 刚拖完，抑制紧随的 click 误选
-  const moveHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
-  const upHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
 
   // 命中测试：指针 x 落在哪个标签上（落在间隙/边缘则取中心最近者）
   const hitTestTab = (x: number): number | null => {
@@ -69,62 +67,63 @@ export const TerminalTabBar: React.FC<Props> = ({
     return bestId;
   };
 
-  const stopDragListeners = () => {
-    if (moveHandlerRef.current) window.removeEventListener('pointermove', moveHandlerRef.current);
-    if (upHandlerRef.current) window.removeEventListener('pointerup', upHandlerRef.current);
-    moveHandlerRef.current = null;
-    upHandlerRef.current = null;
-    document.body.style.userSelect = '';
-  };
-
   const onTabPointerDown = (e: React.PointerEvent, s: TermSession) => {
     // 仅左键、未在重命名、且提供了重排回调时才接管；右键/中键留给原有逻辑
     if (e.button !== 0 || editingId === s.id || !onReorder) return;
-    dragRef.current = { id: s.id, startX: e.clientX, started: false };
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    dragRef.current = { id: s.id, startX: e.clientX, started: false, pointerId: e.pointerId };
     overIdRef.current = s.id;
-
-    const move = (ev: PointerEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
-      if (!d.started) {
-        if (Math.abs(ev.clientX - d.startX) < 5) return; // 小位移视为点击，不触发拖拽
-        d.started = true;
-        setDragId(d.id);
-        document.body.style.userSelect = 'none';
-      }
-      const over = hitTestTab(ev.clientX);
-      if (over != null && over !== overIdRef.current) {
-        overIdRef.current = over;
-        setOverId(over);
-      }
-    };
-    const up = () => {
-      const d = dragRef.current;
-      stopDragListeners();
-      if (d && d.started) {
-        const over = overIdRef.current;
-        if (over != null && over !== d.id) onReorder?.(d.id, over);
-        justDraggedRef.current = true;
-        setTimeout(() => { justDraggedRef.current = false; }, 0);
-      }
-      dragRef.current = null;
-      setDragId(null);
-      setOverId(null);
-    };
-    moveHandlerRef.current = move;
-    upHandlerRef.current = up;
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
   };
 
-  // 卸载时清理可能残留的拖拽监听
-  useEffect(() => () => stopDragListeners(), []);
+  const onTabPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (!d.started) {
+      if (Math.abs(e.clientX - d.startX) < 5) return; // 小位移视为点击，不触发拖拽
+      d.started = true;
+      setDragId(d.id);
+      document.body.style.userSelect = 'none';
+    }
+    const over = hitTestTab(e.clientX);
+    if (over != null && over !== overIdRef.current) {
+      overIdRef.current = over;
+      setOverId(over);
+    }
+  };
+
+  const onTabPointerUp = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (d.started) {
+      const over = overIdRef.current;
+      if (over != null && over !== d.id) onReorder?.(d.id, over);
+      justDraggedRef.current = true;
+      setTimeout(() => { justDraggedRef.current = false; }, 0);
+    }
+    dragRef.current = null;
+    document.body.style.userSelect = '';
+    setDragId(null);
+    setOverId(null);
+  };
+
+  // 右键菜单「左移 / 右移」：不依赖拖拽的确定性兜底，任何环境都能调序
+  const moveTab = (s: TermSession, dir: -1 | 1) => {
+    const idx = sessions.findIndex((x) => x.id === s.id);
+    const target = sessions[idx + dir];
+    if (target) onReorder?.(s.id, target.id);
+  };
+
+  // 卸载时复位可能残留的全局文本选择禁用
+  useEffect(() => () => { document.body.style.userSelect = ''; }, []);
 
   const startEdit = (s: TermSession) => { setEditingId(s.id); setEditVal(s.customName || s.name); };
   const commitEdit = (id: number) => { onRename?.(id, editVal); setEditingId(null); };
 
   const tabMenu = (s: TermSession): MenuProps['items'] => [
     { key: 'rename', icon: <EditOutlined />, label: '重命名', onClick: () => startEdit(s) },
+    { key: 'moveLeft', icon: <LeftOutlined />, label: '← 左移一位', disabled: sessions.findIndex((x) => x.id === s.id) <= 0, onClick: () => moveTab(s, -1) },
+    { key: 'moveRight', icon: <RightOutlined />, label: '右移一位 →', disabled: sessions.findIndex((x) => x.id === s.id) >= sessions.length - 1, onClick: () => moveTab(s, 1) },
     {
       key: 'color',
       icon: <BgColorsOutlined />,
@@ -205,6 +204,8 @@ export const TerminalTabBar: React.FC<Props> = ({
           <div
             ref={(el) => { tabRefs.current[s.id] = el; }}
             onPointerDown={(e) => onTabPointerDown(e, s)}
+            onPointerMove={onTabPointerMove}
+            onPointerUp={onTabPointerUp}
             style={{
               ...tabBase,
               ...(active ? activeStyle : idleStyle),
