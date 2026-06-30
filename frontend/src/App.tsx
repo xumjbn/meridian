@@ -88,7 +88,7 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const { sessions, activeId, close, setActive, reorder, activityIds } = useTerminals();
+  const { sessions, activeId, close, setActive, reorder, activityIds, renameSession, recolorSession } = useTerminals();
 
   // 侧栏主机右键菜单触发的全局动作：打开 SFTP / 跳转页面
   const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
@@ -339,6 +339,8 @@ const AppLayout: React.FC = () => {
                 onClose={close}
                 onReorder={reorder}
                 activityIds={activityIds}
+                onRename={renameSession}
+                onRecolor={recolorSession}
               />
             )}
 
