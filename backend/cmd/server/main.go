@@ -191,8 +191,8 @@ func main() {
 	if addr == "" {
 		addr = "127.0.0.1:8080"
 	}
-	log.Println("Meridian · 子午 — 网络资产发现与统一接入平台")
-	log.Printf("Meridian backend is running on http://%s", addr)
+	log.Println("Lynx · 猞猁 — 网络资产发现与统一接入平台")
+	log.Printf("Lynx backend is running on http://%s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to run server: %v", err)
 	}

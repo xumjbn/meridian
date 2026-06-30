@@ -599,7 +599,7 @@ export const Assets: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `meridian-assets-${Date.now()}.csv`;
+    link.download = `lynx-assets-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     message.success(`已导出 ${assets.length} 台资产`);

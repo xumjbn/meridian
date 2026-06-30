@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Meridian 后端镜像（Go，纯 Go SQLite，无需 cgo）
+# Lynx 后端镜像（Go，纯 Go SQLite，无需 cgo）
 # 基础镜像默认走 DaoCloud 的 Docker Hub 国内镜像，可用 --build-arg REGISTRY=... 覆盖
 ARG REGISTRY=docker.m.daocloud.io
 

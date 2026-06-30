@@ -391,7 +391,7 @@ export const Settings: React.FC = () => {
             {/* 关于 */}
             <SettingCard
               icon={<SettingOutlined style={{ fontSize: 16 }} />}
-              title="关于 Meridian"
+              title="关于 Lynx"
               description="系统版本信息与项目链接"
             >
               <SettingRow label="产品名称">

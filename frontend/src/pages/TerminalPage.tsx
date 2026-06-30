@@ -29,7 +29,7 @@ const fontFamilies = [
 // 终端配色主题（xterm theme + 容器底色），可在顶栏切换并持久化
 interface TermTheme { background: string; foreground: string; cursor: string; [k: string]: string }
 const termThemes: { label: string; value: string; theme: TermTheme }[] = [
-  { label: 'Meridian 深空', value: 'meridian', theme: {
+  { label: 'Lynx 深空', value: 'meridian', theme: {
     background: '#0B0F19', foreground: '#F3F4F6', cursor: '#1677ff', black: '#000000', red: '#EF4444',
     green: '#10B981', yellow: '#F59E0B', blue: '#3B82F6', magenta: '#8B5CF6', cyan: '#06B6D4', white: '#FFFFFF' } },
   { label: 'VS Code 暗', value: 'vscode', theme: {
@@ -545,7 +545,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         <Space size="small" style={{ flexShrink: 0 }}>
           <LogoMark size={22} />
           <span style={{ fontWeight: 600, fontSize: 14, color: palette.text, whiteSpace: 'nowrap' }}>
-            Meridian 远程终端多屏中心
+            Lynx 远程终端多屏中心
           </span>
         </Space>
 

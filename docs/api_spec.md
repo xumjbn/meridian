@@ -1,6 +1,6 @@
-# Meridian 接口定义文档 (API Specification)
+# Lynx 接口定义文档 (API Specification)
 
-> 产品：Meridian · 子午 — 网络资产发现与统一接入平台 · 文档版本 **v5.1**（2026-06-24）· 对应应用版本 **v0.33**
+> 产品：Lynx · 猞猁 — 网络资产发现与统一接入平台 · 文档版本 **v5.1**（2026-06-24）· 对应应用版本 **v0.33**
 
 本文档定义前后端交互的 RESTful API、WebSocket 终端协议与 SSE 流。所有列出的接口均已实现。
 

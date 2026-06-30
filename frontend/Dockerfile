@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Meridian 前端镜像（Vite 构建 → nginx 托管 SPA 并反代 /api）
+# Lynx 前端镜像（Vite 构建 → nginx 托管 SPA 并反代 /api）
 ARG REGISTRY=docker.m.daocloud.io
 
 # ---------- 构建阶段 ----------
