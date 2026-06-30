@@ -1,0 +1,23 @@
+# ── 本地构建产物 / 运行时文件（勿提交）──────────────
+/build/
+/dist/
+
+# 编译出的二进制
+*.exe
+backend/meridian-server
+backend/meridian-server-*
+
+# 运行时数据库与日志
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# 依赖（子目录另有 .gitignore，这里兜底）
+node_modules/
+
+# 系统/编辑器杂项
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
