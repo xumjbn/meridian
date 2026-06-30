@@ -5,7 +5,18 @@ export interface TermSession {
   id: number;
   name: string;
   ip: string;
+  customName?: string; // 用户自定义标签名（重命名）
+  color?: string;      // 用户自定义标签颜色
 }
+
+const META_KEY = 'term_tab_meta';
+type TabMeta = Record<number, { name?: string; color?: string }>;
+const loadTabMeta = (): TabMeta => {
+  try { return JSON.parse(localStorage.getItem(META_KEY) || '{}') as TabMeta; } catch { return {}; }
+};
+const saveTabMeta = (m: TabMeta) => {
+  try { localStorage.setItem(META_KEY, JSON.stringify(m)); } catch { /* ignore */ }
+};
 
 export interface GlobalWSHandler {
   send: (data: string | ArrayBuffer | Blob | ArrayBufferView) => void;
@@ -27,6 +38,9 @@ interface TerminalCtx {
   /** 非激活会话有新输出时标记活动（标签显示提示点）；激活该会话即清除 */
   activityIds: number[];
   markActivity: (id: number) => void;
+  /** 重命名标签 / 设置标签颜色（持久化，重开同一资产沿用） */
+  renameSession: (id: number, name: string) => void;
+  recolorSession: (id: number, color: string) => void;
 
   // 全局终端协同同步交互支持
   globalSyncedIds: string[];
@@ -69,9 +83,28 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const open = useCallback((s: TermSession) => {
-    setSessions((prev) => (prev.some((x) => x.id === s.id) ? prev : [...prev, s]));
+    setSessions((prev) => {
+      if (prev.some((x) => x.id === s.id)) return prev;
+      const meta = loadTabMeta()[s.id];
+      return [...prev, { ...s, customName: meta?.name, color: meta?.color }];
+    });
     setActiveRaw(s.id);
     clearActivity(s.id);
+  }, []);
+
+  const renameSession = useCallback((id: number, name: string) => {
+    const v = name.trim();
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, customName: v || undefined } : s)));
+    const m = loadTabMeta();
+    m[id] = { ...(m[id] || {}), name: v || undefined };
+    saveTabMeta(m);
+  }, []);
+
+  const recolorSession = useCallback((id: number, color: string) => {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, color: color || undefined } : s)));
+    const m = loadTabMeta();
+    m[id] = { ...(m[id] || {}), color: color || undefined };
+    saveTabMeta(m);
   }, []);
 
   const close = useCallback((id: number) => {
@@ -142,6 +175,8 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       reorder,
       activityIds,
       markActivity,
+      renameSession,
+      recolorSession,
       globalSyncedIds,
       setGlobalSyncedIds,
       connectedIds,

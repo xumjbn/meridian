@@ -3,8 +3,8 @@ import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Too
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
@@ -13,6 +13,7 @@ import { TerminalAIPanel } from '../components/TerminalAIPanel';
 import { loadSnippets, matchSnippets, recordSnippetUsage, type CmdSnippet } from '../commandSnippets';
 import { copyText, pasteText } from '../clipboard';
 import { CommandPalette } from '../components/CommandPalette';
+import { ShortcutHelp } from '../components/ShortcutHelp';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -150,6 +151,13 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const [fullscreen, setFullscreen] = useState(false);
   // 某个分屏最大化（在多分屏下临时全屏一个，再点恢复）
   const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
+  // 快捷键速查表
+  const [helpOpen, setHelpOpen] = useState(false);
+  useEffect(() => {
+    const onHelp = () => setHelpOpen(true);
+    window.addEventListener('mrd-term-help', onHelp);
+    return () => window.removeEventListener('mrd-term-help', onHelp);
+  }, []);
   // 顶部工具栏折叠：收起后扩大终端输出区域（持久化）
   const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => localStorage.getItem('term_toolbar_collapsed') === '1');
   const toggleToolbar = (v: boolean) => {
@@ -460,6 +468,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     onActivity={notifyActivity}
                     isMaximized={maximizedPaneId === pane.id}
                     onToggleMaximize={totalPanes > 1 ? () => setMaximizedPaneId((cur) => (cur === pane.id ? null : pane.id)) : undefined}
+                    onSplit={() => addPane()}
+                    onCloseTab={handleClose}
                   />
                 </div>
               </React.Fragment>
@@ -671,6 +681,15 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             </Button>
           </Popover>
 
+          <Tooltip title="键盘快捷键 (Ctrl/⌘+Shift+/)">
+            <Button
+              type="text"
+              icon={<QuestionCircleOutlined />}
+              onClick={() => setHelpOpen(true)}
+              style={{ color: '#475569', display: 'flex', alignItems: 'center' }}
+            />
+          </Tooltip>
+
           <Button
             type="text"
             icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
@@ -723,6 +742,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       </div>
 
       <SnippetManager open={snippetModalOpen} onClose={() => setSnippetModalOpen(false)} />
+      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 };
@@ -745,6 +765,8 @@ interface TerminalItemProps {
   onActivity?: () => void;             // 有新输出时回调（非激活标签提示点）
   isMaximized?: boolean;               // 本分屏是否最大化
   onToggleMaximize?: () => void;       // 切换最大化（多分屏时才有）
+  onSplit?: () => void;                // 新建分屏（Ctrl/⌘+Shift+D）
+  onCloseTab?: () => void;             // 关闭整个标签（仅一个分屏时的 Ctrl/⌘+Shift+W）
 }
 
 // 判断一段输入是否为可见字符（含粘贴文本）；控制字符 / 转义序列返回 false
@@ -757,7 +779,7 @@ const isPrintableInput = (s: string): boolean => {
   return true;
 };
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont, onActivity, isMaximized, onToggleMaximize }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont, onActivity, isMaximized, onToggleMaximize, onSplit, onCloseTab }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -771,6 +793,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   // 从侧栏拖拽主机到本分屏的高亮态
   const [paneDragOver, setPaneDragOver] = useState(false);
+  // 拖拽文件上传（SFTP）
+  const [fileDragOver, setFileDragOver] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadDir, setUploadDir] = useState('.');
+  const [uploading, setUploading] = useState(false);
 
   // 命令面板（Ctrl/⌘+Shift+P）
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -800,7 +827,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   useEffect(() => { termEncodingRef.current = termEncoding; }, [termEncoding]);
 
   // 挂载全局注册同步 Hook
-  const { globalSyncedIds, setGlobalSyncedIds, registerGlobalWS, broadcastGlobalData } = useTerminals();
+  const { globalSyncedIds, setGlobalSyncedIds, registerGlobalWS, broadcastGlobalData, sessions, setActive } = useTerminals();
+
+  // 快捷键所需的最新值（避免连接闭包内引用过期）
+  const shortcutsRef = useRef({ onSplit, onCloseTab, onClose, onToggleMaximize, canClose, sessions, setActive });
+  useEffect(() => {
+    shortcutsRef.current = { onSplit, onCloseTab, onClose, onToggleMaximize, canClose, sessions, setActive };
+  });
 
   // 为每个物理终端分配一个全局唯一的 instanceId，并在 unmount 时自动注销
   const instanceIdRef = useRef<string>(`term-${paneId}-${Math.random().toString(36).substr(2, 9)}`);
@@ -1101,6 +1134,23 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       // Ctrl/⌘+Shift+P 打开命令面板（模糊搜命令库并插入）
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && key === 'p') {
         setPaletteOpen(true);
+        return false;
+      }
+      // ── 窗口/标签快捷键 ──────────────────────────
+      const mod = e.ctrlKey || e.metaKey;
+      const sc = shortcutsRef.current;
+      if (mod && e.shiftKey && key === 'd') { sc.onSplit?.(); return false; }                 // 新建分屏
+      if (mod && e.shiftKey && key === 'w') {                                                  // 关闭分屏/标签
+        if (sc.canClose) sc.onClose?.(); else sc.onCloseTab?.();
+        return false;
+      }
+      if (mod && e.shiftKey && (e.key === '/' || e.key === '?')) {                             // 速查表
+        window.dispatchEvent(new Event('mrd-term-help'));
+        return false;
+      }
+      if (mod && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {                          // 切第 N 个标签
+        const s = sc.sessions[parseInt(e.key, 10) - 1];
+        if (s) sc.setActive(s.id);
         return false;
       }
       // Ctrl+F 打开终端内搜索
@@ -1455,6 +1505,26 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     URL.revokeObjectURL(url);
   };
 
+  // 拖拽上传：把文件经 SFTP 传到当前主机的目标目录
+  const doUpload = async () => {
+    if (assetId <= 0 || uploadFiles.length === 0) return;
+    setUploading(true);
+    let ok = 0;
+    let fail = 0;
+    for (const f of uploadFiles) {
+      try {
+        await sftpUpload(assetId, uploadDir.trim() || '.', f);
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    setUploading(false);
+    setUploadFiles([]);
+    if (fail === 0) message.success(`已上传 ${ok} 个文件到 ${uploadDir.trim() || '~'}`);
+    else message.warning(`上传完成：成功 ${ok}，失败 ${fail}`);
+  };
+
   // 用户手动重连：重置退避计数与开关，再走重连
   const manualReconnect = () => {
     if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
@@ -1526,16 +1596,31 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         transition: 'all 0.25s ease',
       }}
       onDragOver={(e) => {
-        if (!Array.from(e.dataTransfer.types).includes('application/x-mrd-asset')) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-        if (!paneDragOver) setPaneDragOver(true);
+        const types = Array.from(e.dataTransfer.types);
+        if (types.includes('application/x-mrd-asset')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          if (!paneDragOver) setPaneDragOver(true);
+        } else if (types.includes('Files')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          if (!fileDragOver) setFileDragOver(true);
+        }
       }}
       onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setPaneDragOver(false);
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) { setPaneDragOver(false); setFileDragOver(false); }
       }}
       onDrop={(e) => {
         setPaneDragOver(false);
+        setFileDragOver(false);
+        // 拖入文件 → SFTP 上传到当前主机
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          e.preventDefault();
+          if (assetId <= 0) { message.warning('本地终端不支持拖拽上传'); return; }
+          setUploadFiles(Array.from(e.dataTransfer.files));
+          setUploadDir('.');
+          return;
+        }
         const raw = e.dataTransfer.getData('application/x-mrd-asset') || e.dataTransfer.getData('text/plain');
         const id = parseInt(raw, 10);
         if (!Number.isNaN(id)) {
@@ -1555,6 +1640,20 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         >
           <span style={{ background: 'rgba(15,23,42,0.88)', color: '#a5f3fc', fontSize: 13, padding: '6px 12px', borderRadius: 6 }}>
             松开即在此分屏连接
+          </span>
+        </div>
+      )}
+      {/* 拖拽文件上传提示遮罩 */}
+      {fileDragOver && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 60, pointerEvents: 'none',
+            border: '2px dashed #34d399', borderRadius: 4, background: 'rgba(16,185,129,0.10)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <span style={{ background: 'rgba(15,23,42,0.88)', color: '#6ee7b7', fontSize: 13, padding: '6px 12px', borderRadius: 6 }}>
+            松开上传文件到当前主机 (SFTP)
           </span>
         </div>
       )}
@@ -1867,6 +1966,34 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         onClose={() => setPaletteOpen(false)}
         onPick={(cmd) => acceptSuggestion({ id: 'palette', cmd } as CmdSnippet)}
       />
+
+      {/* 拖拽文件 → SFTP 上传 */}
+      <Modal
+        open={uploadFiles.length > 0}
+        title="上传文件到主机 (SFTP)"
+        onCancel={() => setUploadFiles([])}
+        onOk={doUpload}
+        okText="上传"
+        cancelText="取消"
+        confirmLoading={uploading}
+        centered
+      >
+        <div style={{ fontSize: 13, color: '#475569', marginBottom: 10 }}>
+          目标主机：<b>{asset?.name}</b>（{asset?.ip}）
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 13, color: '#475569', whiteSpace: 'nowrap' }}>目标目录</span>
+          <Input value={uploadDir} onChange={(e) => setUploadDir(e.target.value)} placeholder="如 . 或 /tmp 或 ~/uploads" />
+        </div>
+        <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 6, padding: '6px 10px' }}>
+          {uploadFiles.map((f, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#334155', padding: '2px 0' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+              <span style={{ color: '#94a3b8', flexShrink: 0, marginLeft: 8 }}>{(f.size / 1024).toFixed(1)} KB</span>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 };

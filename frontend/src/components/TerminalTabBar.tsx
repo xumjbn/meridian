@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined } from '@ant-design/icons';
+import { Dropdown, Input } from 'antd';
+import type { MenuProps } from 'antd';
+import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
 import type { TermSession } from '../terminalSessions';
 
@@ -14,7 +16,12 @@ interface Props {
   onReorder?: (dragId: number, overId: number) => void;
   /** 有新输出的非激活会话 id（标签显示提示点） */
   activityIds?: number[];
+  /** 重命名 / 设置标签颜色 */
+  onRename?: (id: number, name: string) => void;
+  onRecolor?: (id: number, color: string) => void;
 }
+
+const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899'];
 
 const TAB_BAR_HEIGHT = 42;
 
@@ -28,9 +35,40 @@ export const TerminalTabBar: React.FC<Props> = ({
   onClose,
   onReorder,
   activityIds = [],
+  onRename,
+  onRecolor,
 }) => {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editVal, setEditVal] = useState('');
+
+  const startEdit = (s: TermSession) => { setEditingId(s.id); setEditVal(s.customName || s.name); };
+  const commitEdit = (id: number) => { onRename?.(id, editVal); setEditingId(null); };
+
+  const tabMenu = (s: TermSession): MenuProps['items'] => [
+    { key: 'rename', icon: <EditOutlined />, label: '重命名', onClick: () => startEdit(s) },
+    {
+      key: 'color',
+      icon: <BgColorsOutlined />,
+      label: '标签颜色',
+      children: [
+        ...TAB_COLORS.map((c) => ({
+          key: c,
+          label: (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: c, display: 'inline-block' }} /> {c}
+            </span>
+          ),
+          onClick: () => onRecolor?.(s.id, c),
+        })),
+        { type: 'divider' as const },
+        { key: 'clear', label: '清除颜色', onClick: () => onRecolor?.(s.id, '') },
+      ],
+    },
+    { type: 'divider' as const },
+    { key: 'close', icon: <CloseOutlined />, danger: true, label: '关闭标签', onClick: () => onClose(s.id) },
+  ];
 
   const tabBase: React.CSSProperties = {
     display: 'inline-flex',
@@ -83,10 +121,12 @@ export const TerminalTabBar: React.FC<Props> = ({
         const active = activeId === s.id;
         const isLocal = s.id < 0;
         const isDropTarget = overId === s.id && dragId !== s.id;
+        const editing = editingId === s.id;
+        const iconColor = s.color || (active ? palette.primary : isLocal ? palette.accent : palette.textMute);
         return (
+          <Dropdown key={s.id} trigger={['contextMenu']} menu={{ items: tabMenu(s) }}>
           <div
-            key={s.id}
-            draggable={!!onReorder}
+            draggable={!!onReorder && !editing}
             onDragStart={(e) => {
               setDragId(s.id);
               // 必须写入 dataTransfer，否则 WebKit / Tauri WebView 不会真正发起拖拽
@@ -116,25 +156,41 @@ export const TerminalTabBar: React.FC<Props> = ({
             style={{
               ...tabBase,
               ...(active ? activeStyle : idleStyle),
+              ...(s.color ? { borderLeft: `3px solid ${s.color}` } : null),
               opacity: dragId === s.id ? 0.4 : 1,
               // 拖拽悬停目标：左侧高亮一条指示线
               boxShadow: isDropTarget ? `inset 3px 0 0 ${palette.primary}` : undefined,
             }}
             onClick={() => onSelect(s.id)}
+            onDoubleClick={() => startEdit(s)}
             onAuxClick={(e) => {
               if (e.button === 1) {
                 e.preventDefault();
                 onClose(s.id); // 中键关闭标签
               }
             }}
-            title={isLocal ? '本地终端（本机）' : `${s.name} (${s.ip})`}
+            title={isLocal ? '本地终端（双击重命名 · 右键改色）' : `${s.name} (${s.ip})　双击重命名 · 右键改色`}
           >
             {isLocal ? (
-              <DesktopOutlined style={{ fontSize: 14, color: active ? palette.primary : palette.accent }} />
+              <DesktopOutlined style={{ fontSize: 14, color: iconColor }} />
             ) : (
-              <CodeOutlined style={{ fontSize: 14, color: active ? palette.primary : palette.textMute }} />
+              <CodeOutlined style={{ fontSize: 14, color: iconColor }} />
             )}
-            <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+            {editing ? (
+              <Input
+                size="small"
+                autoFocus
+                value={editVal}
+                onChange={(e) => setEditVal(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onPressEnter={() => commitEdit(s.id)}
+                onBlur={() => commitEdit(s.id)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setEditingId(null); }}
+                style={{ width: 120, height: 22 }}
+              />
+            ) : (
+              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.customName || s.name}</span>
+            )}
             {!active && activityIds.includes(s.id) && (
               <span
                 title="有新输出"
@@ -149,6 +205,7 @@ export const TerminalTabBar: React.FC<Props> = ({
               }}
             />
           </div>
+          </Dropdown>
         );
       })}
     </div>
