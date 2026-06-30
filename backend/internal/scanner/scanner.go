@@ -77,6 +77,19 @@ func appendDetailLog(db *gorm.DB, scanLog *model.ScanLog, format string, args ..
 	db.Model(scanLog).Update("detail", gorm.Expr("coalesce(detail, '') || ?", msg))
 }
 
+// loadClusterVIPs 读取所有已知 K8s 集群 VIP（虚拟 IP），扫描时从待扫描列表中排除。
+func loadClusterVIPs(db *gorm.DB) map[string]bool {
+	var clusters []model.K8sCluster
+	db.Select("vip").Where("vip <> ''").Find(&clusters)
+	set := make(map[string]bool, len(clusters))
+	for _, c := range clusters {
+		if v := strings.TrimSpace(c.VIP); v != "" {
+			set[v] = true
+		}
+	}
+	return set
+}
+
 // runDiscoveryScan 执行后台端口发现扫描任务并更新数据库（原 StartScanTask 主体，逻辑保持不变）
 func runDiscoveryScan(db *gorm.DB, taskID uint) {
 	var task model.ScanTask
@@ -118,6 +131,24 @@ func runDiscoveryScan(db *gorm.DB, taskID uint) {
 	if err != nil {
 		finishTask(db, &task, &scanLog, "failed", fmt.Sprintf("解析目标网段失败: %v", err))
 		return
+	}
+
+	// 2.1 排除已知 K8s 集群 VIP：虚拟 IP 会代答端口，扫描会生成「幽灵主机」资产，
+	//     且 VIP 在节点间浮动并非真实独立主机，故直接从待扫描列表中剔除。
+	if vipSet := loadClusterVIPs(db); len(vipSet) > 0 {
+		kept := ips[:0:0]
+		excluded := 0
+		for _, ip := range ips {
+			if vipSet[ip] {
+				excluded++
+				continue
+			}
+			kept = append(kept, ip)
+		}
+		if excluded > 0 {
+			ips = kept
+			appendDetailLog(db, &scanLog, "已排除 %d 个已知集群 VIP（虚拟 IP 不计为主机）", excluded)
+		}
 	}
 
 	// 解析端口列表
