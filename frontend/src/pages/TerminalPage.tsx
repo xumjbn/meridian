@@ -141,6 +141,13 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const [fontFamily, setFontFamily] = useState<string>(() => {
     return localStorage.getItem('term_font_family') || 'Fira Code, Menlo, Monaco, Courier New, monospace';
   });
+  // 字号变化持久化（Select 选择 / Ctrl+滚轮 / Ctrl±缩放共用）
+  useEffect(() => { localStorage.setItem('term_font_size', String(fontSize)); }, [fontSize]);
+  // 字号缩放：Ctrl+滚轮 / Ctrl +/- 调整，Ctrl+0 复位（10–28）
+  const zoomFont = useCallback((delta: number) => {
+    setFontSize((s) => Math.max(10, Math.min(28, s + delta)));
+  }, []);
+  const resetFont = useCallback(() => setFontSize(14), []);
 
   // 终端配色主题
   const [termThemeKey, setTermThemeKey] = useState<string>(() => localStorage.getItem('term_theme') || 'meridian');
@@ -410,6 +417,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     canClose={totalPanes > 1}
                     onClose={() => closePane(pane.id)}
                     onAssetChange={(newId) => handleAssetChange(pane.id, newId)}
+                    onZoomFont={zoomFont}
+                    onResetFont={resetFont}
                   />
                 </div>
               </React.Fragment>
@@ -608,8 +617,10 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     popupMatchSelectWidth={false}
                   />
                 </div>
-                <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
-                  右键粘贴 · 复制/粘贴 Ctrl+Shift+C / V
+                <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid #f0f0f0', paddingTop: 8, lineHeight: 1.6 }}>
+                  选中即复制 · 右键/Ctrl+Shift+V 粘贴<br />
+                  Ctrl+滚轮 / Ctrl ± 缩放字号 · Ctrl+0 复位<br />
+                  补全：↑↓ 选 · Enter 接受 · Tab 交给 Shell
                 </div>
               </div>
             )}
@@ -688,6 +699,8 @@ interface TerminalItemProps {
   canClose?: boolean;      // 是否允许独立关闭该窗格（至少保留一个）
   onClose?: () => void;    // 关闭该窗格
   onAssetChange: (id: number) => void;
+  onZoomFont: (delta: number) => void; // Ctrl+滚轮 / Ctrl± 调整字号
+  onResetFont: () => void;             // Ctrl+0 复位字号
 }
 
 // 判断一段输入是否为可见字符（含粘贴文本）；控制字符 / 转义序列返回 false
@@ -700,7 +713,7 @@ const isPrintableInput = (s: string): boolean => {
   return true;
 };
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -761,6 +774,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const snippetsRef = useRef<CmdSnippet[]>(loadSnippets());
   const suggestionsRef = useRef<CmdSnippet[]>([]);
   const activeIdxRef = useRef(0);
+  const navigatedRef = useRef(false);                     // 是否用方向键选过项（决定 Enter 是接受还是提交）
 
   // 估算光标在终端容器内的像素位置（用于补全下拉锚定）
   const computeAnchor = useCallback(() => {
@@ -825,6 +839,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     sendToShell(erase + snippet.cmd);
     recordSnippetUsage(snippet.cmd); // 频率学习：常用命令后续排更前
     lineBufferRef.current = snippet.cmd;
+    navigatedRef.current = false;
     setSuggestions([]);
     setActiveIdx(0);
     termRef.current?.focus();
@@ -834,6 +849,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     const list = matchSnippets(lineBufferRef.current, snippetsRef.current);
     setSuggestions(list);
     setActiveIdx(0);
+    navigatedRef.current = false;
     setAnchor(list.length ? computeAnchor() : null);
   }, [computeAnchor]);
 
@@ -841,31 +857,47 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const handleCompletionInput = useCallback((data: string): boolean => {
     const isOpen = suggestionsRef.current.length > 0;
     if (isOpen) {
-      if (data === '\t') {
-        const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
-        if (sel) acceptSuggestion(sel);
-        return true;
-      }
       if (data === '\x1b[A') { // ↑ 上移选择
         const n = suggestionsRef.current.length;
+        navigatedRef.current = true;
         setActiveIdx((i) => (i - 1 + n) % n);
         return true;
       }
       if (data === '\x1b[B') { // ↓ 下移选择
         const n = suggestionsRef.current.length;
+        navigatedRef.current = true;
         setActiveIdx((i) => (i + 1) % n);
         return true;
       }
       if (data === '\x1b') { // Esc 关闭下拉（不下发）
+        navigatedRef.current = false;
         setSuggestions([]);
         setActiveIdx(0);
         return true;
       }
+      // 仅当已用方向键选过项时，Enter 才接受片段（否则正常提交命令，不打扰）
+      if ((data === '\r' || data === '\n') && navigatedRef.current) {
+        const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
+        if (sel) {
+          acceptSuggestion(sel);
+          return true;
+        }
+      }
+    }
+
+    // Tab：永远交给原生 shell 做补全（不再被吞）；并关闭下拉、重置缓冲（shell 可能改写当前行）
+    if (data === '\t') {
+      lineBufferRef.current = '';
+      navigatedRef.current = false;
+      setSuggestions([]);
+      setActiveIdx(0);
+      return false;
     }
 
     // 回车 / Ctrl-C / Ctrl-U：提交或清行 → 重置缓冲
     if (data === '\r' || data === '\n' || data === '\x03' || data === '\x15') {
       lineBufferRef.current = '';
+      navigatedRef.current = false;
       setSuggestions([]);
       setActiveIdx(0);
       return false;
@@ -884,6 +916,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     }
     // 其它控制 / 转义序列（方向键移动、Home/End 等）：本地模型已失真，重置
     lineBufferRef.current = '';
+    navigatedRef.current = false;
     setSuggestions([]);
     setActiveIdx(0);
     return false;
@@ -963,6 +996,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     let resizeRaf = 0;
     let onMouseUp: (() => void) | null = null;
     let onContextMenu: ((e: MouseEvent) => void) | null = null;
+    let onWheel: ((e: WheelEvent) => void) | null = null;
     const containerEl = terminalRef.current;
 
     const wsUrl = isLocal ? getLocalTerminalWsUrl() : getTerminalWsUrl(asset.id!);
@@ -1006,6 +1040,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         setTimeout(() => searchInputRef.current?.focus?.(), 0);
         return false;
       }
+      // 字号缩放：Ctrl/⌘ + =/+ 放大、-/_ 缩小、0 复位（不下发给 shell）
+      const zoomMod = e.ctrlKey || e.metaKey;
+      if (zoomMod && (e.key === '=' || e.key === '+')) { onZoomFont(1); return false; }
+      if (zoomMod && (e.key === '-' || e.key === '_')) { onZoomFont(-1); return false; }
+      if (zoomMod && e.key === '0') { onResetFont(); return false; }
       return true;
     });
 
@@ -1058,6 +1097,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       };
       terminalRef.current.addEventListener('mouseup', onMouseUp);
       terminalRef.current.addEventListener('contextmenu', onContextMenu);
+
+      // Ctrl/⌘ + 滚轮 缩放字号（mac 触控板捏合也会带 ctrlKey）
+      onWheel = (e: WheelEvent) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        onZoomFont(e.deltaY < 0 ? 1 : -1);
+      };
+      terminalRef.current.addEventListener('wheel', onWheel, { passive: false });
 
       const observer = new ResizeObserver(() => {
         cancelAnimationFrame(resizeRaf);
@@ -1218,6 +1265,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       if (containerEl) {
         if (onMouseUp) containerEl.removeEventListener('mouseup', onMouseUp);
         if (onContextMenu) containerEl.removeEventListener('contextmenu', onContextMenu);
+        if (onWheel) containerEl.removeEventListener('wheel', onWheel);
       }
       term.dispose();
     };
@@ -1625,7 +1673,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               padding: '4px 10px', borderTop: '1px solid #1e293b',
               fontSize: 10, color: '#64748b', background: '#0b1220',
             }}>
-              Tab 补全 · ↑↓ 选择 · Esc 关闭
+              ↑↓ 选择 · Enter/单击 接受 · Tab 交给 Shell 补全 · Esc 关闭
             </div>
           </div>
         )}
