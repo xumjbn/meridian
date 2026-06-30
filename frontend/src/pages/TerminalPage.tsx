@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined } from '@ant-design/icons';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { LogoMark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
@@ -148,6 +148,8 @@ interface TerminalPageProps {
 
 export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = false, onClose, onOpenSettings }) => {
   const [fullscreen, setFullscreen] = useState(false);
+  // 某个分屏最大化（在多分屏下临时全屏一个，再点恢复）
+  const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
   // 顶部工具栏折叠：收起后扩大终端输出区域（持久化）
   const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => localStorage.getItem('term_toolbar_collapsed') === '1');
   const toggleToolbar = (v: boolean) => {
@@ -260,6 +262,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   // 应用预设布局（单屏 / 左右双分 / 田字四分）
   const applyPreset = (type: LayoutType) => {
     localStorage.setItem('term_layout', type);
+    setMaximizedPaneId(null); // 切换布局时取消最大化
     setRows((prev) => buildPreset(type, prev));
     // 切回单屏时取消所有同步，避免单屏输入误操作后台终端
     if (type === 'single') syncAllConnected(false);
@@ -276,6 +279,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
 
   // 独立关闭某个窗格；行内删空则移除该行；始终至少保留一个窗格
   const closePane = (paneId: string) => {
+    setMaximizedPaneId((cur) => (cur === paneId ? null : cur));
     setRows((prev) => {
       const next = prev
         .map((r) => ({ ...r, panes: r.panes.filter((p) => p.id !== paneId) }))
@@ -413,6 +417,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       padding: '4px',
       display: 'flex',
       flexDirection: 'column',
+      position: 'relative', // 供某分屏最大化时绝对铺满
     }}>
       {rows.map((row, ri) => (
         <React.Fragment key={row.id}>
@@ -453,6 +458,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     onZoomFont={zoomFont}
                     onResetFont={resetFont}
                     onActivity={notifyActivity}
+                    isMaximized={maximizedPaneId === pane.id}
+                    onToggleMaximize={totalPanes > 1 ? () => setMaximizedPaneId((cur) => (cur === pane.id ? null : pane.id)) : undefined}
                   />
                 </div>
               </React.Fragment>
@@ -736,6 +743,8 @@ interface TerminalItemProps {
   onZoomFont: (delta: number) => void; // Ctrl+滚轮 / Ctrl± 调整字号
   onResetFont: () => void;             // Ctrl+0 复位字号
   onActivity?: () => void;             // 有新输出时回调（非激活标签提示点）
+  isMaximized?: boolean;               // 本分屏是否最大化
+  onToggleMaximize?: () => void;       // 切换最大化（多分屏时才有）
 }
 
 // 判断一段输入是否为可见字符（含粘贴文本）；控制字符 / 转义序列返回 false
@@ -748,7 +757,7 @@ const isPrintableInput = (s: string): boolean => {
   return true;
 };
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont, onActivity }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont, onActivity, isMaximized, onToggleMaximize }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -765,6 +774,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   // 命令面板（Ctrl/⌘+Shift+P）
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // 连接延迟（ping/pong 往返）与响铃闪烁
+  const [latency, setLatency] = useState<number | null>(null);
+  const lastPingRef = useRef(0);
+  const [bellFlash, setBellFlash] = useState(false);
 
   // 自动重连退避：异常断开后按指数退避自动重连，连上即清零
   const autoReconnectRef = useRef(true);
@@ -1065,6 +1079,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     searchAddonRef.current = searchAddon;
     term.loadAddon(searchAddon);
 
+    // 响铃（BEL）：标签提示活动 + 边框快闪一下
+    term.onBell(() => {
+      onActivity?.();
+      setBellFlash(true);
+      setTimeout(() => setBellFlash(false), 250);
+    });
+
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true;
       const key = e.key.toLowerCase();
@@ -1197,11 +1218,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     term.write(`\x1b[36m[SYSTEM]\x1b[0m 正在建立${isLocal ? '本地终端' : '远程 WebSocket'}连接通道...\r\n`);
 
-    const pingInterval = setInterval(() => {
+    const sendPing = () => {
       if (socket.readyState === WebSocket.OPEN) {
+        lastPingRef.current = Date.now();
         socket.send(JSON.stringify({ type: 'ping' }));
       }
-    }, 20000);
+    };
+    const pingInterval = setInterval(sendPing, 15000);
 
     socket.onopen = () => {
       setStatusText(isLocal ? '通道开启，正在启动本机 Shell...' : '通道开启，正在进行 SSH 连接拨号...');
@@ -1231,7 +1254,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       if (typeof event.data === 'string') {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'auth_request') {
+          if (msg.type === 'pong') {
+            if (lastPingRef.current) setLatency(Date.now() - lastPingRef.current);
+          } else if (msg.type === 'auth_request') {
             setAuthRequired(true);
             setConnecting(false);
             term.write('\x1b[33m[SYSTEM] 该资产未关联凭证，等待输入临时凭据...\x1b[0m\r\n');
@@ -1242,6 +1267,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               setStatus('connected');
               reconnAttemptsRef.current = 0; // 连上即重置退避计数
               if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
+              setTimeout(sendPing, 600); // 连上后尽快测一次延迟
               term.write(isLocal
                 ? '\x1b[32m[SYSTEM] 本地终端已就绪，开始接受输入！\x1b[0m\r\n\r\n'
                 : '\x1b[32m[SYSTEM] SSH 会话连接成功，终端开始接受输入！\x1b[0m\r\n\r\n');
@@ -1295,6 +1321,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     socket.onclose = (event) => {
       setConnecting(false);
       setStatus('disconnected');
+      setLatency(null);
       term.write('\r\n\x1b[31m[SYSTEM] SSH 终端会话连接已关闭/断开。\x1b[0m\r\n');
       if (event.reason) {
         term.write(`\x1b[31m[REASON] ${event.reason}\x1b[0m\r\n`);
@@ -1405,6 +1432,29 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     }
   };
 
+  // 导出当前终端全部回滚内容为 .log 文件
+  const exportLog = () => {
+    const term = termRef.current;
+    if (!term) return;
+    const buf = term.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < buf.length; i++) {
+      const line = buf.getLine(i);
+      lines.push(line ? line.translateToString(true).replace(/\s+$/, '') : '');
+    }
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const name = (asset?.name || (isLocal ? 'local' : `asset-${assetId}`)).replace(/[^\w.-]+/g, '_');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `terminal-${name}.log`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   // 用户手动重连：重置退避计数与开关，再走重连
   const manualReconnect = () => {
     if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
@@ -1456,15 +1506,22 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         flexDirection: 'column',
         height: '100%',
         width: '100%',
-        position: 'relative',
         background: '#0B0F19',
-        // 当开启同步且连接成功时，提供微微泛发靛蓝光的边框指示
-        border: paneDragOver
+        // 最大化：在分屏容器内绝对铺满；否则正常占位
+        ...(isMaximized ? { position: 'absolute' as const, inset: 4, zIndex: 30 } : { position: 'relative' as const }),
+        // 响铃闪一下；同步且连接成功时泛靛蓝光边框
+        border: bellFlash
+          ? '1px solid #f59e0b'
+          : paneDragOver
           ? '1px solid #22d3ee'
           : isSynced && status === 'connected'
           ? '1px solid #6366f1'
           : '1px solid #1e293b',
-        boxShadow: isSynced && status === 'connected' ? '0 0 8px rgba(99, 102, 241, 0.35)' : 'none',
+        boxShadow: bellFlash
+          ? '0 0 10px rgba(245,158,11,0.5)'
+          : isSynced && status === 'connected'
+          ? '0 0 8px rgba(99, 102, 241, 0.35)'
+          : 'none',
         boxSizing: 'border-box',
         transition: 'all 0.25s ease',
       }}
@@ -1546,6 +1603,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           {status === 'connecting' && <SyncOutlined spin style={{ color: '#6366f1', fontSize: 11 }} />}
           {status === 'connected' && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />}
           {(status === 'disconnected' || status === 'error') && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />}
+          {status === 'connected' && latency != null && (
+            <span
+              title="连接延迟（ping 往返）"
+              style={{ fontSize: 10, fontFamily: 'monospace', color: latency < 100 ? '#34d399' : latency < 300 ? '#fbbf24' : '#f87171' }}
+            >
+              {latency}ms
+            </span>
+          )}
 
           {/* 带呼吸灯动画的同步中标志 */}
           {isSynced && status === 'connected' && (
@@ -1568,6 +1633,26 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         </Space>
         
         <Space size={2} style={{ flexShrink: 0 }}>
+          {status === 'connected' && (
+            <Button
+              size="small"
+              type="text"
+              icon={<DownloadOutlined />}
+              onClick={exportLog}
+              title="导出本终端回滚日志为 .log"
+              style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+            />
+          )}
+          {onToggleMaximize && (
+            <Button
+              size="small"
+              type="text"
+              icon={isMaximized ? <ShrinkOutlined /> : <ExpandAltOutlined />}
+              onClick={onToggleMaximize}
+              title={isMaximized ? '还原分屏' : '最大化此分屏'}
+              style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+            />
+          )}
           {status !== 'idle' && (
             <Button size="small" type="link" onClick={manualReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
               重新连接
