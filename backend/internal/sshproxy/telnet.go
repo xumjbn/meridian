@@ -45,8 +45,17 @@ func ProxyTelnet(ws *websocket.Conn, asset *model.Asset, cred *model.Credential)
 		status(fmt.Sprintf("Telnet 连接失败: %v", err))
 		return
 	}
-	defer conn.Close()
 	status("connected")
+
+	// 任一方向出错都对称关闭两端，保证两个 goroutine 都能退出（避免 socket/goroutine 泄漏）
+	var once sync.Once
+	closeAll := func() {
+		once.Do(func() {
+			ws.Close()
+			conn.Close()
+		})
+	}
+	defer closeAll()
 
 	_ = cred // Telnet 走交互式登录，凭据暂保留（可在终端内手动输入）
 
@@ -59,13 +68,13 @@ func ProxyTelnet(ws *websocket.Conn, asset *model.Asset, cred *model.Credential)
 				out := filterTelnet(conn, buf[:n])
 				if len(out) > 0 {
 					if werr := wsWrite(websocket.BinaryMessage, out); werr != nil {
-						conn.Close()
+						closeAll()
 						return
 					}
 				}
 			}
 			if rerr != nil {
-				ws.Close()
+				closeAll()
 				return
 			}
 		}
@@ -75,12 +84,13 @@ func ProxyTelnet(ws *websocket.Conn, asset *model.Asset, cred *model.Credential)
 	for {
 		mt, message, rerr := ws.ReadMessage()
 		if rerr != nil {
-			conn.Close()
+			closeAll()
 			break
 		}
 		switch mt {
 		case websocket.BinaryMessage:
 			if _, werr := conn.Write(message); werr != nil {
+				closeAll()
 				return
 			}
 		case websocket.TextMessage:

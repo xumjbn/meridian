@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"backend/internal/model"
+	"backend/internal/store"
 	"github.com/gin-gonic/gin"
 )
 
@@ -207,6 +209,20 @@ func isAdmin(c *gin.Context) bool {
 // canAccess 数据隔离判定：管理员可访问任意归属，普通用户仅限自己的记录
 func canAccess(c *gin.Context, ownerID uint) bool {
 	return isAdmin(c) || ownerID == currentUserID(c)
+}
+
+// assertCredentialOwned 校验调用方有权使用该凭据（凭据 id 为空则放行）。
+// 关键：防止把自己的资产 / K8s 集群绑定到他人的 credential_id，再经终端/SFTP/Agent/
+// 控制台窃用其用户名+密钥（跨租户凭据盗用 / 明文密码泄露）。凭据不存在亦拒绝，避免悬空引用。
+func assertCredentialOwned(c *gin.Context, credID *uint) bool {
+	if credID == nil {
+		return true
+	}
+	var cred model.Credential
+	if err := store.GlobalDB.First(&cred, *credID).Error; err != nil {
+		return false
+	}
+	return canAccess(c, cred.OwnerID)
 }
 
 // Logout 注销当前会话

@@ -313,6 +313,12 @@ func CreateAsset(c *gin.Context) {
 		return
 	}
 
+	// 跨租户防护：不可绑定他人的凭据
+	if !assertCredentialOwned(c, asset.CredentialID) {
+		SendError(c, 403, "无权使用该凭据")
+		return
+	}
+
 	// 归属：默认创建者；管理员可在表单指定 owner_id 代为分配
 	ownerID := currentUserID(c)
 	if isAdmin(c) && asset.OwnerID != 0 {
@@ -401,6 +407,12 @@ func UpdateAsset(c *gin.Context) {
 	var req model.Asset
 	if err := c.ShouldBindJSON(&req); err != nil {
 		SendError(c, 400, err.Error())
+		return
+	}
+
+	// 跨租户防护：不可把资产改绑到他人的凭据
+	if !assertCredentialOwned(c, req.CredentialID) {
+		SendError(c, 403, "无权使用该凭据")
 		return
 	}
 

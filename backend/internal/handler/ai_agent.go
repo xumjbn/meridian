@@ -121,6 +121,11 @@ func newSessionID() string {
 func sweepAgentSessions() {
 	cutoff := time.Now().Add(-agentSessionTTL)
 	for id, s := range agentSessions {
+		// 不清理仍在运行 / 等待确认的会话：否则会丢失其 cancel 与内存中最新状态，
+		// 导致后续 /stop、/message 操作到从 DB 重建的过期副本上、对真实在跑的 goroutine 失效。
+		if s.cancel != nil || s.Status == "running" || s.Status == "awaiting_confirm" {
+			continue
+		}
 		if s.LastUsed.Before(cutoff) {
 			delete(agentSessions, id)
 		}

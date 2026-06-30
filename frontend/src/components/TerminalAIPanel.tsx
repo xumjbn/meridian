@@ -76,10 +76,12 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId, onOpe
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
     dragRef.current = { startX: e.clientX, startW: width };
+    let latest = width; // 跟踪拖拽到的最新宽度，避免 up 闭包持久化拖拽前的旧值
     const move = (ev: MouseEvent) => {
       if (!dragRef.current) return;
       // 面板锚定右侧，向左拖拽变宽
       const next = Math.max(MIN_W, Math.min(MAX_W, dragRef.current.startW + (dragRef.current.startX - ev.clientX)));
+      latest = next;
       setWidth(next);
     };
     const up = () => {
@@ -87,7 +89,7 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId, onOpe
       window.removeEventListener('mouseup', up);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      localStorage.setItem('ai_panel_width', String(width));
+      localStorage.setItem('ai_panel_width', String(latest));
       dragRef.current = null;
     };
     window.addEventListener('mousemove', move);
