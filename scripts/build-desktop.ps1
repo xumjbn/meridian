@@ -1,39 +1,41 @@
-# 在 Windows 本机一条命令出桌面安装包（Go sidecar + Tauri build）。
-# Windows 包必须在 Windows 上出。前置：Rust(含 MSVC C++ 生成工具)、Node、Go、WebView2(Win11 自带)。
-# 用法: powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1
+# One-command Windows desktop installer build (Go sidecar + Tauri build).
+# Windows packages must be built on Windows. Prereqs: Rust (MSVC) + VS C++ Build Tools, Node, Go,
+# WebView2 (bundled on Win11). Usage: powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1
+# NOTE: keep this script ASCII-only. Windows PowerShell 5.1 reads BOM-less UTF-8 as ANSI (GBK on
+#       Chinese systems), which corrupts non-ASCII bytes and makes the whole script fail to parse.
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 
-# 1) 前置检查
+# 1) Prerequisite checks
 foreach ($t in @("rustc", "cargo", "go", "npm")) {
   if (-not (Get-Command $t -ErrorAction SilentlyContinue)) {
-    Write-Host "❌ 缺少 $t。" -ForegroundColor Red
+    Write-Host "Missing: $t" -ForegroundColor Red
     if ($t -in @("rustc", "cargo")) {
-      Write-Host "   安装 Rust(MSVC):" -ForegroundColor Yellow
-      Write-Host '   winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"'
-      Write-Host "   winget install Rustlang.Rustup ; rustup default stable-msvc"
+      Write-Host "  Install Rust (MSVC):" -ForegroundColor Yellow
+      Write-Host '  winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"'
+      Write-Host "  winget install Rustlang.Rustup ; rustup default stable-msvc"
     }
     exit 1
   }
 }
 
-# 2) 前端依赖（含 Tauri CLI）
+# 2) Frontend deps (incl. Tauri CLI)
 Push-Location (Join-Path $repo "frontend")
 if (-not (Test-Path "node_modules/@tauri-apps/cli")) {
-  Write-Host "安装前端依赖..." -ForegroundColor Cyan
+  Write-Host "Installing frontend deps..." -ForegroundColor Cyan
   npm install
 }
 Pop-Location
 
-# 3) 构建 Go 后端 sidecar（按 Rust 三元组命名到 src-tauri/binaries）
+# 3) Build Go backend sidecar (named with Rust triple into src-tauri/binaries)
 & (Join-Path $PSScriptRoot "build-sidecar.ps1")
 
-# 4) 打包（beforeBuildCommand 会先 npm run build 前端，再 tauri build）
+# 4) Bundle (beforeBuildCommand runs the frontend build first, then tauri build)
 Push-Location (Join-Path $repo "frontend")
 npm run desktop:build
 Pop-Location
 
 Write-Host ""
-Write-Host "✅ 安装包: frontend/src-tauri/target/release/bundle/" -ForegroundColor Green
-Write-Host "   NSIS:  nsis/*-setup.exe（推荐分发）"
-Write-Host "   MSI :  msi/*.msi"
+Write-Host "Installers: frontend/src-tauri/target/release/bundle/" -ForegroundColor Green
+Write-Host "  NSIS: nsis/*-setup.exe (recommended for distribution)"
+Write-Host "  MSI : msi/*.msi"
