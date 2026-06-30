@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"path"
 	"sort"
 	"strconv"
@@ -222,6 +223,10 @@ func SftpDownload(c *gin.Context) {
 
 // SftpUpload 流式上传文件到远端目录
 func SftpUpload(c *gin.Context) {
+	// 限制上传体积上限，避免超大 multipart 撑爆后端磁盘/内存（须在解析表单前设置）
+	const maxUploadBytes = 2 << 30 // 2 GiB
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadBytes)
+
 	dir := c.PostForm("path")
 	if strings.TrimSpace(dir) == "" {
 		dir = "."

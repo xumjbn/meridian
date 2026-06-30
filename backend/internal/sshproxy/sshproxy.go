@@ -13,6 +13,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// wsReadIdleTimeout 是 WebSocket 读空闲超时。前端每 15s 发一次心跳 ping，
+// 超过该时长仍无任何帧到达即判定为半开连接（客户端休眠/掉线/被 kill），
+// 由 ReadMessage 报错触发 closeAll，释放 SSH 会话、PTY 与协程，避免半开连接长期泄漏。
+const wsReadIdleTimeout = 90 * time.Second
+
 // WSMessage 定义前端发送的控制指令 JSON
 type WSMessage struct {
 	Type     string `json:"type"`                // auth_response, resize, status, ping
@@ -228,6 +233,7 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 
 	// 主协程 (读循环): 处理来自 WebSocket 的输入与控制信令
 	for {
+		_ = ws.SetReadDeadline(time.Now().Add(wsReadIdleTimeout))
 		mt, message, err := ws.ReadMessage()
 		if err != nil {
 			closeAll()

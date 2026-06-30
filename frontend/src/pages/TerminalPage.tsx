@@ -1076,6 +1076,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   useEffect(() => {
     if (!asset) return;
     if (!isLocal && assetId <= 0) return;
+    // assetId 刚切换、asset 详情尚未拉到新值时跳过这次过期触发，
+    // 避免用旧 asset.id 向「上一台主机」多建立一次无用的 SSH 连接（拨号 + 审计噪声）
+    if (!isLocal && asset.id !== assetId) return;
 
     setConnecting(true);
     setAuthRequired(false);

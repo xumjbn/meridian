@@ -350,6 +350,7 @@ func finishTask(db *gorm.DB, task *model.ScanTask, scanLog *model.ScanLog, statu
 }
 
 func parsePorts(portsStr string) []int {
+	const maxPorts = 2000 // 端口数量上限，防止超大端口列表放大并发探测规模
 	var ports []int
 	parts := strings.Split(portsStr, ",")
 	for _, p := range parts {
@@ -358,6 +359,9 @@ func parsePorts(portsStr string) []int {
 		if _, err := fmt.Sscanf(p, "%d", &port); err == nil {
 			if port > 0 && port <= 65535 {
 				ports = append(ports, port)
+				if len(ports) >= maxPorts {
+					break
+				}
 			}
 		}
 	}
@@ -693,21 +697,33 @@ func scanHost(ip string, ports []int, timeout time.Duration, hijackedPorts map[i
 	portChan := make(chan portRes, len(ports))
 	var pwg sync.WaitGroup
 
-	for _, port := range ports {
-		pwg.Add(1)
-		go func(p int) {
-			defer pwg.Done()
-			
-			// 获取该 IP 该端口是否在初始化阶段已被证明为不在线
-			isTestedOffline := false
-			if offlinePorts, exists := testedOffline[ip]; exists {
-				isTestedOffline = offlinePorts[p]
-			}
-			
-			open, online := checkPort(ip, p, timeout, hijackedPorts[p], isTestedOffline)
-			portChan <- portRes{port: p, open: open, online: online}
-		}(port)
+	// 有界端口探测工作池：避免「单主机端口数 × 主机并发数」放大成海量协程/套接字，
+	// 在大端口列表 + 高并发设置下导致后端 FD 耗尽 / OOM。
+	portJobs := make(chan int, len(ports))
+	portWorkers := 50
+	if len(ports) < portWorkers {
+		portWorkers = len(ports)
 	}
+	for w := 0; w < portWorkers; w++ {
+		pwg.Add(1)
+		go func() {
+			defer pwg.Done()
+			for p := range portJobs {
+				// 获取该 IP 该端口是否在初始化阶段已被证明为不在线
+				isTestedOffline := false
+				if offlinePorts, exists := testedOffline[ip]; exists {
+					isTestedOffline = offlinePorts[p]
+				}
+
+				open, online := checkPort(ip, p, timeout, hijackedPorts[p], isTestedOffline)
+				portChan <- portRes{port: p, open: open, online: online}
+			}
+		}()
+	}
+	for _, port := range ports {
+		portJobs <- port
+	}
+	close(portJobs)
 
 	pwg.Wait()
 	close(portChan)
