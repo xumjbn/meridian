@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="frontend/public/favicon.svg" width="76" alt="Meridian logo" />
+<img src="frontend/public/favicon.svg" width="76" alt="Lynx logo" />
 
-# Meridian · 子午
+# Lynx · 猞猁
 
 **网络资产发现与统一接入平台**
 *Network Asset Discovery & Unified Access Platform*
@@ -15,11 +15,11 @@
 
 ## 简介
 
-**Meridian（子午）** 是一个自包含、全栈、轻量的内网资产管理平台。一条命令即可对网段做并发发现扫描，
+**Lynx（猞猁）** 是一个自包含、全栈、轻量的内网资产管理平台。一条命令即可对网段做并发发现扫描，
 将存活主机自动测绘入 CMDB，集中托管登录凭据，并直接在浏览器中通过 WebSSH 接入设备——
 无需在多个工具间来回切换。
 
-名取自航海与测绘中的基准经线「子午线」，寓意为散落的网络资产建立**统一的定位、测绘与导航坐标系**。
+名取自航海与测绘中的基准经线「猞猁线」，寓意为散落的网络资产建立**统一的定位、测绘与导航坐标系**。
 
 ## 核心能力
 

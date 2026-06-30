@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Meridian",
-  "version": "0.58.0",
+  "productName": "Lynx",
+  "version": "0.59.0",
   "identifier": "cn.meridian.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Meridian · 子午",
+        "title": "Lynx · 猞猁",
         "width": 1360,
         "height": 860,
         "minWidth": 1024,

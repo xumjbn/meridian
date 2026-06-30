@@ -1,14 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-// Meridian · 设计令牌 (Design Tokens)
+// Lynx · 设计令牌 (Design Tokens)
 // 网络资产发现与统一接入平台 — 统一的品牌色板与 Antd 主题配置
 // ─────────────────────────────────────────────────────────────
 import type { CSSProperties } from 'react';
 
 export const brand = {
-  name: 'Meridian',
-  zh: '子午',
+  name: 'Lynx',
+  zh: '猞猁',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.58',
+  version: 'v0.59',
   repo: 'https://github.com/',
 } as const;
 

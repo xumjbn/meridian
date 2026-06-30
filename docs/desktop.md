@@ -1,6 +1,6 @@
-# Meridian 桌面端（Tauri + Go sidecar）
+# Lynx 桌面端（Tauri + Go sidecar）
 
-把 Meridian 打成 **macOS / Windows / Linux** 桌面应用。架构：
+把 Lynx 打成 **macOS / Windows / Linux** 桌面应用。架构：
 
 ```
 桌面窗口 (Tauri / 系统 WebView)
@@ -44,7 +44,7 @@ make desktop-universal         # Intel + Apple Silicon 通用 .app + .dmg
 > **dmg 怎么来的**：不走 Tauri 的 `bundle_dmg.sh`（它用 AppleScript 驱动 Finder，对残留挂载卷 /
 > Finder 自动化权限敏感，**易失败**：`failed to run bundle_dmg.sh`）。改为 `make desktop` 先出 `.app`，
 > 再由 `scripts/make-dmg.sh` 用 `hdiutil` 直接打成「拖入 Applications 安装」的 dmg —— 无需 AppleScript，最稳。
-> 产物：`src-tauri/target/release/bundle/dmg/Meridian.dmg`。未签名，首次打开右键→打开。
+> 产物：`src-tauri/target/release/bundle/dmg/Lynx.dmg`。未签名，首次打开右键→打开。
 
 `make help` 看全部目标。
 
@@ -99,7 +99,7 @@ npm run desktop:build
 本仓库的 `make desktop` 用 `hdiutil`（`scripts/make-dmg.sh`）直接出 dmg，已绕开 Tauri 那个
 易失败的 `bundle_dmg.sh`。若 `hdiutil` 仍报错，基本是**残留挂载卷**占用：
 ```bash
-hdiutil detach "/Volumes/Meridian" -force 2>/dev/null
+hdiutil detach "/Volumes/Lynx" -force 2>/dev/null
 make desktop-dmg   # 从已构建好的 .app 重新出 dmg，不重新编译
 ```
 > 若你坚持用 Tauri 原生 dmg（带自定义窗口背景），需在 `系统设置 → 隐私与安全性 → 自动化`

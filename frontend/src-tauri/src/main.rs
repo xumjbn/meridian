@@ -65,5 +65,5 @@ fn main() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("运行 Meridian 桌面端失败");
+        .expect("运行 Lynx 桌面端失败");
 }

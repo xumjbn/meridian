@@ -1,4 +1,4 @@
-# Meridian · 子午 —— Docker 部署
+# Lynx · 猞猁 —— Docker 部署
 
 一条 `docker compose up` 即可起一套完整环境：**Go 后端** + **nginx 托管前端并反向代理 `/api`（含 WebSocket 终端 / SSE 日志）**。
 所有基础镜像、Go 模块、npm 依赖、Alpine 软件源**全部走国内镜像**，无需科学上网即可构建。

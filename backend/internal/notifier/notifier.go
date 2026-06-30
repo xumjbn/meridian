@@ -77,7 +77,7 @@ func AssetStatusChanged(name, ip, newStatus string) {
 
 // SendTest 供「测试」按钮使用，使用显式配置并把错误返回给调用方
 func SendTest(typ, url string) error {
-	return dispatch(typ, url, "Meridian 测试通知", "这是一条来自 Meridian · 子午 的测试告警，配置已生效 🎉")
+	return dispatch(typ, url, "Lynx 测试通知", "这是一条来自 Lynx · 猞猁 的测试告警，配置已生效 🎉")
 }
 
 // dispatch 按渠道格式化并 POST 到 webhook

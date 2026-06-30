@@ -13,7 +13,7 @@ SHELL := /bin/bash
 
 ROOT     := $(shell pwd)
 BINDIR   := frontend/src-tauri/binaries
-APP_NAME := Meridian
+APP_NAME := Lynx
 BUNDLE   := frontend/src-tauri/target/release/bundle
 UBUNDLE  := frontend/src-tauri/target/universal-apple-darwin/release/bundle
 # Rust 宿主三元组（如 aarch64-apple-darwin / x86_64-apple-darwin）
