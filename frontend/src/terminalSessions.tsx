@@ -24,6 +24,9 @@ interface TerminalCtx {
   setActive: (id: number | null) => void;
   /** 拖拽重排：把 dragId 移动到 overId 所在位置 */
   reorder: (dragId: number, overId: number) => void;
+  /** 非激活会话有新输出时标记活动（标签显示提示点）；激活该会话即清除 */
+  activityIds: number[];
+  markActivity: (id: number) => void;
 
   // 全局终端协同同步交互支持
   globalSyncedIds: string[];
@@ -44,22 +47,38 @@ export const useTerminals = (): TerminalCtx => {
 
 export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [sessions, setSessions] = useState<TermSession[]>([]);
-  const [activeId, setActive] = useState<number | null>(null);
+  const [activeId, setActiveRaw] = useState<number | null>(null);
+  const [activityIds, setActivityIds] = useState<number[]>([]);
 
   // 全局同步会话物理连接注册表与选择集
   const globalWsRegistry = useRef<Record<string, GlobalWSHandler>>({});
   const [globalSyncedIds, setGlobalSyncedIds] = useState<string[]>([]);
   const [connectedIds, setConnectedIds] = useState<string[]>([]);
 
+  const clearActivity = (id: number) =>
+    setActivityIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev));
+
+  const markActivity = useCallback((id: number) => {
+    setActivityIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+
+  // 切换激活会话：清除其活动提示
+  const setActive = useCallback((id: number | null) => {
+    setActiveRaw(id);
+    if (id != null) clearActivity(id);
+  }, []);
+
   const open = useCallback((s: TermSession) => {
     setSessions((prev) => (prev.some((x) => x.id === s.id) ? prev : [...prev, s]));
-    setActive(s.id);
+    setActiveRaw(s.id);
+    clearActivity(s.id);
   }, []);
 
   const close = useCallback((id: number) => {
     setSessions((prev) => prev.filter((x) => x.id !== id));
     // 关闭的若是当前激活会话，则回到普通页面
-    setActive((cur) => (cur === id ? null : cur));
+    setActiveRaw((cur) => (cur === id ? null : cur));
+    clearActivity(id);
   }, []);
 
   const reorder = useCallback((dragId: number, overId: number) => {
@@ -121,6 +140,8 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       close,
       setActive,
       reorder,
+      activityIds,
+      markActivity,
       globalSyncedIds,
       setGlobalSyncedIds,
       connectedIds,
