@@ -671,7 +671,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                 <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid #f0f0f0', paddingTop: 8, lineHeight: 1.6 }}>
                   选中即复制 · 右键/Ctrl+Shift+V 粘贴<br />
                   Ctrl+滚轮 / Ctrl ± 缩放字号 · Ctrl+0 复位<br />
-                  补全：↑↓ 选 · Enter 接受 · Tab 交给 Shell
+                  补全：→ / Enter 接受首选 · ↑↓ 选 · Tab 交给 Shell
                 </div>
               </div>
             )}
@@ -724,14 +724,17 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: '#0B0F19' }}>
         {/* 工具栏收起态：右上角悬浮的展开按钮（与收起按钮同侧） */}
         {toolbarCollapsed && (
-          <Tooltip title="展开工具栏" placement="left">
+          <Tooltip title="展开工具栏" placement="bottom">
             <Button
               size="small"
               icon={<DownOutlined />}
               onClick={() => toggleToolbar(false)}
               style={{
-                position: 'absolute', top: 6, right: 10, zIndex: 1400,
+                // 居中顶部「把手」，避免压住窗格右上角的「重新连接 / 关闭」按钮
+                position: 'absolute', top: 2, left: '50%', transform: 'translateX(-50%)', zIndex: 1400,
+                height: 18, paddingTop: 0, paddingBottom: 0, lineHeight: '14px',
                 background: 'rgba(30,41,59,0.92)', color: '#cbd5e1', border: '1px solid #334155',
+                borderTopLeftRadius: 0, borderTopRightRadius: 0,
               }}
             />
           </Tooltip>
@@ -965,10 +968,20 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         setActiveIdx(0);
         return true;
       }
-      // 仅当已用方向键选过项时，Enter 才接受片段（否则正常提交命令，不打扰）
-      if ((data === '\r' || data === '\n') && navigatedRef.current) {
+      // → 右箭头：一键接受当前高亮项（无需先按方向键）。
+      // 若用户先按过 ← 移动光标，本地行模型已失真、下拉会被重置关闭，故此处不会误吞行内右移。
+      if (data === '\x1b[C') {
         const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
-        if (sel) {
+        if (sel) { acceptSuggestion(sel); return true; }
+      }
+      // Enter：接受高亮项 —— 已用方向键选过，或高亮项正好是当前输入的延伸（如输入 g → git status）。
+      // 这样默认就能一键接受首选项；仅当输入内容不是任何建议的前缀时，Enter 才照常提交执行，避免打扰。
+      if (data === '\r' || data === '\n') {
+        const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
+        const buf = lineBufferRef.current;
+        const isExtension = !!sel && buf.length > 0 && sel.cmd.length > buf.length &&
+          sel.cmd.toLowerCase().startsWith(buf.toLowerCase());
+        if (sel && (navigatedRef.current || isExtension)) {
           acceptSuggestion(sel);
           return true;
         }
@@ -1961,7 +1974,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               padding: '4px 10px', borderTop: '1px solid #1e293b',
               fontSize: 10, color: '#64748b', background: '#0b1220',
             }}>
-              ↑↓ 选择 · Enter/单击 接受 · Tab 交给 Shell 补全 · Esc 关闭
+              → / Enter / 单击 接受首选 · ↑↓ 选择 · Tab 交给 Shell · Esc 关闭
             </div>
           </div>
         )}
