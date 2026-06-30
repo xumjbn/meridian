@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Dropdown, Input } from 'antd';
 import type { MenuProps } from 'antd';
 import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined } from '@ant-design/icons';
@@ -42,6 +42,83 @@ export const TerminalTabBar: React.FC<Props> = ({
   const [overId, setOverId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editVal, setEditVal] = useState('');
+
+  // ── 拖拽排序：用 pointer 事件而非 HTML5 原生 DnD ──────────────────────────
+  // 原生 draggable 在 Tauri/WebView 下常被外层 Dropdown 包裹层吞掉而完全不触发，
+  // 改用 pointermove + 命中测试最稳，且能与单击/双击/右键/关闭按钮和平共存。
+  const tabRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const dragRef = useRef<{ id: number; startX: number; started: boolean } | null>(null);
+  const overIdRef = useRef<number | null>(null);
+  const justDraggedRef = useRef(false);          // 刚拖完，抑制紧随的 click 误选
+  const moveHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const upHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+
+  // 命中测试：指针 x 落在哪个标签上（落在间隙/边缘则取中心最近者）
+  const hitTestTab = (x: number): number | null => {
+    let bestId: number | null = null;
+    let bestDist = Infinity;
+    for (const s of sessions) {
+      const el = tabRefs.current[s.id];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right) return s.id;
+      const c = (r.left + r.right) / 2;
+      const d = Math.abs(x - c);
+      if (d < bestDist) { bestDist = d; bestId = s.id; }
+    }
+    return bestId;
+  };
+
+  const stopDragListeners = () => {
+    if (moveHandlerRef.current) window.removeEventListener('pointermove', moveHandlerRef.current);
+    if (upHandlerRef.current) window.removeEventListener('pointerup', upHandlerRef.current);
+    moveHandlerRef.current = null;
+    upHandlerRef.current = null;
+    document.body.style.userSelect = '';
+  };
+
+  const onTabPointerDown = (e: React.PointerEvent, s: TermSession) => {
+    // 仅左键、未在重命名、且提供了重排回调时才接管；右键/中键留给原有逻辑
+    if (e.button !== 0 || editingId === s.id || !onReorder) return;
+    dragRef.current = { id: s.id, startX: e.clientX, started: false };
+    overIdRef.current = s.id;
+
+    const move = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (!d.started) {
+        if (Math.abs(ev.clientX - d.startX) < 5) return; // 小位移视为点击，不触发拖拽
+        d.started = true;
+        setDragId(d.id);
+        document.body.style.userSelect = 'none';
+      }
+      const over = hitTestTab(ev.clientX);
+      if (over != null && over !== overIdRef.current) {
+        overIdRef.current = over;
+        setOverId(over);
+      }
+    };
+    const up = () => {
+      const d = dragRef.current;
+      stopDragListeners();
+      if (d && d.started) {
+        const over = overIdRef.current;
+        if (over != null && over !== d.id) onReorder?.(d.id, over);
+        justDraggedRef.current = true;
+        setTimeout(() => { justDraggedRef.current = false; }, 0);
+      }
+      dragRef.current = null;
+      setDragId(null);
+      setOverId(null);
+    };
+    moveHandlerRef.current = move;
+    upHandlerRef.current = up;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  // 卸载时清理可能残留的拖拽监听
+  useEffect(() => () => stopDragListeners(), []);
 
   const startEdit = (s: TermSession) => { setEditingId(s.id); setEditVal(s.customName || s.name); };
   const commitEdit = (id: number) => { onRename?.(id, editVal); setEditingId(null); };
@@ -126,33 +203,8 @@ export const TerminalTabBar: React.FC<Props> = ({
         return (
           <Dropdown key={s.id} trigger={['contextMenu']} menu={{ items: tabMenu(s) }}>
           <div
-            draggable={!!onReorder && !editing}
-            onDragStart={(e) => {
-              setDragId(s.id);
-              // 必须写入 dataTransfer，否则 WebKit / Tauri WebView 不会真正发起拖拽
-              e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('application/x-mrd-tab', String(s.id));
-              e.dataTransfer.setData('text/plain', String(s.id));
-            }}
-            onDragOver={(e) => {
-              // 必须始终 preventDefault 才能成为合法放置目标（不可依赖异步的 dragId 状态）
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              if (overId !== s.id) setOverId(s.id);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              // 源 id 从 dataTransfer 读，避免拖拽过程中 React 状态滞后导致丢失
-              const raw = e.dataTransfer.getData('application/x-mrd-tab') || e.dataTransfer.getData('text/plain');
-              const from = parseInt(raw, 10);
-              if (!Number.isNaN(from) && from !== s.id) onReorder?.(from, s.id);
-              setDragId(null);
-              setOverId(null);
-            }}
-            onDragEnd={() => {
-              setDragId(null);
-              setOverId(null);
-            }}
+            ref={(el) => { tabRefs.current[s.id] = el; }}
+            onPointerDown={(e) => onTabPointerDown(e, s)}
             style={{
               ...tabBase,
               ...(active ? activeStyle : idleStyle),
@@ -161,7 +213,7 @@ export const TerminalTabBar: React.FC<Props> = ({
               // 拖拽悬停目标：左侧高亮一条指示线
               boxShadow: isDropTarget ? `inset 3px 0 0 ${palette.primary}` : undefined,
             }}
-            onClick={() => onSelect(s.id)}
+            onClick={() => { if (justDraggedRef.current) return; onSelect(s.id); }}
             onDoubleClick={() => startEdit(s)}
             onAuxClick={(e) => {
               if (e.button === 1) {
