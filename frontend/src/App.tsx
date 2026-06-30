@@ -442,9 +442,12 @@ export const App: React.FC = () => {
   if (isTerminalView && terminalAssetId) {
     return (
       <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken }}>
-        <Suspense fallback={<PageFallback />}>
-          <TerminalPage assetId={parseInt(terminalAssetId)} />
-        </Suspense>
+        {/* TerminalPage/TerminalItem 依赖 useTerminals，必须置于 Provider 内，否则独立标签页打开会白屏 */}
+        <TerminalProvider>
+          <Suspense fallback={<PageFallback />}>
+            <TerminalPage assetId={parseInt(terminalAssetId)} />
+          </Suspense>
+        </TerminalProvider>
       </ConfigProvider>
     );
   }

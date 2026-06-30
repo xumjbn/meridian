@@ -125,6 +125,11 @@ func CreateK8sCluster(c *gin.Context) {
 		SendError(c, 400, "集群名称与 VIP 必填")
 		return
 	}
+	// 跨租户防护：不可绑定他人凭据（控制台会回传该凭据明文密码）
+	if !assertCredentialOwned(c, req.CredentialID) {
+		SendError(c, 403, "无权使用该凭据")
+		return
+	}
 	cl := model.K8sCluster{OwnerID: currentUserID(c)}
 	normalizeCluster(&req, &cl)
 	cl.APIToken = strings.TrimSpace(req.APIToken)
@@ -149,6 +154,11 @@ func UpdateK8sCluster(c *gin.Context) {
 	}
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.VIP) == "" {
 		SendError(c, 400, "集群名称与 VIP 必填")
+		return
+	}
+	// 跨租户防护：不可把集群改绑到他人凭据
+	if !assertCredentialOwned(c, req.CredentialID) {
+		SendError(c, 403, "无权使用该凭据")
 		return
 	}
 	normalizeCluster(&req, cl)

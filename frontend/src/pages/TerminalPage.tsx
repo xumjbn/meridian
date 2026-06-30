@@ -1478,7 +1478,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       // 先卸载再于下一拍重建，触发 WebSocket 重连
       setTimeout(() => setAsset({ id: assetId, name: '本地终端', ip: '本机', type: 'server' } as Asset), 0);
     } else if (assetId > 0) {
-      getAsset(assetId).then(setAsset);
+      // 失败必须兜底：否则 setAsset 不触发、effect 不重建，分屏会卡死在「已断开」且退避链断裂
+      getAsset(assetId).then(setAsset).catch(() => {
+        setStatus('error');
+        setErrorDetail('重连时加载资产信息失败，请点「重新连接」手动重试');
+      });
     }
   };
 

@@ -2,11 +2,17 @@
 # 从已构建的 .app 直接用 hdiutil 生成可安装 .dmg（拖入 Applications 安装）。
 # 绕开 Tauri bundle_dmg.sh 的 AppleScript/Finder 步骤，避免「failed to run bundle_dmg.sh」。
 # 用法: make-dmg.sh <App路径> <卷名> <输出dmg路径>
-set -euo pipefail
+set -eo pipefail
 
-APP="${1:?用法: make-dmg.sh <App路径> <卷名> <输出dmg路径>}"
-VOL="${2:?缺少卷名}"
-OUT="${3:?缺少输出 dmg 路径}"
+APP="${1:-}"
+VOL="${2:-}"
+OUT="${3:-}"
+
+if [ -z "$APP" ] || [ -z "$VOL" ] || [ -z "$OUT" ]; then
+  echo "用法: make-dmg.sh <App路径> <卷名> <输出dmg路径>" >&2
+  echo "（一般由 'make desktop' / 'make desktop-dmg' 调用，无需手动跑）" >&2
+  exit 2
+fi
 
 if [ ! -d "$APP" ]; then
   echo "❌ 找不到 .app：$APP（请先 make desktop 构建）" >&2
