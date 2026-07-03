@@ -70,7 +70,10 @@ export const TerminalTabBar: React.FC<Props> = ({
   const onTabPointerDown = (e: React.PointerEvent, s: TermSession) => {
     // 仅左键、未在重命名、且提供了重排回调时才接管；右键/中键留给原有逻辑
     if (e.button !== 0 || editingId === s.id || !onReorder) return;
-    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    // 点在关闭按钮等交互元素上时不接管，交回它们自己的 click
+    if ((e.target as HTMLElement).closest('[data-no-drag]')) return;
+    // 注意：不在 pointerdown 立即 setPointerCapture —— 那会吞掉标签内子元素（X 关闭按钮）的 click。
+    // 捕获延迟到 onTabPointerMove 里真正开始拖拽（位移超阈值）时再做。
     dragRef.current = { id: s.id, startX: e.clientX, started: false, pointerId: e.pointerId };
     overIdRef.current = s.id;
   };
@@ -81,6 +84,8 @@ export const TerminalTabBar: React.FC<Props> = ({
     if (!d.started) {
       if (Math.abs(e.clientX - d.startX) < 5) return; // 小位移视为点击，不触发拖拽
       d.started = true;
+      // 真正开始拖拽了，此刻才捕获指针（之后 move/up 强制派发到本标签，越过 Dropdown/滚动容器）
+      try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
       setDragId(d.id);
       document.body.style.userSelect = 'none';
     }
@@ -94,8 +99,8 @@ export const TerminalTabBar: React.FC<Props> = ({
   const onTabPointerUp = (e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d || e.pointerId !== d.pointerId) return;
-    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     if (d.started) {
+      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
       const over = overIdRef.current;
       if (over != null && over !== d.id) onReorder?.(d.id, over);
       justDraggedRef.current = true;
@@ -250,13 +255,16 @@ export const TerminalTabBar: React.FC<Props> = ({
                 style={{ width: 7, height: 7, borderRadius: '50%', background: palette.accent, flexShrink: 0, animation: 'pulse 2s infinite' }}
               />
             )}
-            <CloseOutlined
-              style={{ fontSize: 11, color: palette.textMute, marginLeft: 2 }}
+            <span
+              data-no-drag="1"
+              style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 2 }}
               onClick={(e) => {
                 e.stopPropagation();
                 onClose(s.id);
               }}
-            />
+            >
+              <CloseOutlined style={{ fontSize: 11, color: palette.textMute }} />
+            </span>
           </div>
           </Dropdown>
         );
