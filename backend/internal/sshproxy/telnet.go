@@ -57,6 +57,10 @@ func ProxyTelnet(ws *websocket.Conn, asset *model.Asset, cred *model.Credential)
 	}
 	defer closeAll()
 
+	// WS 协议层心跳保活（锁屏/后台标签下 JS 定时器被节流也不会误断）
+	stopKA := startKeepAlive(ws)
+	defer stopKA()
+
 	_ = cred // Telnet 走交互式登录，凭据暂保留（可在终端内手动输入）
 
 	// TCP -> WS（处理 IAC 协商并剥离命令字节）

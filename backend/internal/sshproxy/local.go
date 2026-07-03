@@ -58,6 +58,10 @@ func ProxyLocal(ws *websocket.Conn) {
 	status(fmt.Sprintf("本地 Shell: %s", desc))
 	status("connected")
 
+	// WS 协议层心跳保活（锁屏/后台标签下 JS 定时器被节流也不会误断本地终端）
+	stopKA := startKeepAlive(ws)
+	defer stopKA()
+
 	// 协程：PTY 输出 → WebSocket
 	go func() {
 		buf := make([]byte, 8192)

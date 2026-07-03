@@ -18,6 +18,38 @@ import (
 // 由 ReadMessage 报错触发 closeAll，释放 SSH 会话、PTY 与协程，避免半开连接长期泄漏。
 const wsReadIdleTimeout = 90 * time.Second
 
+// wsPingInterval 是服务端主动发送 WebSocket PING 控制帧的间隔。
+// 浏览器/WebView 在协议栈层自动回 PONG（不经过前端 JS），因此即使页面锁屏、
+// 切到后台标签导致 JS 定时器被节流，连接仍能保活，避免被 wsReadIdleTimeout 误断。
+const wsPingInterval = 30 * time.Second
+
+// startKeepAlive 启动 WebSocket 协议层心跳：定期发 PING，收到 PONG 即顺延读超时。
+// gorilla 的 WriteControl 可与其他读写并发调用，故此处无需额外加锁。
+// 返回的 stop 应在连接结束时调用（幂等）以停止 ping 协程。
+func startKeepAlive(ws *websocket.Conn) (stop func()) {
+	ws.SetPongHandler(func(string) error {
+		_ = ws.SetReadDeadline(time.Now().Add(wsReadIdleTimeout))
+		return nil
+	})
+	ticker := time.NewTicker(wsPingInterval)
+	done := make(chan struct{})
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if err := ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
+}
+
 // WSMessage 定义前端发送的控制指令 JSON
 type WSMessage struct {
 	Type     string `json:"type"`                // auth_response, resize, status, ping
@@ -192,6 +224,10 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 			log.Printf("SSHProxy: Session for %s closed", asset.IP)
 		})
 	}
+
+	// WS 协议层心跳保活（锁屏/后台标签下 JS 定时器被节流也不会误断）
+	stopKA := startKeepAlive(ws)
+	defer stopKA()
 
 	// 协程 A: 将 SSH stdout 输出写入 WebSocket
 	go func() {
