@@ -671,7 +671,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                 <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid #f0f0f0', paddingTop: 8, lineHeight: 1.6 }}>
                   选中即复制 · 右键/Ctrl+Shift+V 粘贴<br />
                   Ctrl+滚轮 / Ctrl ± 缩放字号 · Ctrl+0 复位<br />
-                  补全：→ / Enter 接受首选 · ↑↓ 选 · Tab 交给 Shell
+                  补全：→ 接受首选 · ↑↓ 选后 Enter · 空格/Esc 收起 · Tab 交给 Shell
                 </div>
               </div>
             )}
@@ -974,17 +974,21 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
         if (sel) { acceptSuggestion(sel); return true; }
       }
-      // Enter：接受高亮项 —— 已用方向键选过，或高亮项正好是当前输入的延伸（如输入 g → git status）。
-      // 这样默认就能一键接受首选项；仅当输入内容不是任何建议的前缀时，Enter 才照常提交执行，避免打扰。
+      // Enter：仅在用户用 ↑↓ 明确选过之后才接受高亮项；
+      // 否则 Enter 永远照常提交执行用户输入的命令（避免 ls 回车被吞成 lsof -i）。
       if (data === '\r' || data === '\n') {
-        const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
-        const buf = lineBufferRef.current;
-        const isExtension = !!sel && buf.length > 0 && sel.cmd.length > buf.length &&
-          sel.cmd.toLowerCase().startsWith(buf.toLowerCase());
-        if (sel && (navigatedRef.current || isExtension)) {
-          acceptSuggestion(sel);
-          return true;
+        if (navigatedRef.current) {
+          const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
+          if (sel) { acceptSuggestion(sel); return true; }
         }
+      }
+      // 空格：收起下拉（不吞输入，空格照常下发给 shell）；继续输入文字会重新弹出。
+      if (data === ' ') {
+        lineBufferRef.current += data;
+        navigatedRef.current = false;
+        setSuggestions([]);
+        setActiveIdx(0);
+        return false;
       }
     }
 
