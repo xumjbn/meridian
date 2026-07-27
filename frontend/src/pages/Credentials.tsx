@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Modal, Form, Input, Select, Popconfirm, message } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, SafetyCertificateOutlined, ApiOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Modal, Form, Input, Select, Popconfirm, Upload, message } from 'antd';
+import { PlusOutlined, DeleteOutlined, EditOutlined, SafetyCertificateOutlined, ApiOutlined, UploadOutlined } from '@ant-design/icons';
 import { getCredentials, createCredential, updateCredential, deleteCredential, testCredential, type Credential, type CredTestResult } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
@@ -61,6 +61,26 @@ export const Credentials: React.FC = () => {
   useEffect(() => {
     fetchCredentials();
   }, []);
+
+  // 从本地文件读取 SSH 私钥填入表单。私钥全程只在浏览器内读取，
+  // 不做任何额外上传请求，随表单一起提交（与手工粘贴等价）。
+  const handlePickKeyFile = (file: File) => {
+    if (file.size > 64 * 1024) {
+      message.error('文件过大，SSH 私钥通常不超过几 KB，请确认选对了文件');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '').trim();
+      if (!/-----BEGIN [\w ]*PRIVATE KEY-----/.test(text)) {
+        message.warning('该文件看起来不是 PEM/OpenSSH 私钥（缺少 BEGIN PRIVATE KEY 标记），已仍然填入，请自行确认');
+      }
+      form.setFieldsValue({ private_key: text });
+      message.success(`已导入私钥文件：${file.name}`);
+    };
+    reader.onerror = () => message.error('读取文件失败');
+    reader.readAsText(file);
+  };
 
   const handleOpenAdd = () => {
     setEditingCred(null);
@@ -262,11 +282,30 @@ export const Credentials: React.FC = () => {
             </Form.Item>
           ) : (
             <Form.Item
-              label="SSH 私钥"
+              label={
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                  SSH 私钥
+                  {/* 支持直接选本地私钥文件（id_rsa / id_ed25519 / *.pem），读出文本填入下方 */}
+                  <Upload
+                    accept=".pem,.key,.ppk,.txt,application/x-pem-file"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      handlePickKeyFile(file as File);
+                      return false; // 阻止 antd 自动上传：私钥只在本地读取，不经额外请求
+                    }}
+                  >
+                    <Button size="small" icon={<UploadOutlined />}>从文件导入</Button>
+                  </Upload>
+                </span>
+              }
               name="private_key"
-              rules={[{ required: true, message: '请输入私钥内容' }]}
+              rules={[{ required: true, message: '请输入或导入私钥内容' }]}
             >
-              <TextArea rows={6} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----\n..." style={{ fontFamily: 'monospace' }} />
+              <TextArea
+                rows={6}
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;… 可粘贴，或点右上「从文件导入」选择 id_rsa / id_ed25519 / *.pem"
+                style={{ fontFamily: 'monospace' }}
+              />
             </Form.Item>
           )}
 
