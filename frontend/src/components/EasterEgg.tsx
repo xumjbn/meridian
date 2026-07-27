@@ -16,11 +16,18 @@ import { LogoMark } from './Logo';
 // ─────────────────────────────────────────────────────────────
 
 export const EASTER_EGG_EVENT = 'lynx-easter-egg';
-/** 终端里触发：单独一行 love，或完整的 wjw i love u */
-export const EASTER_EGG_RE = /^\s*(love|wjw\s*i\s*love\s*u)\s*$/i;
 
-/** 任意位置手动触发彩蛋 */
-export const fireEasterEgg = () => window.dispatchEvent(new Event(EASTER_EGG_EVENT));
+/** 演出模式：日常表白 / 生日 */
+export type EggMode = 'love' | 'birthday';
+
+/** 终端里触发日常表白：单独一行 love，或完整的 wjw i love u */
+export const EASTER_EGG_RE = /^\s*(love|wjw\s*i\s*love\s*u)\s*$/i;
+/** 终端里触发生日模式：单独一行 921129（或 生日快乐 / hbd） */
+export const EASTER_EGG_BIRTHDAY_RE = /^\s*(921129|生日快乐|hbd)\s*$/i;
+
+/** 任意位置手动触发彩蛋（默认日常表白） */
+export const fireEasterEgg = (mode: EggMode = 'love') =>
+  window.dispatchEvent(new CustomEvent<EggMode>(EASTER_EGG_EVENT, { detail: mode }));
 
 const KONAMI = [
   'ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
@@ -35,14 +42,31 @@ const T_NAME = 6900;     // 幕三：WJW
 const T_DISSOLVE = 9200; // 幕四：化作星尘
 const T_END = 10600;
 
-// 每一幕配一句字幕，逐字打出，凑成一段完整的话
-const CAPTIONS: { at: number; text: string }[] = [
-  { at: 0, text: '有句话，想借这场烟花说' },
-  { at: T_HEART, text: '从遇见你的那天起' },
-  { at: T_TEXT, text: '我就没想过要放手' },
-  { at: T_NAME, text: '往后余生，风雪是你，平淡是你' },
-  { at: T_DISSOLVE, text: '生日快乐，我爱你 ❤' },
-];
+// 每一幕配一句字幕，逐字打出，凑成一段完整的话。
+// 两套文案分开：日常触发（love / wjw / 徽标连点 / Konami）不提生日，
+// 只有 921129 这个日子才走生日版，免得平时也天天「生日快乐」。
+const CAPTIONS: Record<EggMode, { at: number; text: string }[]> = {
+  love: [
+    { at: 0, text: '有句话，想借这场烟花说' },
+    { at: T_HEART, text: '从遇见你的那天起' },
+    { at: T_TEXT, text: '我就没想过要放手' },
+    { at: T_NAME, text: '往后余生，风雪是你，平淡是你' },
+    { at: T_DISSOLVE, text: '天天开心，美美哒 ❤' },
+  ],
+  birthday: [
+    { at: 0, text: '今天，是个很特别的日子' },
+    { at: T_HEART, text: '闭上眼睛，许个愿吧' },
+    { at: T_TEXT, text: '愿你所求皆如愿' },
+    { at: T_NAME, text: '所行化坦途，笑口常开' },
+    { at: T_DISSOLVE, text: '生日快乐 ❤' },
+  ],
+};
+
+/** 两幕文字：日常拼 I LOVE U / WJW，生日拼 HAPPY BIRTHDAY / WJW */
+const SHAPES: Record<EggMode, [string, string]> = {
+  love: ['I LOVE U', 'WJW'],
+  birthday: ['HAPPY BIRTHDAY', 'WJW'],
+};
 
 const PINK = ['#ff5c8a', '#ff8fab', '#ff3d71', '#ffc2d1'];
 const SPARK = ['#ff5c8a', '#ffd166', '#06d6a0', '#4da3ff', '#c77dff'];
@@ -111,6 +135,7 @@ const textPoints = (text: string, maxWidth: number): { x: number; y: number }[] 
 export const EasterEgg: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>('burst');
+  const [mode, setMode] = useState<EggMode>('love');
   const [caption, setCaption] = useState('');      // 当前整句
   const [typed, setTyped] = useState('');          // 已打出的部分（打字机效果）
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -129,9 +154,11 @@ export const EasterEgg: React.FC = () => {
     return () => window.clearInterval(id);
   }, [caption]);
 
-  // 动画循环里要读最新阶段，用 ref 避免闭包拿到旧值
+  // 动画循环里要读最新阶段/模式，用 ref 避免闭包拿到旧值
   const stageRef = useRef<Stage>('burst');
   useEffect(() => { stageRef.current = stage; }, [stage]);
+  const modeRef = useRef<EggMode>('love');
+  useEffect(() => { modeRef.current = mode; }, [mode]);
 
 
   const close = useCallback(() => {
@@ -150,12 +177,17 @@ export const EasterEgg: React.FC = () => {
       const hit = expect.length === 1 ? e.key.toLowerCase() === expect : e.key === expect;
       if (hit) {
         idx += 1;
-        if (idx === KONAMI.length) { idx = 0; setOpen(true); }
+        if (idx === KONAMI.length) { idx = 0; fireEasterEgg('love'); }
       } else {
         idx = e.key === KONAMI[0] ? 1 : 0;
       }
     };
-    const onEvent = () => { setStage('burst'); setCaption(''); setTyped(''); setOpen(true); };
+    const onEvent = (e: Event) => {
+      const m = (e as CustomEvent<EggMode>).detail === 'birthday' ? 'birthday' : 'love';
+      setMode(m);
+      modeRef.current = m;   // 立刻同步，供本次演出的时间轴读取
+      setStage('burst'); setCaption(''); setTyped(''); setOpen(true);
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener(EASTER_EGG_EVENT, onEvent);
     return () => {
@@ -194,7 +226,8 @@ export const EasterEgg: React.FC = () => {
     const onMove = (e: MouseEvent) => { mouse.x = e.clientX; mouse.y = e.clientY; };
     window.addEventListener('mousemove', onMove);
 
-    const COUNT = reduced ? 420 : 1100;
+    // 粒子数决定字形密度：HAPPY BIRTHDAY 有 14 个字母，粒子太少会散得认不出
+    const COUNT = reduced ? 480 : 1700;
     const parts: P[] = Array.from({ length: COUNT }, () => ({
       x: cx() + (Math.random() - 0.5) * W(),
       y: cy() + (Math.random() - 0.5) * H(),
@@ -254,7 +287,8 @@ export const EasterEgg: React.FC = () => {
 
     // ── 时间轴编排 ──
     const at = (ms: number, fn: () => void) => timersRef.current.push(window.setTimeout(fn, ms));
-    CAPTIONS.forEach((c) => at(c.at, () => { setCaption(c.text); setTyped(''); }));
+    const m = modeRef.current;
+    CAPTIONS[m].forEach((c) => at(c.at, () => { setCaption(c.text); setTyped(''); }));
     burst(cx(), cy() - 40);
     at(240, () => burst(cx() - W() * 0.22, cy() - 60));
     at(480, () => burst(cx() + W() * 0.22, cy() - 20));
@@ -268,13 +302,13 @@ export const EasterEgg: React.FC = () => {
     at(T_TEXT, () => {
       setStage('text');
       scatter(5.5);                       // 心形先炸开
-      at(420, () => assign(textPoints('I LOVE U', Math.min(W() * 0.82, 1150))));
+      at(420, () => assign(textPoints(SHAPES[m][0], Math.min(W() * 0.86, 1250))));
       burst(cx(), cy());
     });
     at(T_NAME, () => {
       setStage('text');
       scatter(5.0);
-      at(380, () => assign(textPoints('WJW', Math.min(W() * 0.55, 760))));
+      at(380, () => assign(textPoints(SHAPES[m][1], Math.min(W() * 0.55, 760))));
       burst(cx(), cy() - 30);
     });
     at(T_DISSOLVE, () => { setStage('dissolve'); scatter(3.2); });

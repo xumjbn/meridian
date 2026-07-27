@@ -6,7 +6,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { LogoMark, LogoWordmark } from '../components/Logo';
-import { EASTER_EGG_EVENT, EASTER_EGG_RE } from '../components/EasterEgg';
+import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
 import { SnippetManager } from '../components/SnippetManager';
@@ -1138,12 +1138,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     // 回车：把真实执行的命令记入该主机历史（后续行内补全的主要来源）
     if (data === '\r' || data === '\n') {
-      // 彩蛋：整行是「wjw i love u」时不发给 shell（否则只会得到 command not found），
-      // 改为清掉当前行并放一场烟花。
-      if (EASTER_EGG_RE.test(lineBufferRef.current)) {
+      // 彩蛋：整行命中口令时不发给 shell（否则只会得到 command not found），
+      // 改为清掉当前行并放一场演出。921129 走生日版文案，其余走日常版。
+      const line = lineBufferRef.current;
+      const birthday = EASTER_EGG_BIRTHDAY_RE.test(line);
+      if (birthday || EASTER_EGG_RE.test(line)) {
         sendToShell('\x15'); // Ctrl-U 清行
         resetCompletion(true);
-        window.dispatchEvent(new Event(EASTER_EGG_EVENT));
+        fireEasterEgg(birthday ? 'birthday' : 'love');
         return true;
       }
       recordHistory(historyKey, lineBufferRef.current);
