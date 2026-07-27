@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import { LogoMark } from '../components/Logo';
+import { LogoMark, LogoWordmark } from '../components/Logo';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
 import { SnippetManager } from '../components/SnippetManager';
@@ -558,8 +558,9 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       }}>
         <Space size="small" style={{ flexShrink: 0 }}>
           <LogoMark size={22} />
-          <span style={{ fontWeight: 600, fontSize: 14, color: palette.chromeTextStrong, whiteSpace: 'nowrap' }}>
-            Lynx 远程终端多屏中心
+          <LogoWordmark height={15} color={palette.chromeTextStrong} />
+          <span style={{ fontSize: 13, color: palette.chromeText, whiteSpace: 'nowrap' }}>
+            远程终端多屏中心
           </span>
         </Space>
 

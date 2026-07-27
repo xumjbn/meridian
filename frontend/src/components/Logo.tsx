@@ -1,5 +1,5 @@
 import React from 'react';
-import { brand, palette } from '../theme';
+import { palette } from '../theme';
 
 // ─────────────────────────────────────────────────────────────
 // Lynx Logo —— wjw 字母组合徽标
@@ -64,6 +64,43 @@ export const LogoMark: React.FC<LogoMarkProps> = ({ size = 32, variant = 'badge'
   );
 };
 
+interface WordmarkProps {
+  /** 字标高度（px），描边粗细随之等比缩放 */
+  height?: number;
+  color?: string;
+  style?: React.CSSProperties;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 「Lynx」字标：与徽标 wjw 同一套笔法——圆头圆角描边、同样的 2.3 线宽比例，
+// 让文字与图标看上去出自同一支笔，而不是图标一种风格、文字另一种。
+// 坐标系与 LogoMark 对齐：x 高区间 y=13.5~20.5，L 的竖笔自 y=8 起。
+// ─────────────────────────────────────────────────────────────
+export const LogoWordmark: React.FC<WordmarkProps> = ({ height = 18, color = 'currentColor', style }) => (
+  <svg
+    height={height}
+    viewBox="0 0 40 26"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    style={{ display: 'block', overflow: 'visible', ...style }}
+    aria-label="Lynx"
+  >
+    <g stroke={color} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+      {/* L */}
+      <path d="M3.4,7.5 L3.4,20.5 L9.6,20.5" />
+      {/* y：左撇收于基线，右撇带下伸尾巴 */}
+      <path d="M12.4,13.5 L15.6,20.5" />
+      <path d="M19.2,13.5 L14.6,23.6" />
+      {/* n：竖笔 + 肩部 */}
+      <path d="M22.4,20.5 L22.4,13.5" />
+      <path d="M22.4,16.0 C23.3,14.1 26.4,14.0 27.5,15.9 L27.5,20.5" />
+      {/* x */}
+      <path d="M30.6,13.5 L36.2,20.5" />
+      <path d="M36.2,13.5 L30.6,20.5" />
+    </g>
+  </svg>
+);
+
 interface LogoProps {
   size?: number;
   /** 是否仅显示徽标（折叠态） */
@@ -73,19 +110,18 @@ interface LogoProps {
 }
 
 export const Logo: React.FC<LogoProps> = ({ size = 34, collapsed = false, tone = 'light' }) => {
-  // light = 置于深色底（顶栏）：文字用纯白，保证对比度；dark = 置于浅色底
+  // light = 置于深色底（顶栏）：字标用纯白，与徽标内的白色 wjw 完全一致；
+  // dark = 置于浅色底：字标用品牌蓝，与徽标底色呼应。
   const onDark = tone === 'light';
-  const titleColor = onDark ? '#ffffff' : palette.text;
+  const markColor = onDark ? '#ffffff' : palette.primary;
   const subColor = onDark ? 'rgba(255,255,255,0.55)' : palette.textMute;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
       <LogoMark size={size} />
       {!collapsed && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, minWidth: 0 }}>
-          <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.2px', color: titleColor }}>
-            {brand.name}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <LogoWordmark height={Math.round(size * 0.62)} color={markColor} />
           <span style={{ fontSize: 12, color: subColor, whiteSpace: 'nowrap' }}>控制台</span>
         </div>
       )}

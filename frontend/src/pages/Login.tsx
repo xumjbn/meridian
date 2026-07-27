@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Form, Input, Button, Tabs, message } from 'antd';
 import { UserOutlined, LockOutlined, SafetyCertificateOutlined, ThunderboltOutlined, ClusterOutlined } from '@ant-design/icons';
-import { LogoMark } from '../components/Logo';
+import { LogoMark, LogoWordmark } from '../components/Logo';
 import { brand, palette } from '../theme';
 import { login, registerUser } from '../services/api';
 
@@ -75,7 +75,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
         }}
       >
         <LogoMark size={26} />
-        <span style={{ fontSize: 16, fontWeight: 600, color: palette.text }}>{brand.name}</span>
+        <LogoWordmark height={17} color={palette.primary} />
         <span style={{ fontSize: 12.5, color: palette.textMute }}>控制台</span>
       </div>
 
