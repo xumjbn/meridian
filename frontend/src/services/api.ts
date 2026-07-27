@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { saveBlob } from '../saveFile';
 
 // 桌面端（Tauri）：前端由 Tauri 加载（tauri://），后端 Go 以 sidecar 监听本地端口；
 // Web/容器部署：同源（nginx 反代 /api）。BACKEND_ORIGIN 据此切换。
@@ -405,7 +406,7 @@ export const sftpRename = (assetId: number, from: string, to: string): Promise<{
   api.post(`/assets/${assetId}/sftp/rename`, { from, to });
 
 // 下载用原生 fetch（携带 token），区分二进制流与 JSON 错误响应
-export const sftpDownload = async (assetId: number, filePath: string): Promise<void> => {
+export const sftpDownload = async (assetId: number, filePath: string): Promise<boolean> => {
   const token = localStorage.getItem('lynx-token') || '';
   const res = await fetch(`${BACKEND_ORIGIN}/api/assets/${assetId}/sftp/download?path=${encodeURIComponent(filePath)}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -416,14 +417,8 @@ export const sftpDownload = async (assetId: number, filePath: string): Promise<v
     throw new Error((body as { message?: string })?.message || '下载失败');
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filePath.split('/').pop() || 'download';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // 让用户自己选保存位置（不支持的环境自动回落到直接下载）
+  return saveBlob(blob, filePath.split('/').pop() || 'download');
 };
 
 // ── 资产可用性 ───────────────────────────────

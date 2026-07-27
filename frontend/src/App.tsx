@@ -134,7 +134,14 @@ const AppLayout: React.FC = () => {
     >
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: palette.bg, overflow: 'hidden' }}>
         {/* 全局顶栏 */}
-        <AppHeader items={headerItems} activeKey={selectedKey} onNavigate={go} onHelp={() => setHelpOpen(true)} />
+        <AppHeader
+          items={headerItems}
+          activeKey={selectedKey}
+          onNavigate={go}
+          onHelp={() => setHelpOpen(true)}
+          siderWidth={siderWidth}
+          siderCollapsed={collapsed}
+        />
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
           {/* 左侧栏（深色，与顶栏同色）：快速连接主机树 + 管理导航 */}

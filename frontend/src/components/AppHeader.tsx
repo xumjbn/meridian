@@ -21,6 +21,10 @@ interface Props {
   onNavigate: (path: string) => void;
   /** 打开快捷键帮助 */
   onHelp?: () => void;
+  /** 左侧栏当前宽度：品牌区与之等宽，保证两条竖直分界线对齐 */
+  siderWidth: number;
+  /** 侧栏是否收起：收起时品牌区只留徽标居中 */
+  siderCollapsed?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -29,7 +33,7 @@ interface Props {
 //   右：全局搜索 → 帮助/源码 → 账号菜单
 // 深色底 + 白字，是全站唯一的深色区块，用来压住页面顶部。
 // ─────────────────────────────────────────────────────────────
-export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHelp }) => {
+export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHelp, siderWidth, siderCollapsed }) => {
   const isActive = (it: HeaderNavItem) =>
     it.children ? it.children.some((c) => c.key === activeKey) : it.key === activeKey;
 
@@ -60,12 +64,26 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
         zIndex: 120,
       }}
     >
-      {/* 品牌：正常点击回总览；2 秒内连点 5 次触发彩蛋（不打字、不污染输入框） */}
+      {/* 品牌区：宽度与左侧栏严格一致，且共用同一条竖直分界线——
+          侧栏收起后若这里仍是原宽度，两条竖线会错位，整个左上角看着是散的。 */}
       <div
-        style={{ display: 'flex', alignItems: 'center', padding: '0 20px 0 16px', cursor: 'pointer' }}
+        style={{
+          width: siderWidth,
+          flexShrink: 0,
+          height: '100%',
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: siderCollapsed ? 'center' : 'flex-start',
+          padding: siderCollapsed ? 0 : '0 12px 0 16px',
+          borderRight: `1px solid ${palette.headerBorder}`,
+          cursor: 'pointer',
+          transition: 'width 0.2s cubic-bezier(0.4,0,0.2,1)',
+          overflow: 'hidden',
+        }}
         onClick={onBrandClick}
       >
-        <Logo size={26} tone="light" />
+        <Logo size={26} tone="light" collapsed={siderCollapsed} />
       </div>
 
       {/* 一级导航 */}

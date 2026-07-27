@@ -11,8 +11,8 @@ export const brand = {
   name: 'wjw',
   zh: 'wjw',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.80',
-  repo: 'https://github.com/',
+  version: 'v0.81',
+  repo: 'https://github.com/xumjbn/meridian',
 } as const;
 
 export const palette = {

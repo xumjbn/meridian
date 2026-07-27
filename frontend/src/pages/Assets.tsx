@@ -71,6 +71,7 @@ import { PageHeader } from '../components/PageHeader';
 import { SftpDrawer } from '../components/SftpDrawer';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
+import { saveBlob } from '../saveFile';
 import { useTerminals } from '../terminalSessions';
 
 const { Text, Title, Paragraph } = Typography;
@@ -647,7 +648,7 @@ export const Assets: React.FC = () => {
     fetchAssets();
   };
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     const header = ['名称', 'IP', '类型', '状态', '厂商', '系统', '架构', '虚拟化', '端口', '标签', '描述'];
     const rows = assets.map((a) => [
       a.name, a.ip, a.type, a.status || '', a.vendor || '', a.os_version || '', a.arch || '', a.virtualization || '',
@@ -657,13 +658,9 @@ export const Assets: React.FC = () => {
       .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `lynx-assets-${Date.now()}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    message.success(`已导出 ${assets.length} 台资产`);
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const ok = await saveBlob(blob, `lynx-assets-${ts}.csv`);
+    if (ok) message.success(`已导出 ${assets.length} 台资产`);
   };
 
   const handleImportCSV = async (file: File) => {
