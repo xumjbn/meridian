@@ -131,24 +131,7 @@ const AppLayout: React.FC = () => {
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: antdLightToken,
-        components: {
-          ...antdComponents,
-          Menu: {
-            itemBg: 'transparent',
-            itemSelectedBg: palette.siderActive,
-            itemSelectedColor: palette.siderTextActive,
-            itemColor: palette.siderText,
-            itemHoverBg: palette.siderHover,
-            itemHoverColor: palette.text,
-            itemHeight: 36,
-            fontSize: 13,
-            itemBorderRadius: 0,
-            itemMarginInline: 0,
-            itemMarginBlock: 0,
-            iconSize: 15,
-            subMenuItemBg: 'transparent',
-          },
-        },
+        components: antdComponents,
       }}
     >
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: palette.bg, overflow: 'hidden' }}>
@@ -156,7 +139,41 @@ const AppLayout: React.FC = () => {
         <AppHeader items={headerItems} activeKey={selectedKey} onNavigate={go} onHelp={() => setHelpOpen(true)} />
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
-          {/* 左侧栏（浅色）：快速连接主机树 + 管理导航 */}
+          {/* 左侧栏（深色，与顶栏同色）：快速连接主机树 + 管理导航 */}
+          <ConfigProvider
+            theme={{
+              algorithm: theme.darkAlgorithm,
+              token: {
+                colorBgBase: palette.siderBg,
+                colorBgContainer: palette.siderBg,
+                colorText: palette.chromeTextStrong,
+                colorTextDescription: palette.chromeText,
+                colorBorder: palette.siderBorder,
+                colorPrimary: palette.primary,
+                borderRadius: 4,
+              },
+              components: {
+                Menu: {
+                  itemBg: 'transparent',
+                  itemSelectedBg: palette.siderActive,
+                  itemSelectedColor: palette.siderTextActive,
+                  itemColor: palette.siderText,
+                  itemHoverBg: palette.siderHover,
+                  itemHoverColor: palette.chromeTextStrong,
+                  itemHeight: 36,
+                  fontSize: 13,
+                  itemBorderRadius: 0,
+                  itemMarginInline: 0,
+                  itemMarginBlock: 0,
+                  iconSize: 15,
+                  subMenuItemBg: 'transparent',
+                  popupBg: palette.headerBg2,
+                },
+                Tooltip: { colorBgSpotlight: '#1e2740', colorTextLightSolid: '#f1f5f9' },
+                Empty: { colorTextDescription: palette.chromeTextMute },
+              },
+            }}
+          >
           <div
             className="mrd-sider"
             style={{
@@ -176,7 +193,7 @@ const AppLayout: React.FC = () => {
               </div>
               <div style={{ flexShrink: 0, borderTop: `1px solid ${palette.siderBorder}`, paddingTop: 6, margin: collapsed ? '0 -8px' : '0 -10px' }}>
                 {!collapsed && (
-                  <div style={{ fontSize: 11, fontWeight: 600, color: palette.textMute, padding: '2px 16px 4px', letterSpacing: 0.4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: palette.chromeTextMute, padding: '2px 16px 4px', letterSpacing: 0.4 }}>
                     管理
                   </div>
                 )}
@@ -198,7 +215,7 @@ const AppLayout: React.FC = () => {
                   borderTop: `1px solid ${palette.siderBorder}`,
                   padding: '8px 16px',
                   fontSize: 11,
-                  color: palette.textMute,
+                  color: palette.chromeTextMute,
                   fontFamily: 'monospace',
                 }}
               >
@@ -206,6 +223,7 @@ const AppLayout: React.FC = () => {
               </div>
             )}
           </div>
+          </ConfigProvider>
 
           {/* 侧栏右缘的展开/收起把手 */}
           <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
@@ -220,15 +238,15 @@ const AppLayout: React.FC = () => {
                 height: 46,
                 zIndex: 20,
                 cursor: 'pointer',
-                background: '#ffffff',
+                background: palette.headerBg2,
                 border: `1px solid ${palette.siderBorder}`,
                 borderLeft: 'none',
                 borderRadius: '0 6px 6px 0',
-                color: palette.textMute,
+                color: palette.chromeText,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '2px 0 6px rgba(15,23,42,0.06)',
+                boxShadow: '2px 0 6px rgba(0,0,0,0.25)',
                 transition: 'left 0.2s cubic-bezier(0.4,0,0.2,1)',
               }}
             >

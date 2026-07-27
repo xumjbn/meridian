@@ -472,6 +472,51 @@ export function recordSnippetUsage(cmd: string): void {
   }
 }
 
+// ── 按主机的命令历史：行内补全优先用「你在这台机器上真敲过的命令」 ──────
+// 这是 fish / zsh-autosuggestions 的核心体验来源——静态命令库只能猜，
+// 历史才真正贴合你的用法（含你自己的路径、容器名、服务名）。
+const HISTORY_KEY = 'term_cmd_history';
+const HISTORY_MAX = 200; // 每台主机保留的最大条数
+
+type HistoryStore = Record<string, string[]>; // hostKey -> 命令（最近的在前）
+let historyCache: HistoryStore | null = null;
+
+function loadHistory(): HistoryStore {
+  if (historyCache) return historyCache;
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    historyCache = parsed && typeof parsed === 'object' ? (parsed as HistoryStore) : {};
+  } catch {
+    historyCache = {};
+  }
+  return historyCache!;
+}
+
+/** 记录一条在指定主机上真实执行过的命令（去重后置顶） */
+export function recordHistory(hostKey: string, cmd: string): void {
+  const c = cmd.trim();
+  // 过短、或明显是敏感输入（含 password/token 字样）的不入库
+  if (c.length < 2 || /pass(wd|word)|token|secret/i.test(c)) return;
+  const store = loadHistory();
+  const list = (store[hostKey] || []).filter((x) => x !== c);
+  list.unshift(c);
+  store[hostKey] = list.slice(0, HISTORY_MAX);
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(store));
+  } catch {
+    /* ignore 配额 */
+  }
+}
+
+/** 取该主机历史里以 prefix 开头的最近一条命令（不含完全相等的） */
+export function matchHistory(hostKey: string, prefix: string): string | undefined {
+  if (!prefix) return undefined;
+  const list = loadHistory()[hostKey] || [];
+  const p = prefix.toLowerCase();
+  return list.find((c) => c.length > prefix.length && c.toLowerCase().startsWith(p));
+}
+
 // 命令首字母缩写（含子命令，忽略以 - 开头的选项）：git commit -m → gc
 const acronymOf = (cmd: string): string =>
   cmd

@@ -165,20 +165,21 @@ export const TerminalTabBar: React.FC<Props> = ({
     transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
   };
 
+  // 深色标签栏：选中项提亮为壳体的活动色 + 亮蓝字
   const activeStyle: React.CSSProperties = {
-    background: palette.brandGradientSoft,
-    border: `1px solid ${palette.border}`,
-    color: palette.primaryDeep,
+    background: palette.chromeActive,
+    border: `1px solid ${palette.chromeBorder}`,
+    color: palette.siderTextActive,
     fontWeight: 600,
   };
-  const idleStyle: React.CSSProperties = { color: palette.textSub, background: 'transparent' };
+  const idleStyle: React.CSSProperties = { color: palette.chromeText, background: 'transparent' };
 
   return (
     <div
       style={{
         height: TAB_BAR_HEIGHT,
-        background: palette.surface,
-        borderBottom: `1px solid ${palette.border}`,
+        background: palette.chromeBg,
+        borderBottom: `1px solid ${palette.chromeBorder}`,
         display: 'flex',
         alignItems: 'center',
         gap: 6,
@@ -195,7 +196,7 @@ export const TerminalTabBar: React.FC<Props> = ({
         {currentPageLabel}
       </div>
 
-      <span style={{ width: 1, height: 18, background: palette.border, margin: '0 2px' }} />
+      <span style={{ width: 1, height: 18, background: palette.chromeBorder, margin: '0 2px' }} />
 
       {/* 终端会话标签（HTML5 拖拽重排） */}
       {sessions.map((s) => {
@@ -203,7 +204,7 @@ export const TerminalTabBar: React.FC<Props> = ({
         const isLocal = s.id < 0;
         const isDropTarget = overId === s.id && dragId !== s.id;
         const editing = editingId === s.id;
-        const iconColor = s.color || (active ? palette.primary : isLocal ? palette.accent : palette.textMute);
+        const iconColor = s.color || (active ? palette.siderTextActive : isLocal ? palette.accent : palette.chromeTextMute);
         return (
           <Dropdown key={s.id} trigger={['contextMenu']} menu={{ items: tabMenu(s) }}>
           <div
@@ -263,7 +264,7 @@ export const TerminalTabBar: React.FC<Props> = ({
                 onClose(s.id);
               }}
             >
-              <CloseOutlined style={{ fontSize: 11, color: palette.textMute }} />
+              <CloseOutlined style={{ fontSize: 11, color: palette.chromeTextMute }} />
             </span>
           </div>
           </Dropdown>

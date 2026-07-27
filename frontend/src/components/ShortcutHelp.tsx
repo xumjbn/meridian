@@ -24,7 +24,7 @@ const groups: { title: string; items: [string, string][] }[] = [
     title: '命令 / 补全',
     items: [
       [`${MOD}+Shift+P`, '命令面板（模糊搜命令库并插入）'],
-      ['→ / Tab', '接受光标后的灰色补全提示'],
+      ['→ / Tab', '接受光标后的灰色补全提示（优先该主机历史命令）'],
       ['Tab', '无灰字提示时交给 Shell 原生补全'],
       ['Ctrl+空格', '弹出候选命令列表'],
       ['↑ ↓ + Enter', '在候选列表中选择并接受'],

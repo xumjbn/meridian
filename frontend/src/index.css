@@ -149,7 +149,7 @@ body {
   background: #64748b;
 }
 
-/* 侧栏菜单：浅色底 + 选中项左侧蓝色指示条（控制台风格） */
+/* 侧栏菜单：深色底 + 选中项左侧亮蓝指示条 */
 .mrd-sider .ant-menu-item-selected::before {
   content: '';
   position: absolute;
@@ -157,11 +157,20 @@ body {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: #006eff;
+  background: #4da3ff;
 }
 .mrd-sider .ant-menu-item,
 .mrd-sider .ant-menu-submenu-title {
   border-radius: 0 !important;
+}
+/* 深色侧栏内的滚动条：压暗，避免亮色滑块在深底上跳 */
+.mrd-sider ::-webkit-scrollbar-thumb {
+  background: #2a3550;
+  background-clip: content-box;
+}
+.mrd-sider ::-webkit-scrollbar-thumb:hover {
+  background: #38466b;
+  background-clip: content-box;
 }
 
 /* ── 表格：控制台密度（表头细分隔、行悬浮浅蓝） ── */

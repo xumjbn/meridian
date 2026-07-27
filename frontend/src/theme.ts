@@ -38,23 +38,35 @@ export const palette = {
   textSub: 'var(--mrd-text-sub)',
   textMute: 'var(--mrd-text-mute)',
 
-  // 全局顶栏（深色）
-  headerBg: '#15181f',
-  headerBg2: '#1b1f28',
-  headerBorder: '#272c37',
-  headerText: '#c2cad6',
-  headerTextStrong: '#ffffff',
-  headerHover: 'rgba(255,255,255,0.09)',
-  headerActive: 'rgba(255,255,255,0.14)',
+  // ── 深色外壳（顶栏 / 侧栏 / 终端共用同一套色阶）────────────
+  // 同一蓝黑色族按明度递进：终端内容最深 → 外壳次之 → 悬浮/选中提亮，
+  // 保证「顶栏 + 侧栏 + 终端」连成一片，不再出现两种打架的黑。
+  chromeBg: '#0f1420',       // 外壳主色（顶栏与侧栏同色）
+  chromeBgDeep: '#0b0f19',   // 最深：终端内容区
+  chromeBorder: '#1c2333',
+  chromeHover: '#182034',
+  chromeActive: '#1d2740',
+  chromeText: '#a8b3c4',
+  chromeTextStrong: '#f1f5f9',
+  chromeTextMute: '#6b7789',
 
-  // 左侧菜单（浅色）
-  siderBg: '#ffffff',
-  siderBg2: '#ffffff',
-  siderBorder: '#e5e8ef',
-  siderHover: '#f2f5fa',
-  siderActive: '#e7f0ff',
-  siderText: '#4b5563',
-  siderTextActive: '#006eff',
+  // 全局顶栏
+  headerBg: '#0f1420',
+  headerBg2: '#131926',
+  headerBorder: '#1c2333',
+  headerText: '#a8b3c4',
+  headerTextStrong: '#ffffff',
+  headerHover: 'rgba(255,255,255,0.08)',
+  headerActive: 'rgba(255,255,255,0.13)',
+
+  // 左侧菜单（与顶栏同色的深色）
+  siderBg: '#0f1420',
+  siderBg2: '#0f1420',
+  siderBorder: '#1c2333',
+  siderHover: '#182034',
+  siderActive: '#1d2740',
+  siderText: '#a8b3c4',
+  siderTextActive: '#4da3ff',
 
   // 语义状态
   success: '#00a870',

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover, Modal } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover, Modal, ConfigProvider, theme as antdTheme } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -10,7 +10,7 @@ import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
 import { SnippetManager } from '../components/SnippetManager';
 import { TerminalAIPanel } from '../components/TerminalAIPanel';
-import { loadSnippets, matchSnippets, recordSnippetUsage, type CmdSnippet } from '../commandSnippets';
+import { loadSnippets, matchSnippets, recordSnippetUsage, recordHistory, matchHistory, type CmdSnippet } from '../commandSnippets';
 import { copyText, pasteText } from '../clipboard';
 import { CommandPalette } from '../components/CommandPalette';
 import { ShortcutHelp } from '../components/ShortcutHelp';
@@ -529,12 +529,26 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         }
       `}} />
 
-      {/* 顶部全局状态栏（可折叠以扩大输出区域） */}
+      {/* 顶部全局状态栏（可折叠以扩大输出区域）；深色，与全局顶栏/侧栏同色 */}
       {!toolbarCollapsed && (
+      <ConfigProvider
+        theme={{
+          algorithm: antdTheme.darkAlgorithm,
+          token: {
+            colorBgBase: palette.chromeBg,
+            colorBgContainer: palette.chromeBg,
+            colorText: palette.chromeTextStrong,
+            colorBorder: palette.chromeBorder,
+            colorPrimary: palette.primary,
+            borderRadius: 4,
+          },
+          components: { Tooltip: { colorBgSpotlight: '#1e2740', colorTextLightSolid: '#f1f5f9' } },
+        }}
+      >
       <div style={{
         minHeight: '48px',
-        background: '#ffffff',
-        borderBottom: '1px solid #e2e8f0',
+        background: palette.chromeBg,
+        borderBottom: `1px solid ${palette.chromeBorder}`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -544,14 +558,14 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       }}>
         <Space size="small" style={{ flexShrink: 0 }}>
           <LogoMark size={22} />
-          <span style={{ fontWeight: 600, fontSize: 14, color: palette.text, whiteSpace: 'nowrap' }}>
+          <span style={{ fontWeight: 600, fontSize: 14, color: palette.chromeTextStrong, whiteSpace: 'nowrap' }}>
             Lynx 远程终端多屏中心
           </span>
         </Space>
 
         <Space size="small" wrap style={{ rowGap: 6, justifyContent: 'flex-end' }}>
           {/* 分屏布局控制 */}
-          <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: palette.chromeText, display: 'inline-flex', alignItems: 'center' }}>
             布局:
             <Radio.Group
               size="small"
@@ -570,7 +584,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
               onClick={() => addPane()}
               disabled={totalPanes >= MAX_PANES}
               title="添加一个分屏"
-              style={{ marginLeft: 6, fontSize: 12, color: '#475569' }}
+              style={{ marginLeft: 6, fontSize: 12, color: palette.chromeText }}
             >
               添加分屏
             </Button>
@@ -582,17 +596,17 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             indeterminate={isIndeterminate}
             disabled={connectedIds.length === 0}
             onChange={(e) => syncAllConnected(e.target.checked)}
-            style={{ fontSize: 12, color: '#475569' }}
+            style={{ fontSize: 12, color: palette.chromeText }}
           >
             同步所有 ({connectedIds.length})
           </Checkbox>
 
           {/* 命令自动补全开关 + 命令库管理入口 */}
-          <span style={{ fontSize: 12, color: '#475569', display: 'inline-flex', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: palette.chromeText, display: 'inline-flex', alignItems: 'center' }}>
             <Checkbox
               checked={completionEnabled}
               onChange={(e) => toggleCompletion(e.target.checked)}
-              style={{ fontSize: 12, color: '#475569' }}
+              style={{ fontSize: 12, color: palette.chromeText }}
             >
               命令补全
             </Checkbox>
@@ -610,7 +624,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             <Checkbox
               checked={autoTryCred}
               onChange={(e) => toggleAutoTryCred(e.target.checked)}
-              style={{ fontSize: 12, color: '#475569' }}
+              style={{ fontSize: 12, color: palette.chromeText }}
             >
               自动试凭据
             </Checkbox>
@@ -624,7 +638,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             content={(
               <div style={{ width: 260, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#475569' }}>字体</span>
+                  <span style={{ fontSize: 12, color: palette.chromeText }}>字体</span>
                   <Select
                     size="small"
                     value={fontFamily}
@@ -635,7 +649,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                   />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#475569' }}>字号</span>
+                  <span style={{ fontSize: 12, color: palette.chromeText }}>字号</span>
                   <Select
                     size="small"
                     value={fontSize}
@@ -645,7 +659,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                   />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#475569' }}>配色</span>
+                  <span style={{ fontSize: 12, color: palette.chromeText }}>配色</span>
                   <Select
                     size="small"
                     value={termThemeKey}
@@ -657,7 +671,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Tooltip title="远端中文乱码时切到 GBK（如本地 Windows / GB18030 主机）；切换后建议重新连接">
-                    <span style={{ fontSize: 12, color: '#475569', cursor: 'help' }}>编码</span>
+                    <span style={{ fontSize: 12, color: palette.chromeText, cursor: 'help' }}>编码</span>
                   </Tooltip>
                   <Select
                     size="small"
@@ -676,7 +690,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
               </div>
             )}
           >
-            <Button size="small" type="text" icon={<SettingOutlined />} style={{ fontSize: 12, color: '#475569' }}>
+            <Button size="small" type="text" icon={<SettingOutlined />} style={{ fontSize: 12, color: palette.chromeText }}>
               外观
             </Button>
           </Popover>
@@ -686,7 +700,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
               type="text"
               icon={<QuestionCircleOutlined />}
               onClick={() => setHelpOpen(true)}
-              style={{ color: '#475569', display: 'flex', alignItems: 'center' }}
+              style={{ color: palette.chromeText, display: 'flex', alignItems: 'center' }}
             />
           </Tooltip>
 
@@ -694,7 +708,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             type="text"
             icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
             onClick={() => setFullscreen((f) => !f)}
-            style={{ color: '#475569', display: 'flex', alignItems: 'center' }}
+            style={{ color: palette.chromeText, display: 'flex', alignItems: 'center' }}
           >
             {fullscreen ? '退出全屏' : '全屏'}
           </Button>
@@ -704,7 +718,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
               type="text"
               icon={<UpOutlined />}
               onClick={() => toggleToolbar(true)}
-              style={{ color: '#475569', display: 'flex', alignItems: 'center' }}
+              style={{ color: palette.chromeText, display: 'flex', alignItems: 'center' }}
             />
           </Tooltip>
 
@@ -719,9 +733,10 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
           </Button>
         </Space>
       </div>
+      </ConfigProvider>
       )}
 
-      <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: '#0B0F19' }}>
+      <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: palette.chromeBgDeep }}>
         {/* 工具栏收起态：右上角悬浮的展开按钮（与收起按钮同侧） */}
         {toolbarCollapsed && (
           <Tooltip title="展开工具栏" placement="bottom">
@@ -863,7 +878,6 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const [suggestions, setSuggestions] = useState<CmdSnippet[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [listOpen, setListOpen] = useState(false);        // 候选列表是否显式打开
-  const [ghost, setGhost] = useState('');                 // 光标后的灰色补全残余文本
   // 锚点：锚定到光标所在像素位置（幽灵文本定位 + 列表展开方向）
   const [anchor, setAnchor] = useState<{ left: number; top: number; cellH: number; cw: number; ch: number } | null>(null);
 
@@ -875,6 +889,45 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const listOpenRef = useRef(false);
   const ghostRef = useRef('');                            // 当前幽灵残余文本
   const ghostCmdRef = useRef('');                         // 幽灵对应的完整命令（用于频率学习）
+  const ghostDecoRef = useRef<{ dispose: () => void } | null>(null); // xterm 装饰器句柄
+  // 历史命令按主机隔离：本地终端用 local，远程用资产 ID
+  const historyKey = assetId < 0 ? 'local' : `asset-${assetId}`;
+
+  // 幽灵文本渲染：用 xterm 官方 registerDecoration 按「单元格」定位，
+  // 而不是自己按 (容器宽-padding)/列数 估算像素——后者会因 fit 取整留边而整体偏移。
+  const renderGhost = useCallback((text: string) => {
+    ghostDecoRef.current?.dispose();
+    ghostDecoRef.current = null;
+    const term = termRef.current;
+    if (!term || !text) return;
+    try {
+      const marker = term.registerMarker(0); // 0 = 光标所在行
+      if (!marker) return;
+      const x = term.buffer.active.cursorX;
+      const room = Math.max(0, (term.cols || 80) - x);
+      if (room <= 0) return;
+      const deco = term.registerDecoration({ marker, x, width: Math.min(text.length, room), layer: 'top' });
+      if (!deco) { marker.dispose(); return; }
+      deco.onRender((el: HTMLElement) => {
+        if (el.dataset.ghost === text) return; // 每帧都会回调，内容没变就不重复写
+        el.dataset.ghost = text;
+        el.textContent = text;
+        // 字体必须显式对齐终端：装饰器元素不保证继承 .xterm 的字体，
+        // 字号/字族一旦不同，灰字与真实字符的字宽就对不上。
+        el.style.fontFamily = term.options.fontFamily || 'monospace';
+        el.style.fontSize = `${term.options.fontSize || 14}px`;
+        el.style.lineHeight = 'inherit';
+        el.style.color = 'rgba(148,163,184,0.55)';
+        el.style.whiteSpace = 'pre';
+        el.style.overflow = 'visible';
+        el.style.pointerEvents = 'none';
+        el.style.zIndex = '5';
+      });
+      ghostDecoRef.current = { dispose: () => { try { deco.dispose(); marker.dispose(); } catch { /* 已释放 */ } } };
+    } catch {
+      // 装饰器不可用（老版本 xterm / 渲染器未就绪）时静默降级为「没有幽灵提示」
+    }
+  }, []);
 
   // 估算光标在终端容器内的像素位置（用于补全下拉锚定）
   const computeAnchor = useCallback(() => {
@@ -896,18 +949,21 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   useEffect(() => { suggestionsRef.current = suggestions; }, [suggestions]);
   useEffect(() => { activeIdxRef.current = activeIdx; }, [activeIdx]);
   useEffect(() => { listOpenRef.current = listOpen; }, [listOpen]);
-  useEffect(() => { ghostRef.current = ghost; }, [ghost]);
 
   // 收起补全 UI（幽灵 + 列表），可选一并清空行缓冲
   const resetCompletion = useCallback((clearBuffer = false) => {
     if (clearBuffer) lineBufferRef.current = '';
     navigatedRef.current = false;
     ghostCmdRef.current = '';
-    setGhost('');
+    ghostRef.current = '';
+    renderGhost('');
     setListOpen(false);
     setSuggestions([]);
     setActiveIdx(0);
-  }, []);
+  }, [renderGhost]);
+
+  // 组件卸载时释放装饰器，避免 marker 泄漏
+  useEffect(() => () => { ghostDecoRef.current?.dispose(); }, []);
 
   // 命令库变更时热重载，并刷新当前提示
   useEffect(() => {
@@ -952,15 +1008,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     sendToShell(rest);
     lineBufferRef.current += rest;
     if (full) recordSnippetUsage(full);
-    setGhost('');
     ghostRef.current = '';
     ghostCmdRef.current = '';
+    renderGhost('');
     setListOpen(false);
     return true;
-  }, [sendToShell]);
+  }, [sendToShell, renderGhost]);
 
   // 依据当前缓冲刷新候选与幽灵文本。
-  // 幽灵只取「以当前输入为前缀」的最优候选（否则无法在光标后原样接续显示）。
+  // 幽灵只取「以当前输入为前缀」的候选（否则无法在光标后原样接续显示），
+  // 且优先用该主机的真实历史命令——静态命令库只是兜底。
   const refreshSuggestions = useCallback(() => {
     const buf = lineBufferRef.current;
     const list = buf ? matchSnippets(buf, snippetsRef.current) : [];
@@ -968,15 +1025,27 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     setActiveIdx(0);
     navigatedRef.current = false;
 
-    const lower = buf.toLowerCase();
-    const hit = buf ? list.find((s) => s.cmd.length > buf.length && s.cmd.toLowerCase().startsWith(lower)) : undefined;
-    const rest = hit ? hit.cmd.slice(buf.length) : '';
-    ghostCmdRef.current = hit ? hit.cmd : '';
+    // 抑制噪音：太短（1 个字符）、或正停在参数分隔的空格上时不出幽灵，
+    // 否则刚敲一个字母就冒出一截灰字，比不提示更烦。
+    const quiet = buf.trim().length < 2 || buf.endsWith(' ');
+    let full = '';
+    if (!quiet) {
+      const fromHistory = matchHistory(historyKey, buf);
+      if (fromHistory) {
+        full = fromHistory;
+      } else {
+        const lower = buf.toLowerCase();
+        const hit = list.find((s) => s.cmd.length > buf.length && s.cmd.toLowerCase().startsWith(lower));
+        full = hit ? hit.cmd : '';
+      }
+    }
+    const rest = full ? full.slice(buf.length) : '';
+    ghostCmdRef.current = full;
     ghostRef.current = rest;
-    setGhost(rest);
+    renderGhost(rest);
     if (!list.length) setListOpen(false);
-    setAnchor(list.length || rest ? computeAnchor() : null);
-  }, [computeAnchor]);
+    setAnchor(list.length ? computeAnchor() : null);
+  }, [computeAnchor, historyKey, renderGhost]);
 
   // 处理一段终端输入；返回 true 表示被补全逻辑消费（不再下发到 shell）
   const handleCompletionInput = useCallback((data: string): boolean => {
@@ -1039,8 +1108,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       return false;
     }
 
-    // 回车 / Ctrl-C / Ctrl-U：提交或清行 → 重置缓冲
-    if (data === '\r' || data === '\n' || data === '\x03' || data === '\x15') {
+    // 回车：把真实执行的命令记入该主机历史（后续行内补全的主要来源）
+    if (data === '\r' || data === '\n') {
+      recordHistory(historyKey, lineBufferRef.current);
+      resetCompletion(true);
+      return false;
+    }
+    // Ctrl-C / Ctrl-U：中断或清行 → 只重置缓冲，不入历史
+    if (data === '\x03' || data === '\x15') {
       resetCompletion(true);
       return false;
     }
@@ -1963,28 +2038,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </div>
         )}
 
-        {/* 行内幽灵补全：光标后的灰色残余文本，与终端同字体同字号，→/Tab 接受 */}
-        {completionEnabled && status === 'connected' && ghost && anchor && !listOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              zIndex: 13,
-              left: anchor.left,
-              top: anchor.top,
-              height: anchor.cellH,
-              lineHeight: `${anchor.cellH}px`,
-              maxWidth: Math.max(0, anchor.cw - anchor.left - 8),
-              overflow: 'hidden',
-              whiteSpace: 'pre',
-              pointerEvents: 'none',
-              fontFamily,
-              fontSize,
-              color: 'rgba(148,163,184,0.62)',
-            }}
-          >
-            {ghost}
-          </div>
-        )}
+        {/* 行内幽灵补全由 xterm registerDecoration 直接画在单元格网格上（见 renderGhost），
+            不再用 DOM 浮层估算像素位置——那样会因 fit 取整留边而整体偏移。 */}
 
         {/* 候选列表：仅 Ctrl+空格 显式打开时出现，锚定光标避免遮挡输入 */}
         {completionEnabled && status === 'connected' && listOpen && suggestions.length > 0 && anchor && (
