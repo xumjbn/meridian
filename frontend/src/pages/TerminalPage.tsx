@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { LogoMark, LogoWordmark } from '../components/Logo';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { palette } from '../theme';
@@ -1164,6 +1164,38 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     return false;
   }, [acceptSuggestion, acceptGhost, refreshSuggestions, resetCompletion, computeAnchor]);
 
+  // ── 跟踪 shell 的当前工作目录（供「文件」面板直接落到该目录）──
+  // 拿到交互式 shell 的 cwd 是这类功能最难的一步：另开 exec 通道跑 pwd 只会
+  // 得到家目录，本地记 cd 又太脆。这里用两条互补的被动通道：
+  //   1) OSC 7：shell 配置了该上报时会主动推送 file://host/path，最准确
+  //   2) 窗口标题：多数发行版默认 PS1 会把 \u@\h:\w 写进标题，从中解析路径
+  // 都拿不到时留空，文件面板回落到家目录（与原有行为一致）。
+  const cwdRef = useRef('');
+  const bindCwdTracking = useCallback((term: Terminal) => {
+    try {
+      term.parser.registerOscHandler(7, (data: string) => {
+        const m = /^file:\/\/[^/]*(\/.*)$/.exec(String(data).trim());
+        if (m) cwdRef.current = decodeURIComponent(m[1]);
+        return false; // 不拦截，继续走默认处理
+      });
+    } catch {
+      /* 老版本 xterm 无该 API：忽略，退到标题解析 */
+    }
+    term.onTitleChange((title) => {
+      // 形如 user@host: /var/log 或 user@host:~/work
+      const m = /:\s*(~?\/[^\s]*)\s*$/.exec(title || '');
+      if (m) cwdRef.current = m[1];
+    });
+  }, []);
+
+  // 打开文件管理并直接进入当前目录（远程主机走 SFTP）
+  const openFilesHere = useCallback(() => {
+    if (!asset) return;
+    window.dispatchEvent(
+      new CustomEvent('lynx-open-sftp', { detail: { asset, path: cwdRef.current } }),
+    );
+  }, [asset]);
+
   // ── 节日特效口令识别 ─────────────────────────────────────
   // 单独维护一小段行缓冲：原先这段逻辑写在补全处理函数里，
   // 用户一旦关掉「命令补全」开关，口令就再也触发不了。
@@ -1177,7 +1209,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       festLineRef.current = '';
       const birthday = EASTER_EGG_BIRTHDAY_RE.test(line);
       if (birthday || EASTER_EGG_RE.test(line)) {
-        sendToShell(String.fromCharCode(NAK)); // Ctrl-U 清行，免得 shell 报 command not found
+        // 用退格逐字擦掉已输入内容：Ctrl-U 在 PowerShell 里不清行，
+        // 反而会把 ^U 原样回显到屏幕上；退格则 bash / PowerShell 都认。
+        sendToShell(String.fromCharCode(DEL).repeat(line.length));
         fireEasterEgg(birthday ? 'birthday' : undefined); // 不指定则按当天日期选节日主题
         return true;
       }
@@ -1294,6 +1328,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       allowProposedApi: true,
     });
     termRef.current = term;
+    bindCwdTracking(term);
 
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
@@ -1948,6 +1983,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               icon={isMaximized ? <ShrinkOutlined /> : <ExpandAltOutlined />}
               onClick={onToggleMaximize}
               title={isMaximized ? '还原分屏' : '最大化此分屏'}
+              style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+            />
+          )}
+          {!isLocal && status === 'connected' && (
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={openFilesHere}
+              title="文件管理（直接进入终端当前所在目录）"
               style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
             />
           )}

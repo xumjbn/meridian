@@ -85,9 +85,17 @@ const AppLayout: React.FC = () => {
 
   // 侧栏主机右键菜单触发的全局动作：打开 SFTP / 跳转页面
   const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
+  const [sftpPath, setSftpPath] = useState('');
   const [sftpOpen, setSftpOpen] = useState(false);
   useEffect(() => {
-    const onSftp = (e: Event) => { setSftpAsset((e as CustomEvent<Asset>).detail); setSftpOpen(true); };
+    // 事件载荷兼容两种形态：资产本身（侧栏右键），或 { asset, path }（终端里带当前目录打开）
+    const onSftp = (e: Event) => {
+      const d = (e as CustomEvent<Asset | { asset: Asset; path?: string }>).detail;
+      const isWrapped = !!d && typeof d === 'object' && 'asset' in d;
+      setSftpAsset(isWrapped ? (d as { asset: Asset }).asset : (d as Asset));
+      setSftpPath(isWrapped ? (d as { path?: string }).path || '' : '');
+      setSftpOpen(true);
+    };
     const onNav = (e: Event) => {
       const p = (e as CustomEvent<string>).detail;
       if (p) { navigate(p); setActive(null); }
@@ -290,7 +298,7 @@ const AppLayout: React.FC = () => {
         <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
 
         {/* 侧栏主机右键「文件传输」打开的 SFTP 抽屉 */}
-        <SftpDrawer asset={sftpAsset} open={sftpOpen} onClose={() => setSftpOpen(false)} />
+        <SftpDrawer asset={sftpAsset} open={sftpOpen} initialPath={sftpPath} onClose={() => setSftpOpen(false)} />
       </div>
     </ConfigProvider>
   );

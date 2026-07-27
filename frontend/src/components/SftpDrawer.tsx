@@ -29,6 +29,8 @@ interface Props {
   asset: Asset | null;
   open: boolean;
   onClose: () => void;
+  /** 初始目录：从终端打开时传入 shell 的当前工作目录；留空则落到家目录 */
+  initialPath?: string;
 }
 
 const fmtSize = (n: number, isDir: boolean): string => {
@@ -51,7 +53,7 @@ const joinPath = (dir: string, name: string): string => {
   return dir.replace(/\/+$/, '') + '/' + name;
 };
 
-export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose }) => {
+export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose, initialPath }) => {
   const [path, setPath] = useState('');
   const [entries, setEntries] = useState<SftpEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -83,13 +85,13 @@ export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose }) => {
 
   useEffect(() => {
     if (open && asset?.id && !noCred) {
-      load('');
+      load(initialPath || '');
     } else {
       setEntries([]);
       setPath('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, asset?.id]);
+  }, [open, asset?.id, initialPath]);
 
   const handleUpload = async (file: File) => {
     if (!asset?.id) return;

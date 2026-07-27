@@ -6,8 +6,8 @@ import { resolveTheme, type EggTheme } from '../festivals';
 // 彩蛋：一段有编排的粒子演出（纯 canvas，无第三方依赖）
 //
 // 单一效果不够看，关键在「同一批粒子在几个形态之间变形」：
-//   0.0s 烟花绽放  → 1.2s 聚成会搏动的心形
-//   → 4.2s 心形炸开、重组为 I LOVE U → 7.2s 化作星尘上飘 → 9.2s 收场
+//   0.0s 烟花绽放 → 1.6s 聚成会搏动的心 → 5.6s 主题词 → 9.6s WJW
+//   → 13.0s FOREVER → 15.4s 化作星尘 → 17.2s 收场（每幕留足停顿）
 // 全程叠加：背景星空、心跳扩散波纹、鼠标引力（划过可拨开粒子）。
 //
 // 触发方式（刻意不做「连续可见字符」匹配——那会把口令实打进搜索框/表单）：
@@ -36,12 +36,14 @@ const KONAMI = [
   'b', 'a',
 ];
 
-// 演出时间轴（毫秒）——四幕表白，总长约 10.5s
-const T_HEART = 1100;    // 幕一：聚成会搏动的心
-const T_TEXT = 4100;     // 幕二：I LOVE U
-const T_NAME = 6900;     // 幕三：WJW
-const T_DISSOLVE = 9200; // 幕四：化作星尘
-const T_END = 10600;
+// 演出时间轴（毫秒）——五幕，总长约 17s。
+// 节奏刻意放慢：每一幕都留足停顿，让字幕读得完、字形看得清。
+const T_HEART = 1600;     // 幕一：聚成会搏动的心
+const T_TEXT = 5600;      // 幕二：主题词（I LOVE U / HAPPY BIRTHDAY …）
+const T_NAME = 9600;      // 幕三：WJW
+const T_FOREVER = 13000;  // 幕四：FOREVER
+const T_DISSOLVE = 15400; // 幕五：化作星尘
+const T_END = 17200;
 
 type Stage = 'burst' | 'heart' | 'text' | 'dissolve';
 
@@ -136,7 +138,7 @@ export const EasterEgg: React.FC = () => {
       i += 1;
       setTyped(caption.slice(0, i));
       if (i >= caption.length) window.clearInterval(id);
-    }, 62);
+    }, 88);
     return () => window.clearInterval(id);
   }, [caption]);
 
@@ -298,7 +300,7 @@ export const EasterEgg: React.FC = () => {
     // ── 时间轴编排 ──
     const at = (ms: number, fn: () => void) => timersRef.current.push(window.setTimeout(fn, ms));
     const th = themeRef.current;
-    const CUES = [0, T_HEART, T_TEXT, T_NAME, T_DISSOLVE];
+    const CUES = [0, T_HEART, T_TEXT, T_NAME, T_FOREVER];
     th.captions.forEach((text, i) => at(CUES[i], () => { setCaption(text); setTyped(''); }));
     burst(cx(), cy() - 40);
     at(240, () => burst(cx() - W() * 0.22, cy() - 60));
@@ -323,7 +325,18 @@ export const EasterEgg: React.FC = () => {
       at(380, () => assign(textPoints(th.shapes[1], Math.min(W() * 0.55, 760))));
       burst(cx(), cy() - 30);
     });
-    at(T_DISSOLVE, () => { setStage('dissolve'); scatter(3.2); });
+    at(T_FOREVER, () => {
+      setStage('text');
+      scatter(4.6);
+      at(380, () => assign(textPoints('FOREVER', Math.min(W() * 0.7, 980))));
+      burst(cx(), cy() - 20);
+    });
+    at(T_DISSOLVE, () => {
+      setStage('dissolve');
+      scatter(3.0);
+      setCaption('永远爱你！');
+      setTyped('');
+    });
     at(T_END, close);
 
     const shoot = () => burst(W() * (0.12 + Math.random() * 0.76), H() * (0.16 + Math.random() * 0.4));
@@ -414,10 +427,10 @@ export const EasterEgg: React.FC = () => {
           const gx = cx() + p.tx * (stageRef.current === 'heart' ? k : scaleNow);
           const gy = cy() + p.ty * (stageRef.current === 'heart' ? k : scaleNow);
           // 弹簧 + 阻尼，聚拢时有轻微过冲，观感比线性缓动灵动
-          p.vx += (gx - p.x) * 0.045;
-          p.vy += (gy - p.y) * 0.045;
-          p.vx *= 0.80;
-          p.vy *= 0.80;
+          p.vx += (gx - p.x) * 0.030;
+          p.vy += (gy - p.y) * 0.030;
+          p.vx *= 0.845;
+          p.vy *= 0.845;
           // 到位后加一点微抖，避免死板
           p.x += p.vx + Math.sin(elapsed / 500 + p.ph) * 0.18;
           p.y += p.vy + Math.cos(elapsed / 520 + p.ph) * 0.18;

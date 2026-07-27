@@ -11,7 +11,7 @@ export const brand = {
   name: 'wjw',
   zh: 'wjw',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.78',
+  version: 'v0.79',
   repo: 'https://github.com/',
 } as const;
 
