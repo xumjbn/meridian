@@ -13,7 +13,9 @@ SHELL := /bin/bash
 
 ROOT     := $(shell pwd)
 BINDIR   := frontend/src-tauri/binaries
-APP_NAME := Lynx
+# 应用名必须与 tauri.conf.json 的 productName 一致，否则打包产物路径对不上
+# （Tauri 按 productName 命名 .app / 安装包）
+APP_NAME := $(shell node -p "require('./frontend/src-tauri/tauri.conf.json').productName" 2>/dev/null || echo wjw)
 BUNDLE   := frontend/src-tauri/target/release/bundle
 UBUNDLE  := frontend/src-tauri/target/universal-apple-darwin/release/bundle
 # Rust 宿主三元组（如 aarch64-apple-darwin / x86_64-apple-darwin）
