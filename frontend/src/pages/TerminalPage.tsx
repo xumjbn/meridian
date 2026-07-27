@@ -8,6 +8,7 @@ import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined
 import { LogoMark, LogoWordmark } from '../components/Logo';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { saveBlob } from '../saveFile';
+import { LiveMetricsBar } from '../components/LiveMetricsBar';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
 import { SnippetManager } from '../components/SnippetManager';
@@ -49,6 +50,25 @@ const termThemes: { label: string; value: string; theme: TermTheme }[] = [
   { label: 'Solarized 亮', value: 'sol-light', theme: {
     background: '#fdf6e3', foreground: '#586e75', cursor: '#586e75', black: '#073642', red: '#dc322f',
     green: '#859900', yellow: '#b58900', blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5' } },
+  // ── 经典配色 ──────────────────────────────────────────────
+  { label: 'One Dark', value: 'one-dark', theme: {
+    background: '#282c34', foreground: '#abb2bf', cursor: '#528bff', black: '#3f4451', red: '#e06c75',
+    green: '#98c379', yellow: '#e5c07b', blue: '#61afef', magenta: '#c678dd', cyan: '#56b6c2', white: '#d7dae0' } },
+  { label: 'Nord', value: 'nord', theme: {
+    background: '#2e3440', foreground: '#d8dee9', cursor: '#d8dee9', black: '#3b4252', red: '#bf616a',
+    green: '#a3be8c', yellow: '#ebcb8b', blue: '#81a1c1', magenta: '#b48ead', cyan: '#88c0d0', white: '#e5e9f0' } },
+  { label: 'Gruvbox 暗', value: 'gruvbox-dark', theme: {
+    background: '#282828', foreground: '#ebdbb2', cursor: '#ebdbb2', black: '#3c3836', red: '#fb4934',
+    green: '#b8bb26', yellow: '#fabd2f', blue: '#83a598', magenta: '#d3869b', cyan: '#8ec07c', white: '#ebdbb2' } },
+  { label: 'Tokyo Night', value: 'tokyo-night', theme: {
+    background: '#1a1b26', foreground: '#c0caf5', cursor: '#c0caf5', black: '#15161e', red: '#f7768e',
+    green: '#9ece6a', yellow: '#e0af68', blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6' } },
+  { label: 'Tomorrow Night', value: 'tomorrow-night', theme: {
+    background: '#1d1f21', foreground: '#c5c8c6', cursor: '#c5c8c6', black: '#000000', red: '#cc6666',
+    green: '#b5bd68', yellow: '#f0c674', blue: '#81a2be', magenta: '#b294bb', cyan: '#8abeb7', white: '#ffffff' } },
+  { label: 'Campbell (Windows)', value: 'campbell', theme: {
+    background: '#0c0c0c', foreground: '#cccccc', cursor: '#ffffff', black: '#0c0c0c', red: '#c50f1f',
+    green: '#13a10e', yellow: '#c19c00', blue: '#0037da', magenta: '#881798', cyan: '#3a96dd', white: '#cccccc' } },
   { label: 'GitHub 亮', value: 'gh-light', theme: {
     background: '#ffffff', foreground: '#24292e', cursor: '#044289', black: '#24292e', red: '#d73a49',
     green: '#28a745', yellow: '#dbab09', blue: '#0366d6', magenta: '#5a32a3', cyan: '#0598bc', white: '#6a737d' } },
@@ -1983,6 +2003,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               title={isMaximized ? '还原分屏' : '最大化此分屏'}
               style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
             />
+          )}
+          {!isLocal && status === 'connected' && (
+            <LiveMetricsBar assetId={assetId} active={status === 'connected'} />
           )}
           {!isLocal && status === 'connected' && (
             <Button

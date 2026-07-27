@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Modal, Form, Input, Select, Popconfirm, Upload, message } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, SafetyCertificateOutlined, ApiOutlined, UploadOutlined } from '@ant-design/icons';
 import { getCredentials, createCredential, updateCredential, deleteCredential, testCredential, type Credential, type CredTestResult } from '../services/api';
-import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
 const { Option } = Select;
@@ -197,15 +196,13 @@ export const Credentials: React.FC = () => {
 
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
-      <PageHeader
-        title="凭据保管箱"
-        subtitle="集中管理服务器与网络设备的 SSH/Telnet 账号及证书，用于自动发现与一键连接"
-        icon={<SafetyCertificateOutlined />}
-      />
 
       <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
+            title="凭据保管箱"
+            subtitle="集中管理服务器与网络设备的 SSH/Telnet 账号及证书"
+            icon={<SafetyCertificateOutlined />}
             onRefresh={fetchCredentials}
             loading={loading}
             left={

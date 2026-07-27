@@ -67,7 +67,6 @@ import {
   type User,
   type Tag as GlobalTag
 } from '../services/api';
-import { PageHeader } from '../components/PageHeader';
 import { SftpDrawer } from '../components/SftpDrawer';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
@@ -976,16 +975,14 @@ export const Assets: React.FC = () => {
 
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
-      <PageHeader
-        title="资产清单"
-        subtitle="登记并维护物理主机与网络设备，支持端口探测与一键交互式 SSH 会话"
-        icon={<DatabaseOutlined />}
-      />
 
       <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={groupBy === 'none' ? tablePanelStyle : { ...tablePanelStyle, background: 'transparent', border: 'none' }}>
           {/* 工具栏：左=新建/批量操作，右=检索/过滤/分组 */}
           <TableToolbar
+            title="资产清单"
+            subtitle="登记并维护物理主机与网络设备，支持端口探测与一键交互式 SSH 会话"
+            icon={<DatabaseOutlined />}
             onRefresh={fetchAssets}
             loading={loading}
             selectedCount={groupBy === 'none' ? selectedRowKeys.length : 0}

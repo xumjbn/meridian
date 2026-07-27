@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Button, Card, Modal, Form, Input, InputNumber, Select, message, Table, Tag, Space,
-  Popconfirm, Drawer, Empty, Tooltip, Tabs, Statistic, Alert,
+  Popconfirm, Drawer, Empty, Tooltip, Tabs, Statistic, Alert, Dropdown,
 } from 'antd';
 import {
   CloudServerOutlined, PlusOutlined, ReloadOutlined, LinkOutlined, EditOutlined,
@@ -10,7 +10,7 @@ import {
 import {
   getK8sClusters, createK8sCluster, updateK8sCluster, deleteK8sCluster, getK8sCluster,
   getUnassignedK8sNodes, assignK8sNodes, unassignK8sNode, getK8sConsole, getCredentials,
-  getK8sOverview, getK8sLiveNodes, getK8sLivePods, autoClassifyK8s, detectK8sConsole,
+  getK8sOverview, getK8sLiveNodes, getK8sLivePods, autoClassifyK8s, detectK8sConsole, syncK8sNodes,
   type K8sCluster, type Asset, type Credential, type K8sLiveNode, type K8sLivePod, type K8sOverview,
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
@@ -262,6 +262,44 @@ export const K8sClusters: React.FC = () => {
     }
   };
 
+  // 按 kube API 节点表同步归类：不依赖 SSH，也不依赖节点上的 /etc/hosts 标记，
+  // 集群配了 Token 就能一次把整个集群的节点归位。
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+  const runSyncNodes = async (cl: K8sCluster, createMissing: boolean) => {
+    setSyncingId(cl.id!);
+    try {
+      const r = await syncK8sNodes(cl.id!, createMissing);
+      const skipped = r.details.filter((d) => d.action === 'skipped');
+      Modal.info({
+        title: `节点同步结果 — ${cl.name}`,
+        width: 620,
+        content: (
+          <div style={{ marginTop: 8 }}>
+            <p>
+              API 返回 {r.total} 个节点：归类 <b>{r.assigned}</b>、更新 <b>{r.updated}</b>
+              {createMissing && <>、补录新资产 <b>{r.created}</b></>}。
+            </p>
+            {skipped.length > 0 && (
+              <div style={{ marginTop: 8, maxHeight: 260, overflowY: 'auto' }}>
+                <div style={{ color: palette.warning, marginBottom: 4 }}>未处理 {skipped.length} 个：</div>
+                {skipped.map((d) => (
+                  <div key={d.ip || d.name} style={{ fontSize: 12, fontFamily: 'monospace', color: palette.textMute }}>
+                    {d.name} {d.ip} — {d.msg}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ),
+      });
+      load();
+    } catch (e: any) {
+      message.error(e?.message || '节点同步失败');
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
   const toTerminal = (a: Asset) => a.id && openTerminal({ id: a.id, name: a.name, ip: a.ip });
 
   const phaseColor = (p: string) =>
@@ -373,6 +411,23 @@ export const K8sClusters: React.FC = () => {
                   <Tooltip title="探测该 VIP 上控制台的真实入口路径、类型与版本，并写回配置">
                     <Button size="small" icon={<ApiOutlined />} loading={detectingId === cl.id} onClick={() => runDetectConsole(cl)}>探测控制台</Button>
                   </Tooltip>
+                  {cl.has_token && (
+                    <Tooltip title="从 kube-apiserver 拉节点清单并按 IP 归类到本集群（不需要 SSH，也不依赖 /etc/hosts 标记）">
+                      <Dropdown
+                        menu={{
+                          items: [
+                            { key: 'match', label: '仅归类已有资产' },
+                            { key: 'create', label: '同时补录缺失节点为新资产' },
+                          ],
+                          onClick: ({ key }) => runSyncNodes(cl, key === 'create'),
+                        }}
+                      >
+                        <Button size="small" icon={<CloudServerOutlined />} loading={syncingId === cl.id}>
+                          同步节点
+                        </Button>
+                      </Dropdown>
+                    </Tooltip>
+                  )}
                   <Button size="small" onClick={() => openNodes(cl)}>节点{cl.has_token ? ' / 看板' : ''}</Button>
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(cl)} />
                   <Popconfirm title={`删除集群「${cl.name}」？节点会被解除归属但保留`} onConfirm={() => remove(cl.id!)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>

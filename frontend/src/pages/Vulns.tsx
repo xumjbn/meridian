@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Table, Tag, Typography, message } from 'antd';
 import { BugOutlined } from '@ant-design/icons';
 import { getVulns, type VulnFinding } from '../services/api';
-import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
 
@@ -80,11 +79,10 @@ export const Vulns: React.FC = () => {
 
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
-      <PageHeader title="漏洞发现" subtitle="nuclei 漏洞扫描结果" icon={<BugOutlined />} />
 
       <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
-          <TableToolbar onRefresh={load} loading={loading} />
+          <TableToolbar title="漏洞发现" subtitle="nuclei 漏洞扫描结果" icon={<BugOutlined />} onRefresh={load} loading={loading} />
           <Table
             className="lynx-table"
             columns={columns}

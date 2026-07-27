@@ -1,11 +1,11 @@
 # Lynx 架构设计文档 (Architecture Design)
 
-> **产品**：Lynx · 猞猁 — 网络资产发现与统一接入平台
+> **产品**：wjw — 网络资产发现与统一接入平台
 > **文档版本**：v6.0（2026-06）· 对应应用版本 **v0.64**
 
 本文档描述 Lynx 的整体技术架构、模块职责，以及关键机制（资产发现、终端代理、SSE/WebSocket/SFTP 数据流、AI Agent、Kubernetes 管理、认证与多租户）的实现逻辑。所有内容以 `backend/`、`frontend/` 现有源码为准。
 
-> 关于历史命名：项目前身为 **Meridian / 子午**，现已**全面更名为 Lynx / 猞猁**，代码、文档与技术标识中不再保留旧名。
+> 关于历史命名：项目前身为 **Meridian / 子午**，现已**全面更名为 wjw**，代码、文档与技术标识中不再保留旧名。
 >
 > 更名涉及三处会影响既有数据的标识，均已做兼容迁移，老版本升级不会丢数据：
 > - **桌面端数据库**：Tauri identifier `cn.meridian.desktop` → `cn.lynx.desktop`（数据目录随之改变），库文件 `meridian.db` → `lynx.db`。启动时若新库不存在，会自动从「同目录旧文件名」或「旧标识符目录」拷贝老库（见 `src-tauri/src/main.rs`）。
@@ -58,7 +58,7 @@ graph TD
 | **桌面端 (Tauri v2)** | 原生窗口 + WebView | sidecar `127.0.0.1:8765` | 用户数据目录下 `lynx.db` | 默认开启（`LYNX_LOCAL_SHELL=1`） |
 | **前端 dev** | `http://localhost:5173`（Vite） | 代理 `/api` → `127.0.0.1:8080`（含 WS） | — | — |
 
-后端默认仅监听 `127.0.0.1:8080`，由环境变量 `LISTEN_ADDR` 覆盖。启动日志横幅：`Lynx · 猞猁 — 网络资产发现与统一接入平台`。
+后端默认仅监听 `127.0.0.1:8080`，由环境变量 `LISTEN_ADDR` 覆盖。启动日志横幅：`wjw — 网络资产发现与统一接入平台`。
 
 ---
 
@@ -79,7 +79,7 @@ graph TD
 
 ### 2.3 桌面端
 - **Tauri v2（Rust）+ Go sidecar**：外部二进制 `binaries/lynx-backend` 由 Tauri 启动。
-- productName=`Lynx`，window title=`Lynx · 猞猁`，identifier=`cn.lynx.desktop`，version=`0.64.0`，CSP=`null`。
+- productName=`Lynx`，window title=`wjw`，identifier=`cn.lynx.desktop`，version=`0.64.0`，CSP=`null`。
 - Tauri 插件：`shell`（启动 sidecar、外链走系统浏览器）、`clipboard-manager`（系统剪贴板）。
 - sidecar 注入环境：`LISTEN_ADDR=127.0.0.1:8765`、`LYNX_DB`（应用数据目录下 `lynx.db`）、`LYNX_LOCAL_SHELL=1`、`TZ=Asia/Shanghai`；窗口销毁时 kill 子进程。
 - **桌面端免登录**：前端后台自动用默认管理员凭据登录（依次尝试 `admin/admin`、`admin/123456`，每次 8s 超时、最多 40 轮重试），全部失败才落登录页。
@@ -110,7 +110,7 @@ graph TD
 - **Login / ForcePasswordChange**：登录 + 开放注册（注册账号需管理员审批）；首登强制改密（旧密码留空，后端在此流程跳过旧密码校验）。
 
 #### 组件 `components/*`
-`PageHeader`（页头）、`GlobalSearch`（Ctrl/Cmd+K 检索资产与页面）、`SnippetManager`（命令片段 CRUD）、`SftpDrawer`（SFTP 文件浏览抽屉）、`QuickConnect`（主机树/拖拽到分屏/右键菜单）、`UserMenu`（改密/登出）、`CommandPalette`（Ctrl/Cmd+Shift+P 命令面板）、`ShortcutHelp`（快捷键速查）、`Logo`（猞猁头 SVG）、`TerminalAIPanel`（终端右下角悬浮 AI 助手）、`TerminalTabBar`（标签条：拖拽排序/重命名/换色/活动提示）。
+`PageHeader`（页头）、`GlobalSearch`（Ctrl/Cmd+K 检索资产与页面）、`SnippetManager`（命令片段 CRUD）、`SftpDrawer`（SFTP 文件浏览抽屉）、`QuickConnect`（主机树/拖拽到分屏/右键菜单）、`UserMenu`（改密/登出）、`CommandPalette`（Ctrl/Cmd+Shift+P 命令面板）、`ShortcutHelp`（快捷键速查）、`Logo`（wjw 字母组合徽标 SVG）、`TerminalAIPanel`（终端右下角悬浮 AI 助手）、`TerminalTabBar`（标签条：拖拽排序/重命名/换色/活动提示）。
 
 #### 状态与服务
 - **`terminalSessions.tsx`**：终端会话 Context（`TerminalProvider`/`useTerminals`）。管理标签集合、活动标签、活动提示点、拖拽排序、标签名/颜色持久化（`localStorage`）；**命令同步广播**：维护已连接物理 WebSocket 句柄注册表，`broadcastGlobalData` 把输入广播到同步集合内的所有面板/标签（"一处键入、处处执行"）。

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Modal, Form, Input, Select, Tag, Popconfirm, message } from 'antd';
 import { PlusOutlined, DeleteOutlined, KeyOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { getUsers, createUser, updateUser, deleteUser, type User } from '../services/api';
-import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
 
@@ -202,11 +201,13 @@ export const Users: React.FC = () => {
 
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
-      <PageHeader title="用户管理" subtitle="管理平台登录账户的角色、状态与密码" icon={<TeamOutlined />} />
 
       <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
+            title="用户管理"
+            subtitle="管理平台登录账户的角色、状态与密码"
+            icon={<TeamOutlined />}
             onRefresh={fetchUsers}
             loading={loading}
             left={

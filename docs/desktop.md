@@ -1,4 +1,4 @@
-# Lynx · 猞猁 桌面端（Tauri v2 + Go sidecar）
+# wjw 桌面端（Tauri v2 + Go sidecar）
 
 > 当前版本 **v0.64**
 
@@ -17,7 +17,7 @@
 - 数据库落在系统应用数据目录（`app_data_dir/lynx.db`），卸载 / 重装不丢。
 - 应用退出时 Tauri 会一并 `kill` sidecar 子进程（见 `main.rs` 的 `WindowEvent::Destroyed`）。
 
-工程关键标识（**底层技术标识符，勿改**）：productName `Lynx`、窗口标题 `Lynx · 猞猁`、Tauri identifier `cn.lynx.desktop`、version `0.64.0`、CSP `null`、sidecar 二进制名 `lynx-backend`。
+工程关键标识（**底层技术标识符，勿改**）：productName `Lynx`、窗口标题 `wjw`、Tauri identifier `cn.lynx.desktop`、version `0.64.0`、CSP `null`、sidecar 二进制名 `lynx-backend`。
 
 文件位置：`frontend/src-tauri/`（Tauri 工程）、`scripts/build-sidecar.{sh,ps1}`（构建后端 sidecar）、`scripts/build-desktop.ps1`（Windows 一键）、`scripts/make-dmg.sh`（hdiutil 出 dmg）、`.github/workflows/desktop.yml`（CI 出三平台安装包）。
 

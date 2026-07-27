@@ -369,6 +369,26 @@ export const getK8sConsole = (clusterId: number): Promise<{ url: string; usernam
 /** 探测控制台真实路径 / 类型 / 版本，并写回集群配置 */
 export const detectK8sConsole = (clusterId: number): Promise<{ best: ConsoleProbe; candidates: ConsoleProbe[] }> =>
   api.post(`/k8s/clusters/${clusterId}/detect-console`);
+
+/** 按 kube API 节点表同步归类的单条结果 */
+export interface SyncNodeResult {
+  ip: string;
+  name: string;
+  role: string;
+  matched: boolean;
+  action: 'assigned' | 'updated' | 'created' | 'skipped';
+  msg?: string;
+}
+export interface SyncNodesResult {
+  total: number;
+  assigned: number;
+  updated: number;
+  created: number;
+  details: SyncNodeResult[];
+}
+/** 从 kube-apiserver 拉节点清单并归类（不依赖 SSH 与 /etc/hosts 标记） */
+export const syncK8sNodes = (clusterId: number, createMissing: boolean): Promise<SyncNodesResult> =>
+  api.post(`/k8s/clusters/${clusterId}/sync-nodes?create_missing=${createMissing ? 1 : 0}`);
 // Phase 3：实时看板（调 kube-apiserver）
 export const getK8sOverview = (id: number): Promise<K8sOverview> => api.get(`/k8s/clusters/${id}/overview`);
 export const getK8sLiveNodes = (id: number): Promise<K8sLiveNode[]> => api.get(`/k8s/clusters/${id}/live/nodes`);
@@ -570,6 +590,31 @@ export const getLocalTerminalWsUrl = (): string => {
   }
   return `${protocol}//${window.location.host}/api/ws/local-terminal${q}`;
 };
+
+/** 实时资源监控 WebSocket（后端常驻一条 SSH 连接周期采样推送） */
+export const getMetricsWsUrl = (assetId: number): string => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const token = localStorage.getItem('lynx-token') || '';
+  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  if (BACKEND_ORIGIN) return `ws://127.0.0.1:8765/api/ws/metrics/${assetId}${q}`;
+  if (import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return `${protocol}//127.0.0.1:8080/api/ws/metrics/${assetId}${q}`;
+  }
+  return `${protocol}//${window.location.host}/api/ws/metrics/${assetId}${q}`;
+};
+
+/** 实时资源监控推送帧 */
+export interface LiveMetrics {
+  ok: boolean;
+  message?: string;
+  os?: string;
+  cpu_percent?: number;
+  mem_used_kb?: number;
+  mem_total_kb?: number;
+  disk_used_kb?: number;
+  disk_total_kb?: number;
+  ts?: number;
+}
 
 // WebSocket URL 辅助函数（浏览器 WebSocket 无法设置请求头，token 走查询参数）
 export const getTerminalWsUrl = (assetId: number): string => {

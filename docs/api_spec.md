@@ -1,6 +1,6 @@
 # Lynx 接口定义文档 (API Specification)
 
-> 产品：Lynx · 猞猁 — 网络资产发现与统一接入平台 · 对应应用版本 **v0.64**
+> 产品：wjw — 网络资产发现与统一接入平台 · 对应应用版本 **v0.64**
 
 本文档定义前后端交互的 RESTful API、WebSocket 终端协议与 SSE 流。内容以后端路由（`backend/cmd/server/main.go`）、各 handler 的请求体绑定与返回结构、`backend/internal/model/models.go` 实体 json tag 为准。
 

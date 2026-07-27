@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Table, Tag, Input, Select, Button, Space, message } from 'antd';
 import { FileSearchOutlined } from '@ant-design/icons';
 import { getAuditLogs, type AuditLog } from '../services/api';
-import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
 
@@ -136,15 +135,13 @@ export const Audit: React.FC = () => {
 
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
-      <PageHeader
-        title="审计日志"
-        subtitle="记录所有写操作的操作人、动作、结果与来源 IP"
-        icon={<FileSearchOutlined />}
-      />
 
       <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
+            title="审计日志"
+            subtitle="记录所有写操作的操作人、动作、结果与来源 IP"
+            icon={<FileSearchOutlined />}
             onRefresh={fetchLogs}
             loading={loading}
             left={

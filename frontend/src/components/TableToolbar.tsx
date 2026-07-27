@@ -1,9 +1,15 @@
 import React from 'react';
 import { Button, Tooltip } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
 
 interface Props {
+  /** 页标题：并入工具栏同一行，省掉独立的页标题横条（顶部本已有全局导航栏） */
+  title?: string;
+  /** 标题右侧的浅色说明；过长时收进 ⓘ 提示 */
+  subtitle?: string;
+  /** 标题前的小图标 */
+  icon?: React.ReactNode;
   /** 左侧：主操作 + 批量操作按钮组 */
   left?: React.ReactNode;
   /** 右侧：搜索框 / 筛选器 */
@@ -22,6 +28,9 @@ interface Props {
 // 位于页标题与表格之间，白底与表格同卡，不额外描边。
 // ─────────────────────────────────────────────────────────────
 export const TableToolbar: React.FC<Props> = ({
+  title,
+  subtitle,
+  icon,
   left,
   right,
   onRefresh,
@@ -40,6 +49,18 @@ export const TableToolbar: React.FC<Props> = ({
       borderBottom: `1px solid ${palette.border}`,
     }}
   >
+    {title && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 8, minWidth: 0 }}>
+        {icon && <span style={{ color: palette.primary, fontSize: 15, display: 'inline-flex' }}>{icon}</span>}
+        <span style={{ fontSize: 15, fontWeight: 500, color: palette.text, whiteSpace: 'nowrap' }}>{title}</span>
+        {subtitle && (
+          <Tooltip title={subtitle}>
+            <InfoCircleOutlined style={{ color: palette.textMute, fontSize: 12, cursor: 'help' }} />
+          </Tooltip>
+        )}
+        <span style={{ width: 1, height: 16, background: palette.border, marginLeft: 4 }} />
+      </div>
+    )}
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{left}</div>
 
     {selectedCount > 0 && (

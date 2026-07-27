@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Table, Button, Space, Modal, Form, Input, Badge, Popconfirm, message, Select, Spin, Tag, Checkbox } from 'antd';
 import { PlusOutlined, PlayCircleOutlined, HistoryOutlined, EditOutlined, DeleteOutlined, CloseOutlined, RadarChartOutlined } from '@ant-design/icons';
 import { getScanTasks, createScanTask, updateScanTask, deleteScanTask, runScanTask, stopScanTask, getScanLogs, getScanStreamUrl, type ScanTask, type ScanLog } from '../services/api';
-import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
 
@@ -431,16 +430,14 @@ export const ScanTasks: React.FC = () => {
 
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
-      <PageHeader
-        title="自动发现"
-        subtitle="配置并触发端口网段发现任务，自动将在线主机录入资产清单"
-        icon={<RadarChartOutlined />}
-      />
 
       <div style={{ padding: pagePadding }} className="lynx-page-in">
         {/* 表格主体 */}
         <div style={tablePanelStyle}>
           <TableToolbar
+            title="自动发现"
+            subtitle="配置并触发端口网段发现任务，自动将在线主机录入资产清单"
+            icon={<RadarChartOutlined />}
             onRefresh={() => fetchTasks(true)}
             loading={loading}
             left={

@@ -1,4 +1,4 @@
-# Lynx · 猞猁 — 前端
+# wjw — 前端
 
 **网络资产发现与统一接入平台** 的 Web 前端。基于 React 18 + TypeScript + Vite，
 配合后端（`backend/`，Go + Gin）提供资产发现、CMDB、WebSSH/Telnet/本地终端、SFTP、
