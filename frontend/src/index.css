@@ -117,6 +117,17 @@ body {
   color: #ffffff;
 }
 
+/* 行内幽灵补全：xterm 的装饰器容器默认是 position:static —— static 元素上的
+   z-index 完全无效，导致容器内的幽灵文本被 .xterm-helpers（输入法 textarea，z-index:5）
+   和光标压在下面，正好盖掉落在光标格上的首字符（表现为灰字少一个字符）。
+   把容器变成定位元素（几何不变，仍是 0,0 铺满屏幕），z-index 才生效。 */
+.xterm .xterm-decoration-container {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
 /* 终端容器样式 */
 .terminal-container {
   padding: 12px;

@@ -893,12 +893,24 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   // 历史命令按主机隔离：本地终端用 local，远程用资产 ID
   const historyKey = assetId < 0 ? 'local' : `asset-${assetId}`;
 
+  const lastGhostPosRef = useRef('');                     // 上次绘制的位置签名，避免重复重建装饰器
+
   // 幽灵文本渲染：用 xterm 官方 registerDecoration 按「单元格」定位，
   // 而不是自己按 (容器宽-padding)/列数 估算像素——后者会因 fit 取整留边而整体偏移。
+  //
+  // 关键：必须在 shell 回显之后再定位。用户按键时该字符尚未下发、更未回显，
+  // 此刻 cursorX 还是旧值，直接画会整体左移一格（首字符被真实字符盖掉）。
+  // 因此绘制统一由 xterm 的 onCursorMove 驱动（见下方 effect）。
   const renderGhost = useCallback((text: string) => {
+    const term = termRef.current;
+    const posKey = term ? `${text}@${term.buffer.active.cursorX},${term.buffer.active.cursorY}` : text;
+    if (text && posKey === lastGhostPosRef.current) return; // 位置与内容都没变，不重建
+    lastGhostPosRef.current = text ? posKey : '';
     ghostDecoRef.current?.dispose();
     ghostDecoRef.current = null;
-    const term = termRef.current;
+    // 幽灵的首字符正好落在光标格上，块状光标会把它整个盖住（看起来像少一个字符）。
+    // 有幽灵时改用细条光标——真实终端（fish 等）也是这么显示行内建议的。
+    if (term) term.options.cursorStyle = text ? 'bar' : 'block';
     if (!term || !text) return;
     try {
       const marker = term.registerMarker(0); // 0 = 光标所在行
@@ -917,11 +929,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         el.style.fontFamily = term.options.fontFamily || 'monospace';
         el.style.fontSize = `${term.options.fontSize || 14}px`;
         el.style.lineHeight = 'inherit';
-        el.style.color = 'rgba(148,163,184,0.55)';
+        // 首字符正好落在光标格上：底下压着光标块/行背景，半透明灰会被糊掉。
+        // 铺一层与终端同色的不透明底 + 不透明前景，保证整串灰字都完整可读。
+        el.style.background = termThemeRef.current?.background || '#0b0f19';
+        el.style.color = '#7a8699';
         el.style.whiteSpace = 'pre';
         el.style.overflow = 'visible';
         el.style.pointerEvents = 'none';
-        el.style.zIndex = '5';
+        // 必须高于 .xterm-helpers（z-index:5）——xterm 的输入法辅助 textarea 就定位在
+        // 光标格上，与幽灵首字符重叠；同层时它会把首字符整个盖掉（表现为少一个字符）。
+        el.style.zIndex = '30';
       });
       ghostDecoRef.current = { dispose: () => { try { deco.dispose(); marker.dispose(); } catch { /* 已释放 */ } } };
     } catch {
@@ -964,6 +981,15 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   // 组件卸载时释放装饰器，避免 marker 泄漏
   useEffect(() => () => { ghostDecoRef.current?.dispose(); }, []);
+
+  // 光标一动就按新位置重画幽灵：shell 回显后光标才落到最终位置，
+  // 这样无论本地回显还是远程往返延迟，灰字都贴着真实光标显示。
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || status !== 'connected') return;
+    const sub = term.onCursorMove(() => renderGhost(ghostRef.current));
+    return () => sub.dispose();
+  }, [status, renderGhost]);
 
   // 命令库变更时热重载，并刷新当前提示
   useEffect(() => {
