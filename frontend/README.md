@@ -52,9 +52,9 @@ frontend/
 │       ├── SftpDrawer.tsx / QuickConnect.tsx / GlobalSearch.tsx
 │       └── Logo.tsx / PageHeader.tsx / UserMenu.tsx
 └── src-tauri/                  # Tauri v2 桌面端工程（Rust）
-    ├── tauri.conf.json         # productName=Lynx，identifier=cn.meridian.desktop
+    ├── tauri.conf.json         # productName=Lynx，identifier=cn.lynx.desktop
     ├── Cargo.toml / build.rs / src/
-    ├── binaries/               # Go 后端 sidecar（meridian-backend）
+    ├── binaries/               # Go 后端 sidecar（lynx-backend）
     ├── capabilities/ / icons/
 ```
 
@@ -83,7 +83,7 @@ npm run lint       # ESLint 检查
 
 ## 桌面端（Tauri）
 
-同一套前端可打包为桌面客户端：Tauri v2（Rust）将 Go 后端编译为 sidecar（`meridian-backend`）
+同一套前端可打包为桌面客户端：Tauri v2（Rust）将 Go 后端编译为 sidecar（`lynx-backend`）
 随包分发，由 Tauri 在 `127.0.0.1:8765` 启动，前端**自动以默认管理员凭据登录**，无需手动起后端。
 
 ```bash
@@ -104,4 +104,4 @@ Windows 用 `scripts/build-desktop.ps1`。完整说明见根 [`../docs/desktop.m
 ---
 
 品牌与设计令牌集中在 [`src/theme.ts`](src/theme.ts)（当前版本 **v0.64**）；
-注意底层技术标识（`cn.meridian.desktop`、`meridian-backend` 等）沿用历史命名，不属于品牌名，请勿改动。
+注意底层技术标识（`cn.lynx.desktop`、`lynx-backend` 等）沿用历史命名，不属于品牌名，请勿改动。

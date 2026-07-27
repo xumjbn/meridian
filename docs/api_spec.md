@@ -338,7 +338,7 @@ data: 扫描完成。总IP数: 254，存活主机数: 12，新增资产: 3 ...  
 
 ### 15.2 本机 Shell 终端（本地终端）
 - WebSocket：`ws(s)://<host>/api/ws/local-terminal?token=<会话令牌>`
-- 打开运行后端那台机器的本机 Shell（桌面端/回环自用）。是否可用由 `LocalShellEnabled()` 决定：`MERIDIAN_LOCAL_SHELL=1` 显式开启，或后端监听在回环地址时默认开；多用户服务器（`0.0.0.0`）默认关，未启用返回 HTTP 403 文本。前端应先查 `/api/capabilities` 的 `local_shell` 再决定是否展示入口。
+- 打开运行后端那台机器的本机 Shell（桌面端/回环自用）。是否可用由 `LocalShellEnabled()` 决定：`LYNX_LOCAL_SHELL=1` 显式开启，或后端监听在回环地址时默认开；多用户服务器（`0.0.0.0`）默认关，未启用返回 HTTP 403 文本。前端应先查 `/api/capabilities` 的 `local_shell` 再决定是否展示入口。
 
 ### 15.3 消息交互协议（两种终端通用）
 - 控制消息为 JSON 文本帧（`{ "type": ... }`），终端数据为二进制帧。

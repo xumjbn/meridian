@@ -11,7 +11,7 @@ $ext = if ($triple -like "*windows*") { ".exe" } else { "" }
 $repo = Split-Path -Parent $PSScriptRoot
 $binDir = Join-Path $repo "frontend/src-tauri/binaries"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-$out = Join-Path $binDir "meridian-backend-$triple$ext"
+$out = Join-Path $binDir "lynx-backend-$triple$ext"
 
 Write-Host "Building backend sidecar -> $out"
 $env:CGO_ENABLED = "0"

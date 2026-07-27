@@ -56,10 +56,10 @@ export const GlobalSearch: React.FC = () => {
     };
     const onOpen = () => setOpen(true);
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('mrd-open-search', onOpen);
+    window.addEventListener('lynx-open-search', onOpen);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('mrd-open-search', onOpen);
+      window.removeEventListener('lynx-open-search', onOpen);
     };
   }, []);
 

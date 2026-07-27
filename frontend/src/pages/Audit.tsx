@@ -142,7 +142,7 @@ export const Audit: React.FC = () => {
         icon={<FileSearchOutlined />}
       />
 
-      <div style={{ padding: pagePadding }} className="mrd-page-in">
+      <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
             onRefresh={fetchLogs}
@@ -173,7 +173,7 @@ export const Audit: React.FC = () => {
             }
           />
           <Table
-            className="mrd-table"
+            className="lynx-table"
             columns={columns}
             dataSource={logs}
             rowKey="id"

@@ -20,7 +20,7 @@ export const Users: React.FC = () => {
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [resetForm] = Form.useForm();
 
-  const currentUser = localStorage.getItem('mrd-user') || '';
+  const currentUser = localStorage.getItem('lynx-user') || '';
 
   const fetchUsers = async () => {
     try {
@@ -204,7 +204,7 @@ export const Users: React.FC = () => {
     <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader title="用户管理" subtitle="管理平台登录账户的角色、状态与密码" icon={<TeamOutlined />} />
 
-      <div style={{ padding: pagePadding }} className="mrd-page-in">
+      <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
             onRefresh={fetchUsers}
@@ -216,7 +216,7 @@ export const Users: React.FC = () => {
             }
           />
           <Table
-            className="mrd-table"
+            className="lynx-table"
             columns={columns}
             dataSource={users}
             rowKey="id"

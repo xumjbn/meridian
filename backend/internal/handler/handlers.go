@@ -735,12 +735,15 @@ func ConnectTerminal(c *gin.Context) {
 	}
 }
 
-// LocalShellEnabled 本地终端是否允许：桌面端 sidecar 显式置 MERIDIAN_LOCAL_SHELL=1 时开；
+// LocalShellEnabled 本地终端是否允许：桌面端 sidecar 显式置 LYNX_LOCAL_SHELL=1 时开；
 // 否则仅当后端监听在回环地址（本机自用场景）时开。多用户服务器（0.0.0.0）默认关，
 // 避免把运行后端那台机器的 Shell 暴露给任意登录用户（提权风险）。
 func LocalShellEnabled() bool {
-	if v := strings.TrimSpace(os.Getenv("MERIDIAN_LOCAL_SHELL")); v == "1" || strings.EqualFold(v, "true") {
-		return true
+	// 兼容旧名 MERIDIAN_LOCAL_SHELL，避免已部署的桌面端/服务失去本地终端能力
+	for _, key := range []string{"LYNX_LOCAL_SHELL", "MERIDIAN_LOCAL_SHELL"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v == "1" || strings.EqualFold(v, "true") {
+			return true
+		}
 	}
 	addr := strings.TrimSpace(os.Getenv("LISTEN_ADDR"))
 	if addr == "" {

@@ -1,5 +1,5 @@
 # Compiled server binary (built locally, not source)
-meridian-server.exe
+lynx-server.exe
 *.exe
 *.exe~
 

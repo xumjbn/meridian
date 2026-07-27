@@ -437,7 +437,7 @@ export const ScanTasks: React.FC = () => {
         icon={<RadarChartOutlined />}
       />
 
-      <div style={{ padding: pagePadding }} className="mrd-page-in">
+      <div style={{ padding: pagePadding }} className="lynx-page-in">
         {/* 表格主体 */}
         <div style={tablePanelStyle}>
           <TableToolbar
@@ -450,7 +450,7 @@ export const ScanTasks: React.FC = () => {
             }
           />
           <Table
-            className="mrd-table"
+            className="lynx-table"
             columns={columns}
             dataSource={tasks}
             rowKey="id"

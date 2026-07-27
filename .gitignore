@@ -4,8 +4,8 @@
 
 # 编译出的二进制
 *.exe
-backend/meridian-server
-backend/meridian-server-*
+backend/lynx-server
+backend/lynx-server-*
 
 # 运行时数据库与日志
 *.db

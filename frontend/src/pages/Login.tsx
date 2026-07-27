@@ -38,14 +38,14 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
         return;
       }
       const res = await login(values.username, values.password);
-      localStorage.setItem('mrd-auth', '1');
-      localStorage.setItem('mrd-token', res.token || '');
-      localStorage.setItem('mrd-user', res.username || values.username);
-      localStorage.setItem('mrd-role', res.role || 'admin');
+      localStorage.setItem('lynx-auth', '1');
+      localStorage.setItem('lynx-token', res.token || '');
+      localStorage.setItem('lynx-user', res.username || values.username);
+      localStorage.setItem('lynx-role', res.role || 'admin');
       if (res.must_change_password) {
-        localStorage.setItem('mrd-must-change', '1');
+        localStorage.setItem('lynx-must-change', '1');
       } else {
-        localStorage.removeItem('mrd-must-change');
+        localStorage.removeItem('lynx-must-change');
       }
       onSuccess();
     } catch (e: any) {
@@ -130,7 +130,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
 
         {/* 右：登录卡片 */}
         <div
-          className="mrd-page-in"
+          className="lynx-page-in"
           style={{
             width: 380,
             maxWidth: '100%',

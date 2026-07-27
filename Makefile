@@ -1,4 +1,4 @@
-# Meridian 构建入口
+# Lynx 构建入口
 # 桌面端（Tauri + Go sidecar）+ 普通服务端构建。详见 docs/desktop.md
 #
 # macOS 上出桌面包：
@@ -54,14 +54,14 @@ desktop-universal: ## macOS 通用 .app：同时支持 Intel + Apple Silicon（�
 	mkdir -p $(BINDIR)
 	cd backend && $(GOENV) GOOS=darwin GOARCH=arm64 go build -mod=mod -o ../$(BINDIR)/mb-arm64 ./cmd/server
 	cd backend && $(GOENV) GOOS=darwin GOARCH=amd64 go build -mod=mod -o ../$(BINDIR)/mb-amd64 ./cmd/server
-	lipo -create -output $(BINDIR)/meridian-backend-universal-apple-darwin $(BINDIR)/mb-arm64 $(BINDIR)/mb-amd64
+	lipo -create -output $(BINDIR)/lynx-backend-universal-apple-darwin $(BINDIR)/mb-arm64 $(BINDIR)/mb-amd64
 	rm -f $(BINDIR)/mb-arm64 $(BINDIR)/mb-amd64
 	cd frontend && npm install && npm run desktop:build -- --target universal-apple-darwin --bundles app
 	@bash scripts/make-dmg.sh "$(UBUNDLE)/macos/$(APP_NAME).app" "$(APP_NAME)" "$(UBUNDLE)/dmg/$(APP_NAME)-universal.dmg"
 	@echo "✅ Universal App : $(UBUNDLE)/macos/$(APP_NAME).app"
 
 server: ## 仅构建服务端二进制（非桌面，给容器/裸机部署用）
-	cd backend && $(GOENV) go build -mod=mod -o meridian-server ./cmd/server
+	cd backend && $(GOENV) go build -mod=mod -o lynx-server ./cmd/server
 
 backend: server ## 同 server
 
@@ -70,4 +70,4 @@ frontend: ## 仅构建前端 dist
 
 clean: ## 清理桌面构建产物
 	rm -rf frontend/src-tauri/target frontend/dist
-	rm -f $(BINDIR)/meridian-backend-* backend/meridian-server
+	rm -f $(BINDIR)/lynx-backend-* backend/lynx-server

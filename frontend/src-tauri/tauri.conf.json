@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Lynx",
-  "version": "0.70.0",
-  "identifier": "cn.meridian.desktop",
+  "version": "0.71.0",
+  "identifier": "cn.lynx.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -36,6 +36,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/meridian-backend"]
+    "externalBin": ["binaries/lynx-backend"]
   }
 }

@@ -26,11 +26,11 @@
                         │
                   ┌─────▼─────┐   /api/  反代(含 ws/sse)   ┌────────────┐
    浏览器  ───────▶   web      ├───────────────────────────▶   backend   │
-                  │ nginx:80  │      meridian 内网          │   :8080    │
+                  │ nginx:80  │      lynx 内网          │   :8080    │
                   │  (SPA)    │                            │  Go + SQLite│
                   └───────────┘                            └─────┬──────┘
                                                                  │
-                                                        meridian-data 卷
+                                                        lynx-data 卷
                                                          (/data/assets.db)
 ```
 
@@ -38,7 +38,7 @@
 - 后端容器内监听 `0.0.0.0:8080`（由 `LISTEN_ADDR` 设定），但**默认不对外暴露端口**，仅在 compose 内网供 nginx 访问。
 - API 已启用**会话鉴权 + 多租户隔离**：登录签发 Bearer 令牌，受保护路由服务端校验，管理员路由再校验角色；资产 / 凭据 / K8s 集群按 `owner_id` 隔离。
 - 凭据（密码 / 私钥）按设计**明文**存储、SSH 用 `InsecureIgnoreHostKey()` 不校验主机密钥——这是面向内网运维的刻意取舍，公网暴露前请充分评估。
-- SQLite 落在命名卷 `meridian-data`（`/data/assets.db`），容器重建不丢数据。
+- SQLite 落在命名卷 `lynx-data`（`/data/assets.db`），容器重建不丢数据。
 
 ### 一键启动
 
@@ -73,7 +73,7 @@ docker compose down -v         # 连数据卷一起删（清空资产库）
 ```bash
 REGISTRY=registry.cn-hangzhou.aliyuncs.com/your-ns docker compose build
 # 或单独 build：
-docker build --build-arg REGISTRY=docker.io -f backend/Dockerfile -t meridian-backend .
+docker build --build-arg REGISTRY=docker.io -f backend/Dockerfile -t lynx-backend .
 ```
 
 > 若 Docker daemon 已在 `/etc/docker/daemon.json` 配了 `registry-mirrors`，
@@ -86,9 +86,9 @@ docker build --build-arg REGISTRY=docker.io -f backend/Dockerfile -t meridian-ba
 | 变量 | compose 默认 | 说明 |
 |------|------|------|
 | `LISTEN_ADDR` | `0.0.0.0:8080` | 监听地址；不设则裸跑默认 `127.0.0.1:8080` |
-| `MERIDIAN_DB` | `/data/assets.db` | SQLite 文件路径；指向挂载卷以持久化（不设则默认当前目录 `assets.db`） |
+| `LYNX_DB` | `/data/assets.db` | SQLite 文件路径；指向挂载卷以持久化（不设则默认当前目录 `assets.db`） |
 | `TZ` | `Asia/Shanghai` | 时区（影响调度器与日志时间） |
-| `MERIDIAN_LOCAL_SHELL` | （未设） | 设 `1` 开启「本机 Shell」本地终端（容器/普通服务端默认关，桌面端默认开） |
+| `LYNX_LOCAL_SHELL` | （未设） | 设 `1` 开启「本机 Shell」本地终端（容器/普通服务端默认关，桌面端默认开） |
 
 ### 自定义对外端口
 
@@ -116,19 +116,19 @@ docker build --build-arg REGISTRY=docker.io -f backend/Dockerfile -t meridian-ba
 
 ## 二、裸机部署（make server + nginx）
 
-不想跑容器时，可直接编译出服务端二进制 `meridian-server`，配合任意 nginx 反代。
+不想跑容器时，可直接编译出服务端二进制 `lynx-server`，配合任意 nginx 反代。
 
 ### 1) 构建
 
 需要 **Go 1.22+**（纯 Go SQLite，**无需 CGO / gcc**）和 **Node 20+**（构建前端）。在仓库根目录：
 
 ```bash
-make server      # 编译服务端二进制 backend/meridian-server（等价 make backend）
+make server      # 编译服务端二进制 backend/lynx-server（等价 make backend）
 make frontend    # 构建前端到 frontend/dist
 ```
 
-> `make server` 内部用 `CGO_ENABLED=0 GOTOOLCHAIN=local go build -o meridian-server ./cmd/server`。
-> 不用 Makefile 也可手动：`cd backend && CGO_ENABLED=0 go build -o meridian-server ./cmd/server`。
+> `make server` 内部用 `CGO_ENABLED=0 GOTOOLCHAIN=local go build -o lynx-server ./cmd/server`。
+> 不用 Makefile 也可手动：`cd backend && CGO_ENABLED=0 go build -o lynx-server ./cmd/server`。
 
 ### 2) 运行后端
 
@@ -136,14 +136,14 @@ make frontend    # 构建前端到 frontend/dist
 cd backend
 # 监听本机回环（默认）。如需让 nginx 跨机/跨容器反代，改成 0.0.0.0:8080
 LISTEN_ADDR=127.0.0.1:8080 \
-MERIDIAN_DB=/var/lib/lynx/assets.db \
+LYNX_DB=/var/lib/lynx/assets.db \
 TZ=Asia/Shanghai \
-./meridian-server
+./lynx-server
 ```
 
-- 不设 `LISTEN_ADDR` 时默认 `127.0.0.1:8080`；不设 `MERIDIAN_DB` 时默认在当前工作目录生成 `assets.db`。
+- 不设 `LISTEN_ADDR` 时默认 `127.0.0.1:8080`；不设 `LYNX_DB` 时默认在当前工作目录生成 `assets.db`。
 - 首启自动建库 + 迁移表结构，并创建默认管理员 **admin / admin**（首次登录强制改密）。
-- 需要本机 Shell 本地终端时再加 `MERIDIAN_LOCAL_SHELL=1`（普通服务端默认关）。
+- 需要本机 Shell 本地终端时再加 `LYNX_LOCAL_SHELL=1`（普通服务端默认关）。
 - 建议用 systemd / supervisor 守护进程，并把上述环境变量写进单元文件的 `Environment=`。
 
 ### 3) nginx 托管前端 + 反代 /api
@@ -194,5 +194,5 @@ server {
 
 - **构建拉基础镜像超时** —— 换 `REGISTRY`，或给 daemon 配 `registry-mirrors` 后用 `--build-arg REGISTRY=docker.io`。
 - **终端连不上 / WebSocket 握手失败** —— 确认通过 nginx（容器为 `:8088`）访问而非直连后端；nginx 需配 `Upgrade` 透传与长连接（见上）。若被扫目标在另一网段，注意中间防火墙可能拦 22 端口（与本平台无关）。
-- **想保留旧的本机裸跑方式** —— 不受影响：不设 `LISTEN_ADDR` / `MERIDIAN_DB` 时行为与之前完全一致（监听 `127.0.0.1:8080`，库落当前目录 `assets.db`）。
+- **想保留旧的本机裸跑方式** —— 不受影响：不设 `LISTEN_ADDR` / `LYNX_DB` 时行为与之前完全一致（监听 `127.0.0.1:8080`，库落当前目录 `assets.db`）。
 - **凭据为何明文 / 为何不校验主机密钥** —— 面向内网运维的刻意设计，非缺陷；公网暴露前请自行评估并加固。

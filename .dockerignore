@@ -6,7 +6,7 @@
 frontend/dist
 frontend/node_modules
 backend/server
-backend/meridian-server.exe
+backend/lynx-server.exe
 **/*.exe
 **/*.db
 **/*.db-shm

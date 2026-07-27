@@ -51,7 +51,7 @@ Logo 为「星座 / 中枢」几何标识：**中心节点**（统一管理平�
 
 - **后端** — Go 1.22 · Gin · GORM · **glebarez/sqlite（纯 Go，免 cgo）** · gorilla/websocket · `golang.org/x/crypto/ssh` + `pkg/sftp` · `bcrypt` 口令 + 内存会话令牌 · 自包含调度器 / 可用性监控 · nuclei（可选外部二进制）
 - **前端** — React 18 · TypeScript · Ant Design 5 · `@xterm/xterm` v6（+ fit / search addon）· Vite 8 · react-router-dom v7 · axios
-- **桌面端** — Tauri v2（Rust）+ Go sidecar（`meridian-backend`），插件：shell / clipboard-manager
+- **桌面端** — Tauri v2（Rust）+ Go sidecar（`lynx-backend`），插件：shell / clipboard-manager
 
 ## 安全模型
 
@@ -96,7 +96,7 @@ docker compose up -d --build
 
 ## 桌面客户端（Tauri）
 
-桌面端用 [Tauri v2](https://tauri.app) 打包，把 Go 后端编译为 **sidecar**（`meridian-backend`）随包分发，
+桌面端用 [Tauri v2](https://tauri.app) 打包，把 Go 后端编译为 **sidecar**（`lynx-backend`）随包分发，
 由 Tauri 在本机 `127.0.0.1:8765` 启动，前端**自动以默认管理员凭据登录**，开箱即用、无需手动起后端。
 
 ```bash

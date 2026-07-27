@@ -7,17 +7,17 @@
 ```
 桌面窗口 (Tauri v2 / 系统 WebView)
    └─ 加载打包进去的前端 dist（tauri://localhost）
-   └─ 启动 sidecar：meridian-backend（Go，监听 127.0.0.1:8765）
+   └─ 启动 sidecar：lynx-backend（Go，监听 127.0.0.1:8765）
           └─ Gin + WebSocket 终端 + SSE + 本机 Shell 终端 + SQLite
-             （DB 存系统应用数据目录 app_data_dir/meridian.db）
+             （DB 存系统应用数据目录 app_data_dir/lynx.db）
 ```
 
 - 前端运行在 Tauri 下时（检测到 `__TAURI_INTERNALS__`），`services/api.ts` 自动把 API / WS 指向 `http://127.0.0.1:8765`（`BACKEND_ORIGIN = DESKTOP_BACKEND`）；Web / 容器部署仍走同源（nginx 反代 `/api`），互不影响。
-- 后端是**纯 Go（免 CGO，glebarez/sqlite 纯 Go 驱动）**，可交叉编译到 win / mac / linux，作为外部二进制 `binaries/meridian-backend` 随包分发。
-- 数据库落在系统应用数据目录（`app_data_dir/meridian.db`），卸载 / 重装不丢。
+- 后端是**纯 Go（免 CGO，glebarez/sqlite 纯 Go 驱动）**，可交叉编译到 win / mac / linux，作为外部二进制 `binaries/lynx-backend` 随包分发。
+- 数据库落在系统应用数据目录（`app_data_dir/lynx.db`），卸载 / 重装不丢。
 - 应用退出时 Tauri 会一并 `kill` sidecar 子进程（见 `main.rs` 的 `WindowEvent::Destroyed`）。
 
-工程关键标识（**底层技术标识符，勿改**）：productName `Lynx`、窗口标题 `Lynx · 猞猁`、Tauri identifier `cn.meridian.desktop`、version `0.64.0`、CSP `null`、sidecar 二进制名 `meridian-backend`。
+工程关键标识（**底层技术标识符，勿改**）：productName `Lynx`、窗口标题 `Lynx · 猞猁`、Tauri identifier `cn.lynx.desktop`、version `0.64.0`、CSP `null`、sidecar 二进制名 `lynx-backend`。
 
 文件位置：`frontend/src-tauri/`（Tauri 工程）、`scripts/build-sidecar.{sh,ps1}`（构建后端 sidecar）、`scripts/build-desktop.ps1`（Windows 一键）、`scripts/make-dmg.sh`（hdiutil 出 dmg）、`.github/workflows/desktop.yml`（CI 出三平台安装包）。
 
@@ -28,7 +28,7 @@
 - **免登录自动登录**：在 Tauri 下，前端启动时自动用默认管理员凭据登录，依次尝试 `admin/admin` → `admin/123456`，成功即进主界面；都失败才落到登录页（见 `App.tsx`）。桌面端是单机本地实例，不强制改密。
 - **原生剪贴板**：复制 / 粘贴走系统剪贴板（`@tauri-apps/plugin-clipboard-manager`，能力里放开 `allow-read-text` / `allow-write-text`）。
 - **外部链接走系统浏览器**：终端里可点击的链接用 `shell:allow-open` 由系统默认浏览器打开，不在 WebView 内跳转。
-- **本机 Shell 本地终端**：sidecar 注入 `MERIDIAN_LOCAL_SHELL=1`，因此桌面端自带「本机终端」（`/ws/local-terminal`），普通服务端默认关闭。
+- **本机 Shell 本地终端**：sidecar 注入 `LYNX_LOCAL_SHELL=1`，因此桌面端自带「本机终端」（`/ws/local-terminal`），普通服务端默认关闭。
 - 这些权限集中在 `frontend/src-tauri/capabilities/default.json`：`core:default`、`shell:default`、`shell:allow-open`、`clipboard-manager:allow-read-text`、`clipboard-manager:allow-write-text`。
 
 ### sidecar 注入的环境变量（`main.rs`）
@@ -38,8 +38,8 @@ Tauri 启动 sidecar 时注入下列环境变量：
 | 变量 | 值 | 说明 |
 |------|----|------|
 | `LISTEN_ADDR` | `127.0.0.1:8765` | sidecar 仅监听本地回环 8765 |
-| `MERIDIAN_DB` | `app_data_dir/meridian.db` | 数据库放系统应用数据目录，持久化 |
-| `MERIDIAN_LOCAL_SHELL` | `1` | 桌面端=本机，启用本地终端 |
+| `LYNX_DB` | `app_data_dir/lynx.db` | 数据库放系统应用数据目录，持久化 |
+| `LYNX_LOCAL_SHELL` | `1` | 桌面端=本机，启用本地终端 |
 | `TZ` | `Asia/Shanghai` | 时区 |
 
 ---
@@ -72,7 +72,7 @@ cd frontend && npx @tauri-apps/cli icon path/to/logo-1024.png
 | `make desktop-dmg` | 仅从已构建好的 `.app` 重新生成 `.dmg`（不重新编译） |
 | `make desktop-dev` | 桌面开发模式（热重载前端 + 起 sidecar） |
 | `make desktop-universal` | Intel + Apple Silicon 通用 `.app` + `.dmg`（lipo 合并 sidecar） |
-| `make server` / `make backend` | 仅构建服务端二进制 `meridian-server`（容器 / 裸机用） |
+| `make server` / `make backend` | 仅构建服务端二进制 `lynx-server`（容器 / 裸机用） |
 | `make frontend` | 仅构建前端 `dist` |
 | `make clean` | 清理 `target/` `dist/` 与二进制 |
 
@@ -147,9 +147,9 @@ make desktop-dmg   # 从已构建好的 .app 重新出 dmg，不重新编译
 
 ### sidecar / 端口
 - sidecar 固定监听 `127.0.0.1:8765`；若与本机其它服务冲突，需同时改 `main.rs` 注入的 `LISTEN_ADDR` 与 `api.ts` 的 `DESKTOP_BACKEND`（后续可做随机端口 + 启动后回传前端）。
-- 找不到 sidecar：报「未找到 meridian-backend sidecar」说明 `binaries/` 下没有匹配当前三元组的二进制，先 `make sidecar`（或 `scripts/build-sidecar.*`）。
+- 找不到 sidecar：报「未找到 lynx-backend sidecar」说明 `binaries/` 下没有匹配当前三元组的二进制，先 `make sidecar`（或 `scripts/build-sidecar.*`）。
 - 首启后端迁移 DB 约 <1s，期间登录请求可能短暂失败，重试即可（后续可加就绪探测）。
 
 ## 八、已知点
-- 桌面端是**单机本地实例**（自带 SQLite，库在 `app_data_dir/meridian.db`），与服务器 / 容器多用户部署相互独立。
+- 桌面端是**单机本地实例**（自带 SQLite，库在 `app_data_dir/lynx.db`），与服务器 / 容器多用户部署相互独立。
 - 凭据明文存库、SSH 用 `InsecureIgnoreHostKey()` 不校验主机密钥——面向本机 / 内网运维的刻意设计，非缺陷。

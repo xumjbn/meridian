@@ -183,7 +183,7 @@ export const Credentials: React.FC = () => {
         icon={<SafetyCertificateOutlined />}
       />
 
-      <div style={{ padding: pagePadding }} className="mrd-page-in">
+      <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
             onRefresh={fetchCredentials}
@@ -195,7 +195,7 @@ export const Credentials: React.FC = () => {
             }
           />
           <Table
-            className="mrd-table"
+            className="lynx-table"
             columns={columns}
             dataSource={credentials}
             rowKey="id"

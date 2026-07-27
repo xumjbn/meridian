@@ -18,10 +18,10 @@ export const api = axios.create({
 
 // 清理本地会话并跳回登录页
 const clearSession = () => {
-  localStorage.removeItem('mrd-auth');
-  localStorage.removeItem('mrd-token');
-  localStorage.removeItem('mrd-user');
-  localStorage.removeItem('mrd-role');
+  localStorage.removeItem('lynx-auth');
+  localStorage.removeItem('lynx-token');
+  localStorage.removeItem('lynx-user');
+  localStorage.removeItem('lynx-role');
 };
 
 // 等待 token 就绪（桌面端 token 由后台静默登录获取，最多等 timeoutMs）
@@ -29,7 +29,7 @@ const waitForToken = (timeoutMs: number): Promise<void> =>
   new Promise((resolve) => {
     const start = Date.now();
     const tick = () => {
-      if (localStorage.getItem('mrd-token') || Date.now() - start > timeoutMs) return resolve();
+      if (localStorage.getItem('lynx-token') || Date.now() - start > timeoutMs) return resolve();
       setTimeout(tick, 150);
     };
     tick();
@@ -40,10 +40,10 @@ const waitForToken = (timeoutMs: number): Promise<void> =>
 api.interceptors.request.use(async (config) => {
   const url = config.url || '';
   const isAuthCall = /\/login$|\/register$/.test(url);
-  if (isTauri && !isAuthCall && !localStorage.getItem('mrd-token')) {
+  if (isTauri && !isAuthCall && !localStorage.getItem('lynx-token')) {
     await waitForToken(10000);
   }
-  const token = localStorage.getItem('mrd-token');
+  const token = localStorage.getItem('lynx-token');
   if (token) {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
@@ -384,7 +384,7 @@ export const sftpRename = (assetId: number, from: string, to: string): Promise<{
 
 // 下载用原生 fetch（携带 token），区分二进制流与 JSON 错误响应
 export const sftpDownload = async (assetId: number, filePath: string): Promise<void> => {
-  const token = localStorage.getItem('mrd-token') || '';
+  const token = localStorage.getItem('lynx-token') || '';
   const res = await fetch(`${BACKEND_ORIGIN}/api/assets/${assetId}/sftp/download?path=${encodeURIComponent(filePath)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -524,7 +524,7 @@ export const getAuditLogs = (params?: { actor?: string; action?: string; limit?:
 // ── 扫描日志 SSE 流地址（供 EventSource 使用，走同源 Vite 代理） ──
 // EventSource 无法设置请求头，故 token 通过查询参数传递
 export const getScanStreamUrl = (taskId: number): string => {
-  const token = localStorage.getItem('mrd-token') || '';
+  const token = localStorage.getItem('lynx-token') || '';
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
   return `${BACKEND_ORIGIN}/api/tasks/${taskId}/stream${q}`;
 };
@@ -543,7 +543,7 @@ export const getCapabilities = (): Promise<Capabilities> => api.get('/capabiliti
 // 本地终端 WebSocket 地址（连后端本机 Shell）
 export const getLocalTerminalWsUrl = (): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('mrd-token') || '';
+  const token = localStorage.getItem('lynx-token') || '';
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
   if (BACKEND_ORIGIN) {
     return `ws://127.0.0.1:8765/api/ws/local-terminal${q}`;
@@ -557,7 +557,7 @@ export const getLocalTerminalWsUrl = (): string => {
 // WebSocket URL 辅助函数（浏览器 WebSocket 无法设置请求头，token 走查询参数）
 export const getTerminalWsUrl = (assetId: number): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('mrd-token') || '';
+  const token = localStorage.getItem('lynx-token') || '';
   // 自动尝试已存凭据（默认开）；关闭时附带 autotry=0
   const autoTry = localStorage.getItem('term_auto_cred') !== 'false';
   const params = [token ? `token=${encodeURIComponent(token)}` : '', autoTry ? '' : 'autotry=0'].filter(Boolean);

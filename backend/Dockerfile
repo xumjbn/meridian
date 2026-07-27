@@ -17,7 +17,7 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 # 再拷源码编译
 COPY backend/ ./
-RUN go build -trimpath -ldflags="-s -w" -o /out/meridian ./cmd/server
+RUN go build -trimpath -ldflags="-s -w" -o /out/lynx ./cmd/server
 
 # ---------- 运行阶段 ----------
 FROM ${REGISTRY}/library/alpine:3.20
@@ -26,10 +26,10 @@ RUN sed -i 's#https\?://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /et
     && apk add --no-cache ca-certificates tzdata wget
 ENV TZ=Asia/Shanghai \
     LISTEN_ADDR=0.0.0.0:8080 \
-    MERIDIAN_DB=/data/assets.db
+    LYNX_DB=/data/assets.db
 WORKDIR /app
-COPY --from=builder /out/meridian /app/meridian
+COPY --from=builder /out/lynx /app/lynx
 # SQLite 数据落在挂载卷里，保证容器重建不丢数据
 VOLUME ["/data"]
 EXPOSE 8080
-ENTRYPOINT ["/app/meridian"]
+ENTRYPOINT ["/app/lynx"]

@@ -17,14 +17,14 @@ interface Values {
 // 首次登录（默认账号）强制修改密码页：在改密成功前无法进入系统
 export const ForcePasswordChange: React.FC<Props> = ({ onDone }) => {
   const [loading, setLoading] = useState(false);
-  const user = localStorage.getItem('mrd-user') || 'admin';
+  const user = localStorage.getItem('lynx-user') || 'admin';
 
   const handleFinish = async (values: Values) => {
     setLoading(true);
     try {
       // 强制改密场景后端免校验原密码，这里传空字符串即可
       await changePassword(user, '', values.newPassword);
-      localStorage.removeItem('mrd-must-change');
+      localStorage.removeItem('lynx-must-change');
       message.success('密码修改成功');
       onDone();
     } catch (e: any) {
@@ -47,7 +47,7 @@ export const ForcePasswordChange: React.FC<Props> = ({ onDone }) => {
       }}
     >
       <div
-        className="mrd-fade-up"
+        className="lynx-fade-up"
         style={{ ...cardStyle, background: '#fff', width: 400, maxWidth: '100%', padding: '36px 32px' }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20 }}>

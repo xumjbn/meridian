@@ -11,7 +11,7 @@ export const brand = {
   name: 'Lynx',
   zh: '猞猁',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.70',
+  version: 'v0.71',
   repo: 'https://github.com/',
 } as const;
 
@@ -28,15 +28,15 @@ export const palette = {
   brandGradientSoft: 'linear-gradient(135deg, rgba(0,110,255,0.10) 0%, rgba(0,164,255,0.10) 100%)',
 
   // 表面与背景（CSS 变量，随 data-theme 切换浅色/深色）
-  bg: 'var(--mrd-bg)',
-  surface: 'var(--mrd-surface)',
-  border: 'var(--mrd-border)',
-  borderStrong: 'var(--mrd-border-strong)',
+  bg: 'var(--lynx-bg)',
+  surface: 'var(--lynx-surface)',
+  border: 'var(--lynx-border)',
+  borderStrong: 'var(--lynx-border-strong)',
 
   // 文本（CSS 变量，随 data-theme 切换浅色/深色）
-  text: 'var(--mrd-text)',
-  textSub: 'var(--mrd-text-sub)',
-  textMute: 'var(--mrd-text-mute)',
+  text: 'var(--lynx-text)',
+  textSub: 'var(--lynx-text-sub)',
+  textMute: 'var(--lynx-text-mute)',
 
   // ── 深色外壳（顶栏 / 侧栏 / 终端共用同一套色阶）────────────
   // 同一蓝黑色族按明度递进：终端内容最深 → 外壳次之 → 悬浮/选中提亮，

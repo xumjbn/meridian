@@ -82,11 +82,11 @@ export const Vulns: React.FC = () => {
     <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader title="漏洞发现" subtitle="nuclei 漏洞扫描结果" icon={<BugOutlined />} />
 
-      <div style={{ padding: pagePadding }} className="mrd-page-in">
+      <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar onRefresh={load} loading={loading} />
           <Table
-            className="mrd-table"
+            className="lynx-table"
             columns={columns}
             dataSource={findings}
             rowKey="id"

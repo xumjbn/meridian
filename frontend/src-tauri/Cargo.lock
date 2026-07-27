@@ -1855,7 +1855,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "meridian-desktop"
+name = "lynx-desktop"
 version = "0.43.0"
 dependencies = [
  "tauri",

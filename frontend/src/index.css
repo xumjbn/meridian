@@ -2,32 +2,32 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'PingFang SC',
     'Microsoft YaHei', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
   line-height: 1.5;
-  color: var(--mrd-text);
+  color: var(--lynx-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 
   /* ── 表面/文本/边框令牌（浅色，默认） ───────────── */
-  --mrd-bg: #f0f2f5;
-  --mrd-surface: #ffffff;
-  --mrd-border: #e9ecf2;
-  --mrd-border-strong: #dcdfe6;
-  --mrd-text: #1c2028;
-  --mrd-text-sub: #5c6b7f;
-  --mrd-text-mute: #869099;
+  --lynx-bg: #f0f2f5;
+  --lynx-surface: #ffffff;
+  --lynx-border: #e9ecf2;
+  --lynx-border-strong: #dcdfe6;
+  --lynx-text: #1c2028;
+  --lynx-text-sub: #5c6b7f;
+  --lynx-text-mute: #869099;
 
-  background-color: var(--mrd-bg);
+  background-color: var(--lynx-bg);
 }
 
 /* ── 深色主题覆盖 ─────────────────────────────── */
 :root[data-theme='dark'] {
-  --mrd-bg: #0b1020;
-  --mrd-surface: #141b2d;
-  --mrd-border: #222c44;
-  --mrd-border-strong: #2b3854;
-  --mrd-text: #e2e8f0;
-  --mrd-text-sub: #94a3b8;
-  --mrd-text-mute: #64748b;
+  --lynx-bg: #0b1020;
+  --lynx-surface: #141b2d;
+  --lynx-border: #222c44;
+  --lynx-border-strong: #2b3854;
+  --lynx-text: #e2e8f0;
+  --lynx-text-sub: #94a3b8;
+  --lynx-text-mute: #64748b;
 }
 
 body {
@@ -35,13 +35,13 @@ body {
   display: flex;
   min-width: 320px;
   min-height: 100vh;
-  background-color: var(--mrd-bg);
+  background-color: var(--lynx-bg);
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
-  background-color: var(--mrd-bg);
+  background-color: var(--lynx-bg);
 }
 
 /* 文本选区配色 */
@@ -70,7 +70,7 @@ body {
 }
 
 /* ── 动效工具类 ───────────────────────────── */
-@keyframes mrd-fade-up {
+@keyframes lynx-fade-up {
   from {
     opacity: 0;
     transform: translateY(8px);
@@ -80,21 +80,21 @@ body {
     transform: translateY(0);
   }
 }
-.mrd-fade-up {
-  animation: mrd-fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+.lynx-fade-up {
+  animation: lynx-fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* 卡片悬浮：控制台风格只提边框与浅阴影，不做位移 */
-.mrd-hover-card {
+.lynx-hover-card {
   transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }
-.mrd-hover-card:hover {
+.lynx-hover-card:hover {
   box-shadow: 0 4px 14px -6px rgba(15, 23, 42, 0.16);
-  border-color: var(--mrd-primary-border, #bcd8ff) !important;
+  border-color: var(--lynx-primary-border, #bcd8ff) !important;
 }
 
 /* ── 全局顶栏导航项 ───────────────────────────── */
-.mrd-topnav-item {
+.lynx-topnav-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -108,11 +108,11 @@ body {
   transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 }
-.mrd-topnav-item:hover {
+.lynx-topnav-item:hover {
   background: rgba(255, 255, 255, 0.09);
   color: #ffffff;
 }
-.mrd-topnav-item.is-active {
+.lynx-topnav-item.is-active {
   background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
 }
@@ -161,7 +161,7 @@ body {
 }
 
 /* 侧栏菜单：深色底 + 选中项左侧亮蓝指示条 */
-.mrd-sider .ant-menu-item-selected::before {
+.lynx-sider .ant-menu-item-selected::before {
   content: '';
   position: absolute;
   left: 0;
@@ -170,34 +170,34 @@ body {
   width: 3px;
   background: #4da3ff;
 }
-.mrd-sider .ant-menu-item,
-.mrd-sider .ant-menu-submenu-title {
+.lynx-sider .ant-menu-item,
+.lynx-sider .ant-menu-submenu-title {
   border-radius: 0 !important;
 }
 /* 深色侧栏内的滚动条：压暗，避免亮色滑块在深底上跳 */
-.mrd-sider ::-webkit-scrollbar-thumb {
+.lynx-sider ::-webkit-scrollbar-thumb {
   background: #2a3550;
   background-clip: content-box;
 }
-.mrd-sider ::-webkit-scrollbar-thumb:hover {
+.lynx-sider ::-webkit-scrollbar-thumb:hover {
   background: #38466b;
   background-clip: content-box;
 }
 
 /* ── 表格：控制台密度（表头细分隔、行悬浮浅蓝） ── */
-.mrd-table .ant-table-thead > tr > th {
+.lynx-table .ant-table-thead > tr > th {
   font-weight: 500;
   font-size: 13px;
 }
-.mrd-table .ant-table-tbody > tr > td {
+.lynx-table .ant-table-tbody > tr > td {
   font-size: 13px;
 }
 /* 表格外层卡片不重复画圆角边框 */
-.mrd-table .ant-table {
+.lynx-table .ant-table {
   border-radius: 0;
 }
 
 /* 页面淡入（保留，幅度收敛） */
-.mrd-page-in {
-  animation: mrd-fade-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+.lynx-page-in {
+  animation: lynx-fade-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
 }

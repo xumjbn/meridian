@@ -18,7 +18,7 @@ interface UserMenuProps {
 
 // 当前用户菜单：显示登录用户名，提供修改密码、退出登录
 export const UserMenu: React.FC<UserMenuProps> = ({ tone = 'dark' }) => {
-  const user = localStorage.getItem('mrd-user') || 'admin';
+  const user = localStorage.getItem('lynx-user') || 'admin';
   const onDark = tone === 'light';
   const [pwdOpen, setPwdOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -30,12 +30,12 @@ export const UserMenu: React.FC<UserMenuProps> = ({ tone = 'dark' }) => {
     } catch {
       // 忽略：即使后端不可达也要完成本地登出
     }
-    localStorage.removeItem('mrd-auth');
-    localStorage.removeItem('mrd-token');
-    localStorage.removeItem('mrd-user');
-    localStorage.removeItem('mrd-role');
+    localStorage.removeItem('lynx-auth');
+    localStorage.removeItem('lynx-token');
+    localStorage.removeItem('lynx-user');
+    localStorage.removeItem('lynx-role');
     // 标记主动退出：桌面端据此不再自动登录，落到登录页可切换账户
-    localStorage.setItem('mrd-logged-out', '1');
+    localStorage.setItem('lynx-logged-out', '1');
     window.location.reload(); // 重新加载后登录门禁会拦截到登录页
   };
 

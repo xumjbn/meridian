@@ -105,7 +105,7 @@ export const Assets: React.FC = () => {
   const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
   const [sftpOpen, setSftpOpen] = useState(false);
   // 管理员可分配资产归属用户
-  const isAdmin = (localStorage.getItem('mrd-role') || 'admin') === 'admin';
+  const isAdmin = (localStorage.getItem('lynx-role') || 'admin') === 'admin';
   const [users, setUsers] = useState<User[]>([]);
 
   // 常用功能：批量选择 / 分组
@@ -722,14 +722,15 @@ export const Assets: React.FC = () => {
       const tags: string[] = JSON.parse(tagsStr);
       if (!Array.isArray(tags) || tags.length === 0) return null;
       return (
-        <Space size={[0, 4]} wrap>
+        <Space size={[4, 2]} wrap>
           {tags.map((tag) => {
             const hexColor = getTagColor(tag);
             return (
-              <Tag 
-                key={tag} 
-                color={hexColor} 
-                style={{ borderRadius: '4px', fontWeight: 500 }}
+              <Tag
+                key={tag}
+                color={hexColor}
+                // 紧凑：与名称同行显示，收窄内边距、去掉右外边距
+                style={{ borderRadius: 3, fontWeight: 500, margin: 0, padding: '0 6px', lineHeight: '18px' }}
               >
                 {tag}
               </Tag>
@@ -748,20 +749,18 @@ export const Assets: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       render: (text: string, record: Asset) => {
-        // 仅展示「系统(厂商) · 架构」与标签：用简洁的 vendor 作为系统，
-        // 原始 SSH/Telnet banner（os_version）过于冗长，仅在详情抽屉展示
+        // 紧凑单行：名称 → 标签 → 虚拟化 → 「系统(厂商) · 架构」，不再另起一行，
+        // 每行少占一行高度。原始 SSH/Telnet banner（os_version）过长，仅在详情抽屉展示。
         const info = [record.vendor, record.arch].filter(Boolean).join(' · ');
         return (
-          <Space direction="vertical" size={2}>
-            <a onClick={() => handleShowDetail(record)} style={{ fontWeight: 600, color: palette.text }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
+            <a onClick={() => handleShowDetail(record)} style={{ fontWeight: 600, color: palette.text, whiteSpace: 'nowrap' }}>
               {text}
             </a>
-            <Space size="small" align="center" style={{ flexWrap: 'wrap' }}>
-              {info && <Text type="secondary" style={{ fontSize: '11px' }}>{info}</Text>}
-              {renderVirtTag(record.virtualization)}
-              {renderTags(record.tags)}
-            </Space>
-          </Space>
+            {renderTags(record.tags)}
+            {renderVirtTag(record.virtualization)}
+            {info && <Text type="secondary" style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>{info}</Text>}
+          </div>
         );
       },
     },
@@ -874,7 +873,7 @@ export const Assets: React.FC = () => {
         icon={<DatabaseOutlined />}
       />
 
-      <div style={{ padding: pagePadding }} className="mrd-page-in">
+      <div style={{ padding: pagePadding }} className="lynx-page-in">
         <div style={groupBy === 'none' ? tablePanelStyle : { ...tablePanelStyle, background: 'transparent', border: 'none' }}>
           {/* 工具栏：左=新建/批量操作，右=检索/过滤/分组 */}
           <TableToolbar
@@ -951,7 +950,7 @@ export const Assets: React.FC = () => {
           {/* 表格主体 / 分组视图 */}
           {groupBy === 'none' ? (
             <Table
-              className="mrd-table"
+              className="lynx-table"
               columns={columns}
               dataSource={assets}
               rowKey="id"

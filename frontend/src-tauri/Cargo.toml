@@ -1,5 +1,5 @@
 [package]
-name = "meridian-desktop"
+name = "lynx-desktop"
 version = "0.43.0"
 description = "Lynx 猞猁 — 桌面端（Tauri + Go sidecar）"
 edition = "2021"

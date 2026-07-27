@@ -20,8 +20,12 @@ var DB *gorm.Model
 var GlobalDB *gorm.DB
 
 func InitDB() *gorm.DB {
-	// 数据库文件路径可由 MERIDIAN_DB 覆盖（容器部署时指向挂载卷，如 /data/assets.db）
-	dbFile := os.Getenv("MERIDIAN_DB")
+	// 数据库文件路径可由 LYNX_DB 覆盖（容器部署时指向挂载卷，如 /data/assets.db）
+	// 兼容旧名 MERIDIAN_DB：已在编排/服务里配置过旧变量的部署无需改动即可继续运行。
+	dbFile := os.Getenv("LYNX_DB")
+	if dbFile == "" {
+		dbFile = os.Getenv("MERIDIAN_DB")
+	}
 	if dbFile == "" {
 		dbFile = "assets.db"
 	}

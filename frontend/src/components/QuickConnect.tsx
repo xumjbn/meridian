@@ -20,7 +20,7 @@ import { useTerminals } from '../terminalSessions';
 import { palette } from '../theme';
 
 const UNGROUPED = '未分组';
-const RECENT_KEY = 'mrd-recent-hosts';
+const RECENT_KEY = 'lynx-recent-hosts';
 
 const parseTags = (s?: string): string[] => {
   if (!s) return [];
@@ -86,8 +86,8 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     };
     init();
     // 桌面端后台登录拿到 token 后会广播，此时再拉一次（首屏可能在拿到 token 前就挂载了）
-    window.addEventListener('mrd-auth-ready', init);
-    return () => window.removeEventListener('mrd-auth-ready', init);
+    window.addEventListener('lynx-auth-ready', init);
+    return () => window.removeEventListener('lynx-auth-ready', init);
   }, []);
 
   const openIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions]);
@@ -116,7 +116,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   // 右键菜单动作
   const openInSplit = (a: Asset) => {
     if (activeId !== null) {
-      window.dispatchEvent(new CustomEvent('mrd-open-in-split', { detail: a.id }));
+      window.dispatchEvent(new CustomEvent('lynx-open-in-split', { detail: a.id }));
       pushRecent(a.id);
     } else {
       connect(a); // 没有活动终端则退化为新标签连接
@@ -125,9 +125,9 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const hostMenu = (a: Asset): MenuProps['items'] => [
     { key: 'connect', icon: <CodeOutlined />, label: '连接（新标签）', onClick: () => connect(a) },
     { key: 'split', icon: <BlockOutlined />, label: '在新分屏打开', onClick: () => openInSplit(a) },
-    { key: 'sftp', icon: <FolderOpenOutlined />, label: '文件传输 (SFTP)', onClick: () => window.dispatchEvent(new CustomEvent('mrd-open-sftp', { detail: a })) },
+    { key: 'sftp', icon: <FolderOpenOutlined />, label: '文件传输 (SFTP)', onClick: () => window.dispatchEvent(new CustomEvent('lynx-open-sftp', { detail: a })) },
     { type: 'divider' },
-    { key: 'assets', icon: <EditOutlined />, label: '在资产清单查看', onClick: () => window.dispatchEvent(new CustomEvent('mrd-navigate', { detail: '/assets' })) },
+    { key: 'assets', icon: <EditOutlined />, label: '在资产清单查看', onClick: () => window.dispatchEvent(new CustomEvent('lynx-navigate', { detail: '/assets' })) },
   ];
 
   // 过滤 + 按标签分组（一台主机可出现在多个标签下；无标签归「未分组」）
@@ -178,7 +178,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const localActive = activeId !== null && activeId < 0;
 
   const startHostDrag = (e: React.DragEvent, a: Asset) => {
-    e.dataTransfer.setData('application/x-mrd-asset', String(a.id));
+    e.dataTransfer.setData('application/x-lynx-asset', String(a.id));
     e.dataTransfer.setData('text/plain', a.name);
     e.dataTransfer.effectAllowed = 'copy';
   };
