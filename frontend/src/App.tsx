@@ -1,6 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { Menu, ConfigProvider, theme, Tooltip, Spin } from 'antd';
-import type { MenuProps } from 'antd';
+import { ConfigProvider, theme, Tooltip, Spin } from 'antd';
 import {
   DashboardOutlined,
   DatabaseOutlined,
@@ -63,27 +62,17 @@ const navItems = [
 // 仅管理员可见的菜单项（自动发现涉及全网扫描；系统设置含平台级敏感配置）
 const adminOnlyKeys = ['/tasks', '/users', '/audit', '/settings'];
 
-// 按角色过滤侧边栏：普通用户隐藏管理员专属项（分组子项亦随之过滤）
-// shell 优先：管理导航降级为可折叠子菜单，默认收起，给「快速连接」让位
+// 顶栏一级导航：总览 + 两个下拉分组；按角色裁剪管理员专属项。
+// 页面导航只在顶栏出现一次，侧栏留给「快速连接」主机树。
 const buildMenu = (isAdmin: boolean) => {
   const flat = isAdmin ? navItems : navItems.filter((i) => !adminOnlyKeys.includes(i.key));
   const pick = (keys: string[]) => flat.filter((i) => keys.includes(i.key));
-  const submenu = (key: string, label: string, icon: React.ReactNode, keys: string[]) => {
-    const children = pick(keys);
-    return children.length ? [{ key, label, icon, children }] : [];
-  };
-  const grouped: MenuProps['items'] = [
-    ...pick(['/']),
-    ...submenu('g-asset', '资产中心', <DatabaseOutlined style={{ fontSize: 15 }} />, ['/assets', '/k8s', '/tasks']),
-    ...submenu('g-sys', '接入与系统', <SettingOutlined style={{ fontSize: 15 }} />, ['/credentials', '/users', '/audit', '/settings']),
-  ];
-  // 顶栏一级导航：总览 + 两个下拉分组（与侧栏同一套路由，按角色裁剪）
   const headerItems: HeaderNavItem[] = [{ key: '/', label: '总览' }];
   const asset = pick(['/assets', '/k8s', '/tasks']);
   if (asset.length) headerItems.push({ key: 'h-asset', label: '资产中心', children: asset.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
   const sys = pick(['/credentials', '/users', '/audit', '/settings']);
   if (sys.length) headerItems.push({ key: 'h-sys', label: '接入与系统', children: sys.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
-  return { flat, grouped, headerItems };
+  return { headerItems };
 };
 
 const AppLayout: React.FC = () => {
@@ -111,7 +100,7 @@ const AppLayout: React.FC = () => {
   }, [navigate, setActive]);
 
   const isAdmin = (localStorage.getItem('mrd-role') || 'admin') === 'admin';
-  const { grouped: groupedItems, headerItems } = buildMenu(isAdmin);
+  const { headerItems } = buildMenu(isAdmin);
 
   const selectedKey = (() => {
     const path = location.pathname;
@@ -187,25 +176,10 @@ const AppLayout: React.FC = () => {
               zIndex: 10,
             }}
           >
+            {/* 侧栏只放「快速连接」主机树并占满高度：
+                页面导航一律走顶栏，不在两处重复同一套路由。 */}
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: collapsed ? '10px 8px' : '10px' }}>
-              <div style={{ flex: 1, minHeight: 0, marginBottom: 8 }}>
-                <QuickConnect collapsed={collapsed} />
-              </div>
-              <div style={{ flexShrink: 0, borderTop: `1px solid ${palette.siderBorder}`, paddingTop: 6, margin: collapsed ? '0 -8px' : '0 -10px' }}>
-                {!collapsed && (
-                  <div style={{ fontSize: 11, fontWeight: 600, color: palette.chromeTextMute, padding: '2px 16px 4px', letterSpacing: 0.4 }}>
-                    管理
-                  </div>
-                )}
-                <Menu
-                  mode="inline"
-                  inlineCollapsed={collapsed}
-                  selectedKeys={[selectedKey]}
-                  items={groupedItems}
-                  onClick={(info) => go(info.key)}
-                  style={{ background: 'transparent', borderRight: 0 }}
-                />
-              </div>
+              <QuickConnect collapsed={collapsed} />
             </div>
 
             {/* 底部：版本号 */}

@@ -2,14 +2,18 @@ import React from 'react';
 import { brand, palette } from '../theme';
 
 // ─────────────────────────────────────────────────────────────
-// Lynx Logo（猞猁）
-// 尖耳簇毛 + 颊毛锯齿 + 杏仁眼的猞猁头部剪影
-// 寓意：锐利目光 / 夜视 / 机警 —— 发现(scan) → 监控(watch) → 接入(connect)
+// Lynx Logo —— wjw 字母组合徽标
+// 圆角徽章 + 手写感 wjw 连写（圆头描边，小尺寸不糊）；j 的点做成小心形。
+// 32×32 网格：左右各留 5.2 边距居中，字母 x 高区间 y=13.5~20.5。
 // ─────────────────────────────────────────────────────────────
+
+// 单个 w 的折线（起点 x 为左端，宽 7.6）
+const wPath = (x: number) =>
+  `M${x},13.5 L${x + 1.9},20.5 L${x + 3.8},16.2 L${x + 5.7},20.5 L${x + 7.6},13.5`;
 
 interface LogoMarkProps {
   size?: number;
-  /** badge: 渐变圆角徽标内嵌白色猞猁 | glyph: 透明背景渐变猞猁 */
+  /** badge: 渐变圆角徽标内嵌白色 wjw | glyph: 透明背景渐变 wjw */
   variant?: 'badge' | 'glyph';
   style?: React.CSSProperties;
 }
@@ -21,8 +25,7 @@ export const LogoMark: React.FC<LogoMarkProps> = ({ size = 32, variant = 'badge'
   const gid = React.useMemo(() => `lx-grad-${gradSeq++}`, []);
   const badge = variant === 'badge';
   const grad = `url(#${gid})`;
-  const body = badge ? '#ffffff' : grad;       // 猞猁本体填充
-  const knock = badge ? grad : '#ffffff';      // 眼/鼻镂空填充
+  const ink = badge ? '#ffffff' : grad; // 字母与心形着色：徽章内用白，透明态用渐变
 
   return (
     <svg
@@ -32,7 +35,7 @@ export const LogoMark: React.FC<LogoMarkProps> = ({ size = 32, variant = 'badge'
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       style={style}
-      aria-label="Lynx 猞猁"
+      aria-label="wjw"
     >
       <defs>
         <linearGradient id={gid} x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
@@ -44,19 +47,19 @@ export const LogoMark: React.FC<LogoMarkProps> = ({ size = 32, variant = 'badge'
 
       {badge && <rect x="0" y="0" width="32" height="32" rx="8.5" fill={grad} />}
 
-      {/* 猞猁头部剪影 */}
-      <g fill={body}>
-        <path d="M8.6 12.2 L10.6 5.2 L10.7 3.2 L11.7 5.6 L13.6 11.4 Z" />
-        <path d="M23.4 12.2 L21.4 5.2 L21.3 3.2 L20.3 5.6 L18.4 11.4 Z" />
-        <path d="M16 10.0 C 12.7 10.0, 10.2 11.7, 9.5 14.4 L 7.3 15.0 L 9.0 16.4 C 9.2 18.7, 10.6 20.9, 12.5 22.4 L 11.6 24.8 L 13.9 23.6 C 14.5 24.0, 15.2 24.3, 16 24.3 C 16.8 24.3, 17.5 24.0, 18.1 23.6 L 20.4 24.8 L 19.5 22.4 C 21.4 20.9, 22.8 18.7, 23.0 16.4 L 24.7 15.0 L 22.5 14.4 C 21.8 11.7, 19.3 10.0, 16 10.0 Z" />
+      {/* wjw 连写：两个 w 夹一个 j，全部圆头描边 */}
+      <g stroke={ink} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" fill="none">
+        <path d={wPath(5.2)} />
+        {/* j：竖笔 + 左下回勾 */}
+        <path d="M15.8,13.5 L15.8,19.2 C15.8,21.2 14.4,21.9 13.2,21.2" />
+        <path d={wPath(19.2)} />
       </g>
 
-      {/* 眼睛 + 鼻子 */}
-      <g fill={knock}>
-        <path d="M11.7 15.6 C 12.4 14.9, 13.6 14.9, 14.3 15.5 C 13.6 16.4, 12.4 16.4, 11.7 15.6 Z" />
-        <path d="M20.3 15.6 C 19.6 14.9, 18.4 14.9, 17.7 15.5 C 18.4 16.4, 19.6 16.4, 20.3 15.6 Z" />
-        <path d="M16 18.2 L 14.8 19.4 L 16 20.1 L 17.2 19.4 Z" />
-      </g>
+      {/* j 的点做成小心形 */}
+      <path
+        d="M15.8,10.8 C14.4,9.7 13.6,9.0 13.6,8.2 C13.6,7.5 14.2,7.0 14.8,7.0 C15.3,7.0 15.65,7.3 15.8,7.6 C15.95,7.3 16.3,7.0 16.8,7.0 C17.4,7.0 18.0,7.5 18.0,8.2 C18.0,9.0 17.2,9.7 15.8,10.8 Z"
+        fill={ink}
+      />
     </svg>
   );
 };
