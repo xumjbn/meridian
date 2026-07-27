@@ -8,10 +8,10 @@
 import type { CSSProperties } from 'react';
 
 export const brand = {
-  name: 'Lynx',
-  zh: '猞猁',
+  name: 'wjw',
+  zh: 'wjw',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.72',
+  version: 'v0.73',
   repo: 'https://github.com/',
 } as const;
 

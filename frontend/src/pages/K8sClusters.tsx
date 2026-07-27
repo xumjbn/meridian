@@ -72,7 +72,7 @@ export const K8sClusters: React.FC = () => {
       setClusters(cl);
       setUnassigned(un);
     } catch (e: any) {
-      message.error(e?.message || '加载 Kubernetes 集群失败');
+      message.error(e?.message || '加载 K8s 集群失败');
     } finally {
       setLoading(false);
     }
@@ -317,7 +317,7 @@ export const K8sClusters: React.FC = () => {
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
-        title="Kubernetes 集群"
+        title="K8s 集群"
         subtitle="把扫描发现的 K8s 节点归类为集群，一键跳转容器云控制台"
         icon={<CloudServerOutlined />}
         extra={

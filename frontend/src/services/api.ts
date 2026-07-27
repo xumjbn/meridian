@@ -114,6 +114,14 @@ export interface Asset {
   owner_name?: string; // 归属用户名（后端展示用，非持久化）
   k8s_role?: string; // "" | control-plane | worker（扫描探测得到）
   k8s_cluster_id?: number | null; // 归属 K8s 集群
+  // 资源用量（认证采集，兼容 Linux/macOS/Windows 目标机）；metrics_at 为空表示未采集
+  cpu_percent?: number;
+  mem_used_kb?: number;
+  mem_total_kb?: number;
+  disk_used_kb?: number;
+  disk_total_kb?: number;
+  metrics_os?: string;
+  metrics_at?: string | null;
 }
 
 export interface ScanTask {
@@ -191,6 +199,20 @@ export interface PingResult {
 export const pingAsset = (id: number): Promise<PingResult> => api.post(`/assets/${id}/ping`);
 
 // 批量资产在线探测
+// ── 主机资源用量采集（CPU/内存/磁盘）────────────────────
+export interface HostMetrics {
+  os: string;
+  cpu_percent: number;
+  mem_used_kb: number;
+  mem_total_kb: number;
+  disk_used_kb: number;
+  disk_total_kb: number;
+}
+export const collectAssetMetrics = (id: number): Promise<{ ok: boolean; message?: string; metrics?: HostMetrics }> =>
+  api.post(`/assets/${id}/metrics`);
+export const batchCollectMetrics = (ids: number[]): Promise<{ ok: number; failed: { ip: string; msg: string }[] }> =>
+  api.post('/assets/metrics/batch', { ids });
+
 export const batchPingAssets = (ids: number[]): Promise<{ processed: number }> => api.post('/assets/batch-ping', { ids });
 
 export interface Tag {

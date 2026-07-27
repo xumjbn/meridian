@@ -20,6 +20,7 @@ import {
   Collapse,
   Timeline,
   Spin,
+  Tooltip,
   Upload
 } from 'antd';
 import {
@@ -29,6 +30,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   CompassOutlined,
+  DashboardOutlined,
   InfoCircleOutlined,
   SyncOutlined,
   DatabaseOutlined,
@@ -51,6 +53,8 @@ import {
   updateTag,
   deleteTag,
   collectAsset,
+  collectAssetMetrics,
+  batchCollectMetrics,
   getAssetHistory,
   importAssets,
   getAssetUptime,
@@ -544,7 +548,8 @@ export const Assets: React.FC = () => {
     }
   };
 
-  // 单资产认证采集（采集 CPU 架构 / 系统等信息）
+  // 单资产认证采集：系统信息（架构/虚拟化）+ 资源用量（CPU/内存/磁盘）一次拿全，
+  // 两者都走同一条 SSH 凭据，合并成一个动作，避免操作列再多一个按钮。
   const handleCollect = async (id: number) => {
     setCollectingIds((prev) => ({ ...prev, [id]: true }));
     try {
@@ -554,11 +559,40 @@ export const Assets: React.FC = () => {
       } else {
         message.warning(res.message);
       }
+      // 资源用量单独失败不影响系统信息采集结果，仅提示
+      try {
+        const m = await collectAssetMetrics(id);
+        if (!m.ok && m.message) message.warning(`资源用量采集：${m.message}`);
+      } catch {
+        /* 忽略：用量采集失败不阻断主流程 */
+      }
       fetchAssets();
     } catch (e: any) {
       message.error(`采集失败: ${e.message || '网络连接超时'}`);
     } finally {
       setCollectingIds((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  // 批量采集资源用量（勾选多台时用）
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const handleBatchMetrics = async () => {
+    const ids = selectedRowKeys.map(Number);
+    if (ids.length === 0) return;
+    setMetricsLoading(true);
+    message.loading({ content: `正在采集 ${ids.length} 台主机的资源用量...`, key: 'batch_metrics', duration: 0 });
+    try {
+      const r = await batchCollectMetrics(ids);
+      if (r.failed.length) {
+        message.warning({ content: `成功 ${r.ok} 台，失败 ${r.failed.length} 台（${r.failed[0].ip}: ${r.failed[0].msg}）`, key: 'batch_metrics' });
+      } else {
+        message.success({ content: `已采集 ${r.ok} 台主机的资源用量`, key: 'batch_metrics' });
+      }
+      fetchAssets();
+    } catch (e: any) {
+      message.error({ content: `批量采集失败: ${e.message || '网络连接超时'}`, key: 'batch_metrics' });
+    } finally {
+      setMetricsLoading(false);
     }
   };
 
@@ -716,6 +750,41 @@ export const Assets: React.FC = () => {
     return <Tag color={info.color} style={base}>{prefix}{info.label}</Tag>;
   };
 
+  // 资源用量：两条细进度条（CPU / 内存），未采集时给出提示。
+  // 目标机可能是 Linux/macOS/Windows，后端已统一成百分比与 KB，这里只负责展示。
+  const renderMetrics = (a: Asset) => {
+    if (!a.metrics_at) {
+      return <span style={{ fontSize: 11, color: palette.textMute }}>未采集</span>;
+    }
+    const memPct = a.mem_total_kb ? Math.round(((a.mem_used_kb || 0) / a.mem_total_kb) * 100) : 0;
+    const cpuPct = Math.round(a.cpu_percent || 0);
+    const barColor = (p: number) => (p >= 90 ? palette.danger : p >= 70 ? palette.warning : palette.success);
+    const row = (label: string, pct: number, hint: string) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ fontSize: 10, color: palette.textMute, width: 22 }}>{label}</span>
+        <Tooltip title={hint}>
+          <div style={{ width: 56, height: 5, borderRadius: 3, background: '#e9ecf2', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: '100%', background: barColor(pct) }} />
+          </div>
+        </Tooltip>
+        <span style={{ fontSize: 11, color: palette.textSub, fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
+      </div>
+    );
+    const gb = (kb?: number) => ((kb || 0) / 1024 / 1024).toFixed(1);
+    const diskPct = a.disk_total_kb ? Math.round(((a.disk_used_kb || 0) / a.disk_total_kb) * 100) : 0;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {row('CPU', cpuPct, `${a.metrics_os || ''} · 采集于 ${new Date(a.metrics_at).toLocaleString()}`)}
+        {row('内存', memPct, `${gb(a.mem_used_kb)} / ${gb(a.mem_total_kb)} GB`)}
+        {!!a.disk_total_kb && (
+          <span style={{ fontSize: 10, color: palette.textMute }}>
+            磁盘 {diskPct}%（{gb(a.disk_used_kb)}/{gb(a.disk_total_kb)} GB）
+          </span>
+        )}
+      </div>
+    );
+  };
+
   const renderTags = (tagsStr?: string) => {
     if (!tagsStr) return null;
     try {
@@ -802,6 +871,12 @@ export const Assets: React.FC = () => {
       render: (text: string) => renderPorts(text),
     },
     {
+      title: 'CPU / 内存',
+      key: 'metrics',
+      width: 150,
+      render: (_: unknown, record: Asset) => renderMetrics(record),
+    },
+    {
       title: '操作',
       key: 'action',
       render: (_: any, record: Asset) => (
@@ -868,7 +943,7 @@ export const Assets: React.FC = () => {
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
-        title="资产清单 (CMDB)"
+        title="资产清单"
         subtitle="登记并维护物理主机与网络设备，支持端口探测与一键交互式 SSH 会话"
         icon={<DatabaseOutlined />}
       />
@@ -889,6 +964,7 @@ export const Assets: React.FC = () => {
                 {groupBy === 'none' && selectedRowKeys.length > 0 && (
                   <>
                     <Button icon={<CompassOutlined />} onClick={handleBatchPing}>批量探测</Button>
+                    <Button icon={<DashboardOutlined />} loading={metricsLoading} onClick={handleBatchMetrics}>采集资源</Button>
                     <Popconfirm
                       title={`确认删除选中的 ${selectedRowKeys.length} 台资产？`}
                       onConfirm={handleBatchDelete}

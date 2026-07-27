@@ -391,12 +391,12 @@ export const Settings: React.FC = () => {
             {/* 关于 */}
             <SettingCard
               icon={<SettingOutlined style={{ fontSize: 16 }} />}
-              title="关于 Lynx"
+              title="关于 wjw"
               description="系统版本信息与项目链接"
             >
               <SettingRow label="产品名称">
                 <Text style={{ fontWeight: 600, color: palette.text }}>
-                  {brand.name} · {brand.zh}
+                  {brand.name}
                 </Text>
               </SettingRow>
               <SettingRow label="产品定位" hint={brand.tagline}>

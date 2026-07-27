@@ -232,7 +232,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
           textAlign: 'center',
         }}
       >
-        {brand.name} {brand.zh} · {brand.version}
+        {brand.name} · {brand.version}
       </div>
     </div>
   );

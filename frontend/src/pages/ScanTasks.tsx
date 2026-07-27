@@ -433,7 +433,7 @@ export const ScanTasks: React.FC = () => {
     <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="自动发现"
-        subtitle="配置并触发端口网段发现任务，自动将在线主机录入 CMDB 资产"
+        subtitle="配置并触发端口网段发现任务，自动将在线主机录入资产清单"
         icon={<RadarChartOutlined />}
       />
 

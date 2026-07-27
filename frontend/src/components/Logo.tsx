@@ -72,31 +72,22 @@ interface WordmarkProps {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 「Lynx」字标：与徽标 wjw 同一套笔法——圆头圆角描边、同样的 2.3 线宽比例，
-// 让文字与图标看上去出自同一支笔，而不是图标一种风格、文字另一种。
-// 坐标系与 LogoMark 对齐：x 高区间 y=13.5~20.5，L 的竖笔自 y=8 起。
+// 「wjw」字标：与徽标内的 wjw 完全同一套笔法与坐标（圆头圆角描边、2.3 线宽），
+// 只是脱去圆角底、不带心形点，用于品牌名位置的文字标识。
 // ─────────────────────────────────────────────────────────────
 export const LogoWordmark: React.FC<WordmarkProps> = ({ height = 18, color = 'currentColor', style }) => (
   <svg
     height={height}
-    viewBox="0 0 40 26"
+    viewBox="4 12 24 11"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
     style={{ display: 'block', overflow: 'visible', ...style }}
-    aria-label="Lynx"
+    aria-label="wjw"
   >
     <g stroke={color} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-      {/* L */}
-      <path d="M3.4,7.5 L3.4,20.5 L9.6,20.5" />
-      {/* y：左撇收于基线，右撇带下伸尾巴 */}
-      <path d="M12.4,13.5 L15.6,20.5" />
-      <path d="M19.2,13.5 L14.6,23.6" />
-      {/* n：竖笔 + 肩部 */}
-      <path d="M22.4,20.5 L22.4,13.5" />
-      <path d="M22.4,16.0 C23.3,14.1 26.4,14.0 27.5,15.9 L27.5,20.5" />
-      {/* x */}
-      <path d="M30.6,13.5 L36.2,20.5" />
-      <path d="M36.2,13.5 L30.6,20.5" />
+      <path d={wPath(5.2)} />
+      <path d="M15.8,13.5 L15.8,19.2 C15.8,21.2 14.4,21.9 13.2,21.2" />
+      <path d={wPath(19.2)} />
     </g>
   </svg>
 );

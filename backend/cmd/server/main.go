@@ -145,6 +145,7 @@ func main() {
 		// 资产在线探测
 		api.POST("/assets/:id/ping", handler.PingAsset)
 		api.POST("/assets/batch-ping", handler.BatchPingAssets)
+		api.POST("/assets/metrics/batch", handler.BatchCollectAssetMetrics) // 批量采集资源用量
 
 		// 资产可用性历史与在线率
 		api.GET("/assets/:id/uptime", handler.GetAssetUptime)
@@ -167,6 +168,7 @@ func main() {
 
 		// 认证采集（架构/系统信息）
 		api.POST("/assets/:id/collect", handler.CollectAsset)
+		api.POST("/assets/:id/metrics", handler.CollectAssetMetrics) // CPU/内存/磁盘用量
 
 		// 资产变更历史
 		api.GET("/assets/:id/history", handler.GetAssetHistory)

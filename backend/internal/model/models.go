@@ -57,9 +57,20 @@ type Asset struct {
 	K8sRole       string     `gorm:"size:20;index" json:"k8s_role"`     // "" | control-plane | worker（扫描探测得到）
 	K8sClusterID  *uint      `gorm:"index" json:"k8s_cluster_id"`       // 归属 K8s 集群（可空=未归类）
 	LastScannedAt *time.Time `json:"last_scanned_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	OwnerName     string     `gorm:"-" json:"owner_name"` // 非持久化：归属用户名（仅展示）
+
+	// ── 资源用量（认证采集，兼容 Linux / macOS / Windows 目标机）──
+	// 统一单位：CPU 为百分比，内存/磁盘为 KB；MetricsAt 为空表示尚未采集过。
+	CPUPercent  float64    `json:"cpu_percent"`
+	MemUsedKB   int64      `json:"mem_used_kb"`
+	MemTotalKB  int64      `json:"mem_total_kb"`
+	DiskUsedKB  int64      `json:"disk_used_kb"`
+	DiskTotalKB int64      `json:"disk_total_kb"`
+	MetricsOS   string     `gorm:"size:20" json:"metrics_os"` // Linux / Darwin / Windows
+	MetricsAt   *time.Time `json:"metrics_at"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	OwnerName string    `gorm:"-" json:"owner_name"` // 非持久化：归属用户名（仅展示）
 }
 
 // ResolvedSSHPort 返回有效 SSH 端口（未设置时回退默认 22）

@@ -126,7 +126,7 @@ export const Dashboard: React.FC = () => {
   const quickLinks = [
     { icon: <SafetyCertificateOutlined />, label: '凭据保管箱', desc: '配置 SSH 账号与密钥', to: '/credentials' },
     { icon: <RadarChartOutlined />, label: '自动发现', desc: '扫网段找出存活主机', to: '/tasks' },
-    { icon: <DatabaseOutlined />, label: '资产清单', desc: '维护 CMDB 与标签', to: '/assets' },
+    { icon: <DatabaseOutlined />, label: '资产清单', desc: '维护资产台账与标签', to: '/assets' },
     { icon: <CloudServerOutlined />, label: 'K8s 集群', desc: '纳管集群与控制台', to: '/k8s' },
   ];
 

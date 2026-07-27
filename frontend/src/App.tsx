@@ -50,8 +50,8 @@ const COLLAPSED = 64;
 // 完整导航项（含仅管理员可见的「用户管理」），用于路由高亮与标题解析
 const navItems = [
   { key: '/', icon: <DashboardOutlined style={{ fontSize: 15 }} />, label: '控制台' },
-  { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 15 }} />, label: '资产清单 (CMDB)' },
-  { key: '/k8s', icon: <CloudServerOutlined style={{ fontSize: 15 }} />, label: 'Kubernetes 集群' },
+  { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 15 }} />, label: '资产清单' },
+  { key: '/k8s', icon: <CloudServerOutlined style={{ fontSize: 15 }} />, label: 'K8s 集群' },
   { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 15 }} />, label: '自动发现' },
   { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 15 }} />, label: '凭据保管箱' },
   { key: '/users', icon: <TeamOutlined style={{ fontSize: 15 }} />, label: '用户管理' },
