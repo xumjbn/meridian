@@ -1138,16 +1138,6 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     // 回车：把真实执行的命令记入该主机历史（后续行内补全的主要来源）
     if (data === '\r' || data === '\n') {
-      // 彩蛋：整行命中口令时不发给 shell（否则只会得到 command not found），
-      // 改为清掉当前行并放一场演出。921129 走生日版文案，其余走日常版。
-      const line = lineBufferRef.current;
-      const birthday = EASTER_EGG_BIRTHDAY_RE.test(line);
-      if (birthday || EASTER_EGG_RE.test(line)) {
-        sendToShell('\x15'); // Ctrl-U 清行
-        resetCompletion(true);
-        fireEasterEgg(birthday ? 'birthday' : 'love');
-        return true;
-      }
       recordHistory(historyKey, lineBufferRef.current);
       resetCompletion(true);
       return false;
@@ -1173,6 +1163,42 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     resetCompletion(true);
     return false;
   }, [acceptSuggestion, acceptGhost, refreshSuggestions, resetCompletion, computeAnchor]);
+
+  // ── 节日特效口令识别 ─────────────────────────────────────
+  // 单独维护一小段行缓冲：原先这段逻辑写在补全处理函数里，
+  // 用户一旦关掉「命令补全」开关，口令就再也触发不了。
+  const festLineRef = useRef('');
+  const handleFestivalInput = useCallback((data: string): boolean => {
+    // 用字符码判定控制键，避免转义字面量在多层工具链里被吞掉
+    const code = data.length === 1 ? data.charCodeAt(0) : -1;
+    const CR = 13, LF = 10, BS = 8, DEL = 127, ETX = 3, NAK = 21, TAB = 9;
+    if (code === CR || code === LF) {
+      const line = festLineRef.current;
+      festLineRef.current = '';
+      const birthday = EASTER_EGG_BIRTHDAY_RE.test(line);
+      if (birthday || EASTER_EGG_RE.test(line)) {
+        sendToShell(String.fromCharCode(NAK)); // Ctrl-U 清行，免得 shell 报 command not found
+        fireEasterEgg(birthday ? 'birthday' : undefined); // 不指定则按当天日期选节日主题
+        return true;
+      }
+      return false;
+    }
+    if (code === DEL || code === BS) {
+      festLineRef.current = festLineRef.current.slice(0, -1);
+      return false;
+    }
+    if (code === ETX || code === NAK || code === TAB) {
+      festLineRef.current = '';
+      return false;
+    }
+    if (isPrintableInput(data)) {
+      festLineRef.current = (festLineRef.current + data).slice(-40);
+    }
+    return false;
+  }, [sendToShell]);
+
+  const festivalApiRef = useRef(handleFestivalInput);
+  useEffect(() => { festivalApiRef.current = handleFestivalInput; }, [handleFestivalInput]);
 
   // 将最新开关与处理函数暴露给 onData，避免连接闭包内引用过期
   const completionApiRef = useRef<{ enabled: boolean; handle: (d: string) => boolean }>({
@@ -1520,6 +1546,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     const dataListener = term.onData((data) => {
       // 命令补全优先拦截：Tab 接受 / ↑↓ 选择 / Esc 关闭等被消费的输入不下发
+      // 口令识别优先，且不受「命令补全」开关影响
+      if (festivalApiRef.current(data)) {
+        return;
+      }
       if (completionApiRef.current.enabled && completionApiRef.current.handle(data)) {
         return;
       }

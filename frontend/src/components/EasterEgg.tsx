@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { LogoMark } from './Logo';
+import { resolveTheme, type EggTheme } from '../festivals';
 
 // ─────────────────────────────────────────────────────────────
 // 彩蛋：一段有编排的粒子演出（纯 canvas，无第三方依赖）
@@ -17,17 +18,17 @@ import { LogoMark } from './Logo';
 
 export const EASTER_EGG_EVENT = 'lynx-easter-egg';
 
-/** 演出模式：日常表白 / 生日 */
-export type EggMode = 'love' | 'birthday';
-
-/** 终端里触发日常表白：单独一行 love，或完整的 wjw i love u */
-export const EASTER_EGG_RE = /^\s*(love|wjw\s*i\s*love\s*u)\s*$/i;
-/** 终端里触发生日模式：单独一行 921129（或 生日快乐 / hbd） */
+/** 终端里触发：wjw / love / wjw i love u —— 当天是什么节日就放什么演出 */
+export const EASTER_EGG_RE = /^\s*(wjw|love|wjw\s*i\s*love\s*u)\s*$/i;
+/** 强制生日版（不看日期）：921129 / 生日快乐 / hbd */
 export const EASTER_EGG_BIRTHDAY_RE = /^\s*(921129|生日快乐|hbd)\s*$/i;
 
-/** 任意位置手动触发彩蛋（默认日常表白） */
-export const fireEasterEgg = (mode: EggMode = 'love') =>
-  window.dispatchEvent(new CustomEvent<EggMode>(EASTER_EGG_EVENT, { detail: mode }));
+/**
+ * 触发彩蛋。
+ * @param forcedKey 指定主题键（如 'birthday'）；省略则按当天日期自动选节日主题
+ */
+export const fireEasterEgg = (forcedKey?: string) =>
+  window.dispatchEvent(new CustomEvent<string | undefined>(EASTER_EGG_EVENT, { detail: forcedKey }));
 
 const KONAMI = [
   'ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
@@ -41,35 +42,6 @@ const T_TEXT = 4100;     // 幕二：I LOVE U
 const T_NAME = 6900;     // 幕三：WJW
 const T_DISSOLVE = 9200; // 幕四：化作星尘
 const T_END = 10600;
-
-// 每一幕配一句字幕，逐字打出，凑成一段完整的话。
-// 两套文案分开：日常触发（love / wjw / 徽标连点 / Konami）不提生日，
-// 只有 921129 这个日子才走生日版，免得平时也天天「生日快乐」。
-const CAPTIONS: Record<EggMode, { at: number; text: string }[]> = {
-  love: [
-    { at: 0, text: '有句话，想借这场烟花说' },
-    { at: T_HEART, text: '从遇见你的那天起' },
-    { at: T_TEXT, text: '我就没想过要放手' },
-    { at: T_NAME, text: '往后余生，风雪是你，平淡是你' },
-    { at: T_DISSOLVE, text: '天天开心，美美哒 ❤' },
-  ],
-  birthday: [
-    { at: 0, text: '今天，是个很特别的日子' },
-    { at: T_HEART, text: '闭上眼睛，许个愿吧' },
-    { at: T_TEXT, text: '愿你所求皆如愿' },
-    { at: T_NAME, text: '所行化坦途，笑口常开' },
-    { at: T_DISSOLVE, text: '生日快乐 ❤' },
-  ],
-};
-
-/** 两幕文字：日常拼 I LOVE U / WJW，生日拼 HAPPY BIRTHDAY / WJW */
-const SHAPES: Record<EggMode, [string, string]> = {
-  love: ['I LOVE U', 'WJW'],
-  birthday: ['HAPPY BIRTHDAY', 'WJW'],
-};
-
-const PINK = ['#ff5c8a', '#ff8fab', '#ff3d71', '#ffc2d1'];
-const SPARK = ['#ff5c8a', '#ffd166', '#06d6a0', '#4da3ff', '#c77dff'];
 
 type Stage = 'burst' | 'heart' | 'text' | 'dissolve';
 
@@ -93,6 +65,9 @@ interface Ripple { r: number; alpha: number }
 
 interface Star { x: number; y: number; z: number; ph: number }
 
+/** 氛围层元素：雪花（下落）或气球（上升） */
+interface Ambient { x: number; y: number; v: number; r: number; sway: number; ph: number; color: string }
+
 /** 心形参数方程（经典 16sin³t），返回以中心为原点的点集 */
 const heartPoints = (count: number, scale: number): { x: number; y: number }[] => {
   const pts: { x: number; y: number }[] = [];
@@ -103,6 +78,17 @@ const heartPoints = (count: number, scale: number): { x: number; y: number }[] =
     // 让粒子不只落在轮廓线上，随机往内收一点，形成有厚度的实心心
     const k = 0.55 + Math.random() * 0.45;
     pts.push({ x: x * scale * k, y: y * scale * k });
+  }
+  return pts;
+};
+
+/** 圆环点集：双层同心环，节庆类主题的中心形态 */
+const ringPoints = (count: number, radius: number): { x: number; y: number }[] => {
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = (Math.PI * 2 * i) / count;
+    const r = radius * (i % 3 === 0 ? 0.62 : 1) * (0.94 + Math.random() * 0.12);
+    pts.push({ x: Math.cos(t) * r, y: Math.sin(t) * r });
   }
   return pts;
 };
@@ -135,7 +121,7 @@ const textPoints = (text: string, maxWidth: number): { x: number; y: number }[] 
 export const EasterEgg: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>('burst');
-  const [mode, setMode] = useState<EggMode>('love');
+  const [theme, setTheme] = useState<EggTheme>(() => resolveTheme());
   const [caption, setCaption] = useState('');      // 当前整句
   const [typed, setTyped] = useState('');          // 已打出的部分（打字机效果）
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -157,8 +143,8 @@ export const EasterEgg: React.FC = () => {
   // 动画循环里要读最新阶段/模式，用 ref 避免闭包拿到旧值
   const stageRef = useRef<Stage>('burst');
   useEffect(() => { stageRef.current = stage; }, [stage]);
-  const modeRef = useRef<EggMode>('love');
-  useEffect(() => { modeRef.current = mode; }, [mode]);
+  const themeRef = useRef<EggTheme>(resolveTheme());
+  useEffect(() => { themeRef.current = theme; }, [theme]);
 
 
   const close = useCallback(() => {
@@ -183,9 +169,10 @@ export const EasterEgg: React.FC = () => {
       }
     };
     const onEvent = (e: Event) => {
-      const m = (e as CustomEvent<EggMode>).detail === 'birthday' ? 'birthday' : 'love';
-      setMode(m);
-      modeRef.current = m;   // 立刻同步，供本次演出的时间轴读取
+      // 未指定主题键时按当天日期自动选节日主题
+      const t = resolveTheme(new Date(), (e as CustomEvent<string | undefined>).detail);
+      setTheme(t);
+      themeRef.current = t;  // 立刻同步，供本次演出的时间轴读取
       setStage('burst'); setCaption(''); setTyped(''); setOpen(true);
     };
     window.addEventListener('keydown', onKey);
@@ -227,6 +214,12 @@ export const EasterEgg: React.FC = () => {
     window.addEventListener('mousemove', onMove);
 
     // 粒子数决定字形密度：HAPPY BIRTHDAY 有 14 个字母，粒子太少会散得认不出
+    // 本次演出使用的主题（配色 / 形态 / 氛围层）
+    const th0 = themeRef.current;
+    const pal = th0.particle;
+    const spk = th0.spark;
+
+    // 粒子数决定字形密度：HAPPY BIRTHDAY 有 14 个字母，粒子太少会散得认不出
     const COUNT = reduced ? 480 : 1700;
     const parts: P[] = Array.from({ length: COUNT }, () => ({
       x: cx() + (Math.random() - 0.5) * W(),
@@ -234,7 +227,7 @@ export const EasterEgg: React.FC = () => {
       vx: (Math.random() - 0.5) * 6,
       vy: (Math.random() - 0.5) * 6,
       tx: null, ty: null,
-      color: PINK[Math.floor(Math.random() * PINK.length)],
+      color: pal[Math.floor(Math.random() * pal.length)],
       size: 1.5 + Math.random() * 1.5,
       ph: Math.random() * Math.PI * 2,
     }));
@@ -245,11 +238,28 @@ export const EasterEgg: React.FC = () => {
       z: 0.3 + Math.random() * 0.7, ph: Math.random() * Math.PI * 2,
     }));
 
+    // 氛围层：圣诞下雪、六一放气球；其它主题为空
+    const ambient: Ambient[] = [];
+    if (th0.ambient && !reduced) {
+      const n = th0.ambient === 'snow' ? 90 : 26;
+      for (let i = 0; i < n; i++) {
+        ambient.push({
+          x: Math.random() * W(),
+          y: Math.random() * H(),
+          v: th0.ambient === 'snow' ? 0.6 + Math.random() * 1.4 : -(0.5 + Math.random() * 1.1),
+          r: th0.ambient === 'snow' ? 1.2 + Math.random() * 2.2 : 9 + Math.random() * 12,
+          sway: 0.3 + Math.random() * 0.9,
+          ph: Math.random() * Math.PI * 2,
+          color: th0.ambient === 'snow' ? '#ffffff' : pal[Math.floor(Math.random() * pal.length)],
+        });
+      }
+    }
+
     let sparks: Spark[] = [];
     const ripples: Ripple[] = [];
 
     const burst = (x: number, y: number) => {
-      const color = SPARK[Math.floor(Math.random() * SPARK.length)];
+      const color = spk[Math.floor(Math.random() * spk.length)];
       const n = reduced ? 24 : 56;
       for (let i = 0; i < n; i++) {
         const a = (Math.PI * 2 * i) / n + Math.random() * 0.2;
@@ -287,8 +297,9 @@ export const EasterEgg: React.FC = () => {
 
     // ── 时间轴编排 ──
     const at = (ms: number, fn: () => void) => timersRef.current.push(window.setTimeout(fn, ms));
-    const m = modeRef.current;
-    CAPTIONS[m].forEach((c) => at(c.at, () => { setCaption(c.text); setTyped(''); }));
+    const th = themeRef.current;
+    const CUES = [0, T_HEART, T_TEXT, T_NAME, T_DISSOLVE];
+    th.captions.forEach((text, i) => at(CUES[i], () => { setCaption(text); setTyped(''); }));
     burst(cx(), cy() - 40);
     at(240, () => burst(cx() - W() * 0.22, cy() - 60));
     at(480, () => burst(cx() + W() * 0.22, cy() - 20));
@@ -296,19 +307,20 @@ export const EasterEgg: React.FC = () => {
     at(T_HEART, () => {
       setStage('heart');
       const scale = Math.min(W(), H()) / 46;
-      assign(heartPoints(COUNT, scale));
+      // 情人/生日/纪念日用心形；节庆类用旋转圆环，避免所有节日都是一颗心
+      assign(th0.core === 'ring' ? ringPoints(COUNT, scale * 7.5) : heartPoints(COUNT, scale));
       ripples.push({ r: 0, alpha: 0.55 });
     });
     at(T_TEXT, () => {
       setStage('text');
       scatter(5.5);                       // 心形先炸开
-      at(420, () => assign(textPoints(SHAPES[m][0], Math.min(W() * 0.86, 1250))));
+      at(420, () => assign(textPoints(th.shapes[0], Math.min(W() * 0.86, 1250))));
       burst(cx(), cy());
     });
     at(T_NAME, () => {
       setStage('text');
       scatter(5.0);
-      at(380, () => assign(textPoints(SHAPES[m][1], Math.min(W() * 0.55, 760))));
+      at(380, () => assign(textPoints(th.shapes[1], Math.min(W() * 0.55, 760))));
       burst(cx(), cy() - 30);
     });
     at(T_DISSOLVE, () => { setStage('dissolve'); scatter(3.2); });
@@ -333,6 +345,31 @@ export const EasterEgg: React.FC = () => {
         ctx.globalAlpha = tw * s.z;
         ctx.fillStyle = '#cfe0ff';
         ctx.fillRect(s.x, s.y, 1.4 * s.z, 1.4 * s.z);
+      }
+      ctx.globalAlpha = 1;
+
+      // 氛围层：雪花飘落 / 气球上升，横向带正弦摆动
+      for (const a of ambient) {
+        a.y += a.v;
+        a.x += Math.sin(elapsed / 900 + a.ph) * a.sway;
+        if (a.v > 0 && a.y > H() + 10) { a.y = -10; a.x = Math.random() * W(); }
+        if (a.v < 0 && a.y < -20) { a.y = H() + 20; a.x = Math.random() * W(); }
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = a.color;
+        ctx.beginPath();
+        if (th0.ambient === 'balloon') {
+          ctx.ellipse(a.x, a.y, a.r * 0.8, a.r, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y + a.r);
+          ctx.lineTo(a.x + Math.sin(elapsed / 700 + a.ph) * 4, a.y + a.r + 16);
+          ctx.stroke();
+        } else {
+          ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       ctx.globalAlpha = 1;
 
