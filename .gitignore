@@ -7,6 +7,10 @@
 backend/lynx-server
 backend/lynx-server-*
 
+# 加密主密钥（绝不可进版本库；泄露即等同泄露全部凭据）
+.lynx_key
+*.lynx_key
+
 # 运行时数据库与日志
 *.db
 *.db-shm

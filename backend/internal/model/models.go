@@ -1,6 +1,8 @@
 package model
 
 import (
+	"backend/internal/crypto"
+	"gorm.io/gorm"
 	"time"
 )
 
@@ -88,10 +90,41 @@ type Credential struct {
 	Name       string    `gorm:"size:100;not null" json:"name"`
 	Type       string    `gorm:"size:20;not null" json:"type"` // ssh_password, ssh_key, telnet
 	Username   string    `gorm:"size:100" json:"username"`
-	Password   string    `gorm:"type:text" json:"password"` // 明文密码 (按用户要求)
-	PrivateKey string    `gorm:"type:text" json:"private_key"` // SSH 私钥
+	// 密码与私钥落库前由 GORM 钩子加密（AES-256-GCM），读出时自动解密。
+	// json 标签置为 "-"：秘密绝不随接口返回给前端，前端只凭 has_* 判断是否已配置。
+	Password   string    `gorm:"type:text" json:"-"`
+	PrivateKey string    `gorm:"type:text" json:"-"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+
+	// 非持久化：仅用于前端展示「是否已配置密码/私钥」
+	HasPassword   bool `gorm:"-" json:"has_password"`
+	HasPrivateKey bool `gorm:"-" json:"has_private_key"`
+}
+
+// BeforeSave 落库前加密敏感字段
+func (c *Credential) BeforeSave(tx *gorm.DB) error {
+	enc, err := crypto.EncryptSecret(c.Password)
+	if err != nil {
+		return err
+	}
+	c.Password = enc
+	enc, err = crypto.EncryptSecret(c.PrivateKey)
+	if err != nil {
+		return err
+	}
+	c.PrivateKey = enc
+	return nil
+}
+
+// AfterFind 读出后解密，并回填 has_* 展示位。
+// 历史明文数据没有密文前缀，会原样返回，保证升级后旧凭据仍可用。
+func (c *Credential) AfterFind(tx *gorm.DB) error {
+	c.Password = crypto.MustDecrypt(c.Password)
+	c.PrivateKey = crypto.MustDecrypt(c.PrivateKey)
+	c.HasPassword = c.Password != ""
+	c.HasPrivateKey = c.PrivateKey != ""
+	return nil
 }
 
 // ScanTask 代表自动发现扫描任务

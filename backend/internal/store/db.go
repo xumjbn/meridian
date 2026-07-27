@@ -2,6 +2,8 @@ package store
 
 import (
 	"log"
+
+	"backend/internal/crypto"
 	"os"
 	"path/filepath"
 
@@ -18,6 +20,18 @@ var DB *gorm.Model
 // Let's declare it as var DB *gorm.DB.
 
 var GlobalDB *gorm.DB
+
+// dbPath 返回数据库文件路径（不含 pragma 参数），供密钥文件定位等复用
+func dbPath() string {
+	f := os.Getenv("LYNX_DB")
+	if f == "" {
+		f = os.Getenv("MERIDIAN_DB")
+	}
+	if f == "" {
+		f = "assets.db"
+	}
+	return f
+}
 
 func InitDB() *gorm.DB {
 	// 数据库文件路径可由 LYNX_DB 覆盖（容器部署时指向挂载卷，如 /data/assets.db）
@@ -39,6 +53,9 @@ func InitDB() *gorm.DB {
 			log.Fatalf("failed to create db dir: %v", err)
 		}
 	}
+
+	// 加密密钥文件与库文件同目录存放
+	crypto.SetKeyDir(dir)
 
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
@@ -69,6 +86,7 @@ func InitDB() *gorm.DB {
 	}
 
 	GlobalDB = db
+	encryptLegacyCredentials(db)
 	seedDefaultSettings(db)
 	seedDefaultUser(db)
 	return db
@@ -139,4 +157,38 @@ func settingValue(db *gorm.DB, key, def string) string {
 		return s.Value
 	}
 	return def
+}
+
+
+// encryptLegacyCredentials 把历史遗留的明文凭据就地加密。
+// AfterFind 会把无前缀的旧值原样返回，再次 Save 时 BeforeSave 就会加密，
+// 因此这里只需读出后重新保存一遍即可完成迁移。
+func encryptLegacyCredentials(db *gorm.DB) {
+	var rows []model.Credential
+	if err := db.Find(&rows).Error; err != nil {
+		return
+	}
+	migrated := 0
+	for i := range rows {
+		c := &rows[i]
+		// 判断落库原值是否已是密文：单独查一次原始列，避免被 AfterFind 解密干扰
+		var raw struct {
+			Password   string
+			PrivateKey string
+		}
+		if db.Table("credentials").Select("password", "private_key").Where("id = ?", c.ID).Scan(&raw).Error != nil {
+			continue
+		}
+		needs := (raw.Password != "" && !crypto.IsEncrypted(raw.Password)) ||
+			(raw.PrivateKey != "" && !crypto.IsEncrypted(raw.PrivateKey))
+		if !needs {
+			continue
+		}
+		if err := db.Save(c).Error; err == nil {
+			migrated++
+		}
+	}
+	if migrated > 0 {
+		log.Printf("已将 %d 条历史明文凭据加密入库", migrated)
+	}
 }

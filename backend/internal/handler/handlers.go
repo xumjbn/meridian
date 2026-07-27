@@ -128,19 +128,37 @@ func ListCredentials(c *gin.Context) {
 	SendSuccess(c, creds)
 }
 
+// credentialReq 是凭据的写入载荷。
+// 密码/私钥在模型上是 json:"-"（绝不随响应返回），因此必须用独立的只写字段接收；
+// 更新时留空表示「保持原值不变」，前端无需回显秘密即可编辑其它字段。
+type credentialReq struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	PrivateKey string `json:"private_key"`
+}
+
 func CreateCredential(c *gin.Context) {
 	db := store.GlobalDB
-	var cred model.Credential
-	if err := c.ShouldBindJSON(&cred); err != nil {
+	var req credentialReq
+	if err := c.ShouldBindJSON(&req); err != nil {
 		SendError(c, 400, err.Error())
 		return
 	}
 
-	if cred.Name == "" || cred.Type == "" {
+	if req.Name == "" || req.Type == "" {
 		SendError(c, 400, "名称和凭证类型不能为空")
 		return
 	}
 
+	cred := model.Credential{
+		Name:       req.Name,
+		Type:       req.Type,
+		Username:   req.Username,
+		Password:   req.Password,
+		PrivateKey: req.PrivateKey,
+	}
 	cred.OwnerID = currentUserID(c) // 归属创建者
 	if err := db.Create(&cred).Error; err != nil {
 		SendError(c, 500, err.Error())
@@ -163,14 +181,27 @@ func UpdateCredential(c *gin.Context) {
 		SendError(c, 403, "无权操作该凭据")
 		return
 	}
-	owner := cred.OwnerID // 保留归属，避免被请求体覆盖
-
-	if err := c.ShouldBindJSON(&cred); err != nil {
+	var req credentialReq
+	if err := c.ShouldBindJSON(&req); err != nil {
 		SendError(c, 400, err.Error())
 		return
 	}
+	if req.Name != "" {
+		cred.Name = req.Name
+	}
+	if req.Type != "" {
+		cred.Type = req.Type
+	}
+	cred.Username = req.Username
+	// 秘密字段留空 = 保持原值（cred 此时持有 AfterFind 解密出的明文，
+	// 再次 Save 会由 BeforeSave 重新加密）
+	if req.Password != "" {
+		cred.Password = req.Password
+	}
+	if req.PrivateKey != "" {
+		cred.PrivateKey = req.PrivateKey
+	}
 	cred.ID = uint(id)
-	cred.OwnerID = owner
 
 	if err := db.Save(&cred).Error; err != nil {
 		SendError(c, 500, err.Error())

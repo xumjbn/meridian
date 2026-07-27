@@ -91,7 +91,8 @@ export const Credentials: React.FC = () => {
   const handleOpenEdit = (record: Credential) => {
     setEditingCred(record);
     setCredType(record.type);
-    form.setFieldsValue(record);
+    // 秘密字段不回显（接口也不再返回），留空即保持原值
+    form.setFieldsValue({ ...record, password: '', private_key: '' });
     setModalVisible(true);
   };
 
@@ -273,9 +274,15 @@ export const Credentials: React.FC = () => {
             <Form.Item
               label="密码"
               name="password"
-              rules={[{ required: true, message: '请输入密码' }]}
+              // 编辑已有凭据时留空 = 保持原密码；新建时必填
+              rules={editingCred ? [] : [{ required: true, message: '请输入密码' }]}
+              extra={
+                editingCred?.has_password
+                  ? '已配置密码（加密存储，不回显）。留空保持不变，填写则覆盖。'
+                  : '密码经 AES-256-GCM 加密后入库，接口不会返回。'
+              }
             >
-              <Input.Password placeholder="密码在 SQLite 数据库中以明文保存" />
+              <Input.Password placeholder={editingCred?.has_password ? '留空保持原密码不变' : '输入密码'} />
             </Form.Item>
           ) : (
             <Form.Item
@@ -296,7 +303,8 @@ export const Credentials: React.FC = () => {
                 </span>
               }
               name="private_key"
-              rules={[{ required: true, message: '请输入或导入私钥内容' }]}
+              rules={editingCred ? [] : [{ required: true, message: '请输入或导入私钥内容' }]}
+              extra={editingCred?.has_private_key ? '已配置私钥（加密存储，不回显）。留空保持不变。' : undefined}
             >
               <TextArea
                 rows={6}

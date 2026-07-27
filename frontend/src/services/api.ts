@@ -90,8 +90,13 @@ export interface Credential {
   name: string;
   type: 'ssh_password' | 'ssh_key' | 'telnet';
   username: string;
+  /** 只写：接口不再返回秘密。更新时留空表示保持原值 */
   password?: string;
+  /** 只写：同上 */
   private_key?: string;
+  /** 只读：是否已配置密码 / 私钥（用于界面提示） */
+  has_password?: boolean;
+  has_private_key?: boolean;
   created_at?: string;
 }
 
