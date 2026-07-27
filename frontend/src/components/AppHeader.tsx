@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { SearchOutlined, DownOutlined, QuestionCircleOutlined, GithubOutlined } from '@ant-design/icons';
 import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
 import { brand, palette, HEADER_H } from '../theme';
+import { fireEasterEgg } from './EasterEgg';
 
 export interface HeaderNavItem {
   key: string;
@@ -32,6 +33,19 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
   const isActive = (it: HeaderNavItem) =>
     it.children ? it.children.some((c) => c.key === activeKey) : it.key === activeKey;
 
+  // 徽标连点计数：2 秒内点满 5 次放彩蛋，其余情况照常回总览
+  const clicksRef = useRef<number[]>([]);
+  const onBrandClick = () => {
+    const now = Date.now();
+    clicksRef.current = [...clicksRef.current, now].filter((t) => now - t < 2000);
+    if (clicksRef.current.length >= 5) {
+      clicksRef.current = [];
+      fireEasterEgg();
+      return;
+    }
+    onNavigate('/');
+  };
+
   return (
     <div
       style={{
@@ -46,10 +60,10 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
         zIndex: 120,
       }}
     >
-      {/* 品牌 */}
+      {/* 品牌：正常点击回总览；2 秒内连点 5 次触发彩蛋（不打字、不污染输入框） */}
       <div
         style={{ display: 'flex', alignItems: 'center', padding: '0 20px 0 16px', cursor: 'pointer' }}
-        onClick={() => onNavigate('/')}
+        onClick={onBrandClick}
       >
         <Logo size={26} tone="light" />
       </div>

@@ -16,6 +16,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import { TerminalTabBar } from './components/TerminalTabBar';
 import { QuickConnect } from './components/QuickConnect';
 import { GlobalSearch } from './components/GlobalSearch';
+import { EasterEgg } from './components/EasterEgg';
 import { AppHeader, type HeaderNavItem } from './components/AppHeader';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { TerminalProvider, useTerminals } from './terminalSessions';
@@ -281,6 +282,9 @@ const AppLayout: React.FC = () => {
 
         {/* 全局搜索（Ctrl/Cmd + K） */}
         <GlobalSearch />
+
+        {/* 彩蛋：输入 wjw i love u */}
+        <EasterEgg />
 
         {/* 顶栏「?」打开的快捷键速查表 */}
         <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />

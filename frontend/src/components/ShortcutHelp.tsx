@@ -47,6 +47,7 @@ const groups: { title: string; items: [string, string][] }[] = [
       [`${MOD}+0`, '字号复位'],
       ['Ctrl+F', '终端内搜索'],
       [`${MOD}+Shift+/`, '打开本速查表'],
+      ['↑↑↓↓←→←→BA', '？'],
     ],
   },
 ];
