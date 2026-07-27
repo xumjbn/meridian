@@ -115,6 +115,7 @@ func main() {
 		api.POST("/k8s/clusters/:id/nodes", handler.AssignK8sNodes)
 		api.DELETE("/k8s/clusters/:id/nodes/:assetId", handler.UnassignK8sNode)
 		api.GET("/k8s/clusters/:id/console", handler.GetK8sConsole)
+		api.POST("/k8s/clusters/:id/detect-console", handler.DetectK8sConsole) // 探测控制台真实路径/类型/版本
 		api.GET("/k8s/nodes/unassigned", handler.ListUnassignedK8sNodes)
 		api.POST("/k8s/auto-classify", handler.AutoClassifyK8s)
 		// Phase 3：调 kube-apiserver 拉实时看板（需集群配置 API Token）

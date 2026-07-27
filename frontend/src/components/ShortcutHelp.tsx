@@ -24,10 +24,11 @@ const groups: { title: string; items: [string, string][] }[] = [
     title: '命令 / 补全',
     items: [
       [`${MOD}+Shift+P`, '命令面板（模糊搜命令库并插入）'],
-      ['Tab', '交给 Shell 原生补全（文件名/路径）'],
-      ['→', '接受当前高亮的补全片段'],
-      ['↑ ↓ + Enter', '在补全下拉中选择并接受片段'],
-      ['空格 / Esc', '收起补全下拉（继续输入会重新弹出）'],
+      ['→ / Tab', '接受光标后的灰色补全提示'],
+      ['Tab', '无灰字提示时交给 Shell 原生补全'],
+      ['Ctrl+空格', '弹出候选命令列表'],
+      ['↑ ↓ + Enter', '在候选列表中选择并接受'],
+      ['Esc', '关闭候选列表'],
     ],
   },
   {
@@ -55,7 +56,7 @@ export const ShortcutHelp: React.FC<Props> = ({ open, onClose }) => (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       {groups.map((g) => (
         <div key={g.title}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', marginBottom: 6 }}>{g.title}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#006eff', marginBottom: 6 }}>{g.title}</div>
           {g.items.map(([k, d]) => (
             <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
               <kbd

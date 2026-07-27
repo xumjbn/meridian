@@ -10,11 +10,12 @@ import {
 import {
   getK8sClusters, createK8sCluster, updateK8sCluster, deleteK8sCluster, getK8sCluster,
   getUnassignedK8sNodes, assignK8sNodes, unassignK8sNode, getK8sConsole, getCredentials,
-  getK8sOverview, getK8sLiveNodes, getK8sLivePods, autoClassifyK8s,
+  getK8sOverview, getK8sLiveNodes, getK8sLivePods, autoClassifyK8s, detectK8sConsole,
   type K8sCluster, type Asset, type Credential, type K8sLiveNode, type K8sLivePod, type K8sOverview,
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
-import { palette, cardStyle } from '../theme';
+import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
+import { palette, cardStyle, pagePadding } from '../theme';
 import { useTerminals } from '../terminalSessions';
 
 const roleTag = (role?: string) => {
@@ -22,6 +23,16 @@ const roleTag = (role?: string) => {
   if (role === 'worker') return <Tag>worker</Tag>;
   return <Tag>-</Tag>;
 };
+
+// 控制台类型 → 中文标签
+const CONSOLE_KIND_LABEL: Record<string, string> = {
+  uc: '容器云 UC',
+  'kubernetes-dashboard': 'K8s Dashboard',
+  rancher: 'Rancher',
+  kubesphere: 'KubeSphere',
+  web: '通用 Web',
+};
+const consoleKindLabel = (k?: string) => (k ? CONSOLE_KIND_LABEL[k] || k : '未识别');
 
 const statusDot = (status?: string) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -214,6 +225,43 @@ export const K8sClusters: React.FC = () => {
     }
   };
 
+  // 探测控制台：找出 VIP 上真实的控制台入口路径，并识别类型与版本，结果写回集群
+  const [detectingId, setDetectingId] = useState<number | null>(null);
+  const runDetectConsole = async (cl: K8sCluster) => {
+    setDetectingId(cl.id!);
+    try {
+      const { best, candidates } = await detectK8sConsole(cl.id!);
+      Modal.info({
+        title: `控制台探测结果 — ${cl.name}`,
+        width: 560,
+        content: (
+          <div style={{ marginTop: 8 }}>
+            <p style={{ marginBottom: 8 }}>
+              识别入口：<b style={{ fontFamily: 'monospace' }}>{best.path}</b>
+              　类型 <Tag color="blue">{consoleKindLabel(best.kind)}</Tag>
+              {best.version && <>版本 <Tag>{best.version}</Tag></>}
+            </p>
+            {best.title && <p style={{ color: '#64748b', fontSize: 12 }}>页面标题：{best.title}</p>}
+            <div style={{ marginTop: 10, maxHeight: 220, overflowY: 'auto' }}>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>候选路径探测明细：</div>
+              {candidates.map((p) => (
+                <div key={p.path} style={{ fontSize: 12, fontFamily: 'monospace', color: '#64748b' }}>
+                  {p.path} — HTTP {p.status} · {consoleKindLabel(p.kind)} · 得分 {p.score}
+                </div>
+              ))}
+            </div>
+          </div>
+        ),
+      });
+      load();
+      if (drawerCluster?.id === cl.id) openNodes(cl);
+    } catch (e: any) {
+      message.error(e?.message || '控制台探测失败');
+    } finally {
+      setDetectingId(null);
+    }
+  };
+
   const toTerminal = (a: Asset) => a.id && openTerminal({ id: a.id, name: a.name, ip: a.ip });
 
   const phaseColor = (p: string) =>
@@ -267,14 +315,14 @@ export const K8sClusters: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="Kubernetes 集群"
-        subtitle="把扫描发现的 K8s 节点归类为集群，一键跳转控制台（VIP:443）"
+        subtitle="把扫描发现的 K8s 节点归类为集群，一键跳转容器云控制台"
         icon={<CloudServerOutlined />}
         extra={
           <Space>
-            <Tooltip title="读取各 K8s 节点 /etc/hosts 的 cluster-vip 标记，按 VIP 自动建/并集群（控制台路径 /uc）">
+            <Tooltip title="读取各 K8s 节点 /etc/hosts 的 cluster-vip 标记按 VIP 自动建/并集群，并探测控制台真实路径与版本">
               <Button icon={<ApiOutlined />} loading={autoLoading} onClick={runAutoClassify}>自动归类</Button>
             </Tooltip>
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
@@ -283,16 +331,16 @@ export const K8sClusters: React.FC = () => {
         }
       />
 
-      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
         {/* 集群卡片 */}
         {clusters.length === 0 ? (
-          <div style={{ ...cardStyle, padding: 40, textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ ...cardStyle, padding: 40, textAlign: 'center', marginBottom: 16 }}>
             <Empty description="还没有集群，先「新建集群」并把下方探测到的 K8s 节点归类进来" />
           </div>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 28 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12, marginBottom: 16 }}>
             {clusters.map((cl) => (
-              <Card key={cl.id} style={{ width: 360, ...cardStyle }} styles={{ body: { padding: 16 } }} className="mrd-hover-card">
+              <Card key={cl.id} style={cardStyle} styles={{ body: { padding: 16 } }} className="mrd-hover-card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   <ClusterOutlined style={{ color: '#326ce5', fontSize: 18 }} />
                   <span style={{ fontSize: 15, fontWeight: 700, color: palette.text }}>{cl.name}</span>
@@ -304,12 +352,26 @@ export const K8sClusters: React.FC = () => {
                 <div style={{ fontSize: 13, color: palette.textSub, marginBottom: 4 }}>
                   节点 {cl.node_count}（master {cl.master_count} / worker {(cl.node_count || 0) - (cl.master_count || 0)}）
                 </div>
+                {/* 控制台指纹：真实入口路径 + 类型 + 版本（由「探测控制台」写入） */}
+                <div style={{ fontSize: 12, color: palette.textSub, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span>控制台</span>
+                  <span style={{ fontFamily: 'monospace' }}>{cl.console_path || '/'}</span>
+                  {cl.console_kind ? (
+                    <Tag color="blue" style={{ margin: 0 }}>{consoleKindLabel(cl.console_kind)}</Tag>
+                  ) : (
+                    <Tag style={{ margin: 0 }}>未探测</Tag>
+                  )}
+                  {cl.console_version && <Tag style={{ margin: 0 }}>{cl.console_version}</Tag>}
+                </div>
                 <div style={{ fontSize: 12, color: palette.textMute, marginBottom: 12 }}>
-                  凭据：{cl.cred_name || <span style={{ color: '#f59e0b' }}>未绑定</span>}
+                  凭据：{cl.cred_name || <span style={{ color: palette.warning }}>未绑定</span>}
                 </div>
                 <Space wrap>
-                  <Tooltip title="打开 VIP:443 控制台并复制绑定密码">
+                  <Tooltip title={`打开 https://${cl.vip}:${cl.console_port}${cl.console_path || '/'} 并复制绑定密码`}>
                     <Button type="primary" size="small" icon={<LinkOutlined />} onClick={() => openConsole(cl.id!)}>打开控制台</Button>
+                  </Tooltip>
+                  <Tooltip title="探测该 VIP 上控制台的真实入口路径、类型与版本，并写回配置">
+                    <Button size="small" icon={<ApiOutlined />} loading={detectingId === cl.id} onClick={() => runDetectConsole(cl)}>探测控制台</Button>
                   </Tooltip>
                   <Button size="small" onClick={() => openNodes(cl)}>节点{cl.has_token ? ' / 看板' : ''}</Button>
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(cl)} />
@@ -323,34 +385,40 @@ export const K8sClusters: React.FC = () => {
         )}
 
         {/* 未归类 K8s 节点 */}
-        <div style={{ ...cardStyle, padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: palette.text }}>
-              未归类 K8s 节点（{unassigned.length}）
-            </span>
-            <Space>
-              <Select
-                placeholder="归类到集群…"
-                size="small"
-                style={{ width: 200 }}
-                value={assignClusterId}
-                onChange={setAssignClusterId}
-                options={clusters.map((c) => ({ label: `${c.name} (${c.vip})`, value: c.id }))}
-                disabled={clusters.length === 0}
-              />
-              <Button size="small" type="primary" onClick={doAssign} disabled={selectedNodeIds.length === 0}>
-                归类（{selectedNodeIds.length}）
-              </Button>
-            </Space>
+        <div style={tablePanelStyle}>
+          <div style={{ padding: '12px 16px 0', fontSize: 14, fontWeight: 500, color: palette.text }}>
+            未归类 K8s 节点（{unassigned.length}）
           </div>
+          <TableToolbar
+            onRefresh={load}
+            loading={loading}
+            selectedCount={selectedNodeIds.length}
+            onClearSelection={() => setSelectedNodeIds([])}
+            left={
+              <>
+                <Select
+                  placeholder="归类到集群…"
+                  style={{ width: 220 }}
+                  value={assignClusterId}
+                  onChange={setAssignClusterId}
+                  options={clusters.map((c) => ({ label: `${c.name} (${c.vip})`, value: c.id }))}
+                  disabled={clusters.length === 0}
+                />
+                <Button type="primary" onClick={doAssign} disabled={selectedNodeIds.length === 0}>
+                  归类到集群
+                </Button>
+              </>
+            }
+          />
           <Table
+            className="mrd-table"
             columns={unassignedCols}
             dataSource={unassigned}
             rowKey="id"
             size="small"
             loading={loading}
             rowSelection={{ selectedRowKeys: selectedNodeIds, onChange: setSelectedNodeIds }}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
+            pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
             locale={{ emptyText: '暂无未归类的 K8s 节点（在「自动发现」任务里勾选「探测 Kubernetes 节点」即可发现）' }}
           />
         </div>
@@ -378,8 +446,8 @@ export const K8sClusters: React.FC = () => {
               <InputNumber min={1} max={65535} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item label="控制台路径" name="console_path" style={{ flex: 1, minWidth: 260 }}
-              tooltip="如 /#/login、/dashboard/，默认 /。支持占位符 {username}/{password}：控制台若接受 URL 传凭据/Token（如 /login?token={password}），即可真·一键免登；否则点开后自动复制密码粘贴登录。">
-              <Input placeholder="/  或  /login?token={password}" />
+              tooltip="留空可用「探测控制台」自动识别真实入口（/uc、/、/console 等）。支持占位符 {username}/{password}：控制台若接受 URL 传凭据/Token（如 /login?token={password}），即可真·一键免登；否则点开后自动复制密码粘贴登录。">
+              <Input placeholder="留空自动探测，或 /login?token={password}" />
             </Form.Item>
           </Space>
           <Form.Item label="绑定登录凭据" name="credential_id" tooltip="点「打开控制台」时复制该凭据的密码到剪贴板">
@@ -415,10 +483,15 @@ export const K8sClusters: React.FC = () => {
         )}
       >
         {drawerCluster && (
-          <div style={{ marginBottom: 12, fontSize: 13, color: palette.textSub }}>
+          <div style={{ marginBottom: 12, fontSize: 13, color: palette.textSub, lineHeight: 1.9 }}>
             VIP <span style={{ fontFamily: 'monospace' }}>{drawerCluster.vip}:{drawerCluster.console_port}</span>
             　·　API <span style={{ fontFamily: 'monospace' }}>{drawerCluster.api_server || `${drawerCluster.vip}:6443`}</span>
             　·　凭据 {drawerCluster.cred_name || '未绑定'}
+            <br />
+            控制台 <span style={{ fontFamily: 'monospace' }}>{drawerCluster.console_path || '/'}</span>
+            　·　类型 {consoleKindLabel(drawerCluster.console_kind)}
+            {drawerCluster.console_version && <>　·　版本 {drawerCluster.console_version}</>}
+            {drawerCluster.console_title && <>　·　标题 {drawerCluster.console_title}</>}
           </div>
         )}
 

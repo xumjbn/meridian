@@ -18,7 +18,7 @@ import {
 } from '@ant-design/icons';
 import { getStats, getRecentActivity, type Stats, type ActivityLog } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
-import { palette, cardStyle } from '../theme';
+import { palette, cardStyle, pagePadding } from '../theme';
 
 const activityConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   asset_created: { color: 'green', icon: <PlusCircleOutlined />, label: '资产创建' },
@@ -80,14 +80,14 @@ export const Dashboard: React.FC = () => {
   const unknown = (stats?.total_assets ?? 0) - (stats?.online_assets ?? 0) - (stats?.offline_assets ?? 0);
 
   const statCards = [
-    { label: '纳管资产总数', value: stats?.total_assets, icon: <DatabaseOutlined />, accent: palette.primary, bg: 'rgba(99,102,241,0.1)' },
+    { label: '纳管资产总数', value: stats?.total_assets, icon: <DatabaseOutlined />, accent: palette.primary, bg: 'rgba(0,110,255,0.10)' },
     { label: '物理服务器', value: stats?.servers, icon: <DesktopOutlined />, accent: '#0d9488', bg: 'rgba(13,148,136,0.1)' },
     { label: '网络交换机', value: stats?.switches, icon: <ApartmentOutlined />, accent: '#16a34a', bg: 'rgba(22,163,74,0.1)' },
     { label: '核心路由器', value: stats?.routers, icon: <LinkOutlined />, accent: '#ea580c', bg: 'rgba(234,88,12,0.1)' },
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="控制台"
         subtitle="实时资产态势监控与自动发现扫描概览"
@@ -106,9 +106,9 @@ export const Dashboard: React.FC = () => {
         }
       />
 
-      <div style={{ padding: 32 }} className="mrd-fade-up">
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
         {/* 统计卡片行 */}
-        <Row gutter={[20, 20]}>
+        <Row gutter={[12, 12]}>
           {statCards.map((card) => (
             <Col xs={24} sm={12} xl={6} key={card.label}>
               <div className="mrd-hover-card" style={{ ...cardStyle, padding: 20, position: 'relative', overflow: 'hidden' }}>
@@ -132,7 +132,7 @@ export const Dashboard: React.FC = () => {
                       justifyContent: 'center',
                       width: 36,
                       height: 36,
-                      borderRadius: 10,
+                      borderRadius: 6,
                       fontSize: 17,
                       background: card.bg,
                       color: card.accent,
@@ -142,7 +142,7 @@ export const Dashboard: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ marginTop: 14, position: 'relative' }}>
-                  <span style={{ fontSize: 30, fontWeight: 800, color: palette.text, letterSpacing: '-1px' }}>
+                  <span style={{ fontSize: 28, fontWeight: 600, color: palette.text, letterSpacing: '-0.5px' }}>
                     {card.value ?? 0}
                   </span>
                   <span style={{ fontSize: 13, color: palette.textMute, marginLeft: 6 }}>台</span>
@@ -153,20 +153,20 @@ export const Dashboard: React.FC = () => {
         </Row>
 
         {/* 在线率 + 活动时间线 */}
-        <Row gutter={[20, 20]} style={{ marginTop: 20 }}>
+        <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
           <Col xs={24} lg={12}>
             <div style={{ ...cardStyle, padding: 24, height: '100%' }}>
-              <h3 style={{ margin: '0 0 20px 0', fontSize: 15, fontWeight: 700, color: palette.text }}>资产存活率分析</h3>
+              <h3 style={{ margin: '0 0 20px 0', fontSize: 14, fontWeight: 500, color: palette.text }}>资产存活率分析</h3>
               <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', minHeight: 168, flexWrap: 'wrap', gap: 16 }}>
                 <Progress
                   type="circle"
                   percent={onlineRate}
                   strokeColor={{ '0%': palette.accent, '100%': palette.primary }}
-                  trailColor="#eef1f6"
+                  trailColor="#e9ecf2"
                   size={136}
                   format={(percent) => (
                     <div>
-                      <div style={{ fontSize: 26, fontWeight: 800, color: palette.text, letterSpacing: '-1px' }}>{percent}%</div>
+                      <div style={{ fontSize: 24, fontWeight: 600, color: palette.text, letterSpacing: '-0.5px' }}>{percent}%</div>
                       <div style={{ fontSize: 11, color: palette.textSub, marginTop: 2 }}>在线比例</div>
                     </div>
                   )}
@@ -194,7 +194,7 @@ export const Dashboard: React.FC = () => {
 
           <Col xs={24} lg={12}>
             <div style={{ ...cardStyle, padding: 24, height: '100%', minHeight: 220 }}>
-              <h3 style={{ margin: '0 0 20px 0', fontSize: 15, fontWeight: 700, color: palette.text }}>最近操作活动</h3>
+              <h3 style={{ margin: '0 0 20px 0', fontSize: 14, fontWeight: 500, color: palette.text }}>最近操作活动</h3>
               {activity.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', color: palette.textMute, fontSize: 13 }}>
                   暂无活动记录，创建资产或发起扫描后将在此显示

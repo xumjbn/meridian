@@ -8,13 +8,13 @@
   text-rendering: optimizeLegibility;
 
   /* ── 表面/文本/边框令牌（浅色，默认） ───────────── */
-  --mrd-bg: #f5f6fb;
+  --mrd-bg: #f0f2f5;
   --mrd-surface: #ffffff;
-  --mrd-border: #eef1f6;
-  --mrd-border-strong: #e2e8f0;
-  --mrd-text: #0f172a;
-  --mrd-text-sub: #475569;
-  --mrd-text-mute: #64748b;
+  --mrd-border: #e9ecf2;
+  --mrd-border-strong: #dcdfe6;
+  --mrd-text: #1c2028;
+  --mrd-text-sub: #5c6b7f;
+  --mrd-text-mute: #869099;
 
   background-color: var(--mrd-bg);
 }
@@ -46,8 +46,8 @@ body {
 
 /* 文本选区配色 */
 ::selection {
-  background: rgba(99, 102, 241, 0.18);
-  color: #312e81;
+  background: rgba(0, 110, 255, 0.16);
+  color: #003a8c;
 }
 
 /* 精致滚动条 */
@@ -84,14 +84,37 @@ body {
   animation: mrd-fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* 卡片悬浮微抬升 */
+/* 卡片悬浮：控制台风格只提边框与浅阴影，不做位移 */
 .mrd-hover-card {
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }
 .mrd-hover-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px -12px rgba(15, 23, 42, 0.18);
-  border-color: #dfe5f0 !important;
+  box-shadow: 0 4px 14px -6px rgba(15, 23, 42, 0.16);
+  border-color: var(--mrd-primary-border, #bcd8ff) !important;
+}
+
+/* ── 全局顶栏导航项 ───────────────────────────── */
+.mrd-topnav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 50px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: #c2cad6;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+.mrd-topnav-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+.mrd-topnav-item.is-active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
 }
 
 /* 终端容器样式 */
@@ -126,15 +149,35 @@ body {
   background: #64748b;
 }
 
-/* 侧栏菜单：选中项左侧渐变指示条 */
+/* 侧栏菜单：浅色底 + 选中项左侧蓝色指示条（控制台风格） */
 .mrd-sider .ant-menu-item-selected::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
   width: 3px;
-  height: 18px;
-  border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #6366f1, #22d3ee);
+  background: #006eff;
+}
+.mrd-sider .ant-menu-item,
+.mrd-sider .ant-menu-submenu-title {
+  border-radius: 0 !important;
+}
+
+/* ── 表格：控制台密度（表头细分隔、行悬浮浅蓝） ── */
+.mrd-table .ant-table-thead > tr > th {
+  font-weight: 500;
+  font-size: 13px;
+}
+.mrd-table .ant-table-tbody > tr > td {
+  font-size: 13px;
+}
+/* 表格外层卡片不重复画圆角边框 */
+.mrd-table .ant-table {
+  border-radius: 0;
+}
+
+/* 页面淡入（保留，幅度收敛） */
+.mrd-page-in {
+  animation: mrd-fade-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
 }

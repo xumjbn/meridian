@@ -1,6 +1,9 @@
 // ─────────────────────────────────────────────────────────────
 // Lynx · 设计令牌 (Design Tokens)
-// 网络资产发现与统一接入平台 — 统一的品牌色板与 Antd 主题配置
+// 网络资产发现与统一接入平台 — 控制台风格色板与 Antd 主题配置
+//
+// 视觉基调对齐主流公有云控制台（腾讯云 CVM）：
+//   深色全局顶栏 + 白色左侧菜单 + 浅灰内容底 + 蓝色主色 + 小圆角紧凑密度。
 // ─────────────────────────────────────────────────────────────
 import type { CSSProperties } from 'react';
 
@@ -8,19 +11,21 @@ export const brand = {
   name: 'Lynx',
   zh: '猞猁',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.67',
+  version: 'v0.68',
   repo: 'https://github.com/',
 } as const;
 
 export const palette = {
-  // 主色（靛蓝 → 紫罗兰 → 青）
-  primary: '#6366f1',
-  primaryHover: '#4f46e5',
-  primaryDeep: '#4338ca',
-  violet: '#8b5cf6',
-  accent: '#06b6d4', // 青色——用于「发现 / 雷达」语义
-  brandGradient: 'linear-gradient(135deg, #6366f1 0%, #7c5cfb 52%, #22d3ee 100%)',
-  brandGradientSoft: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(34,211,238,0.12) 100%)',
+  // 主色（控制台蓝）
+  primary: '#006eff',
+  primaryHover: '#1a7dff',
+  primaryDeep: '#0052d9',
+  primaryBg: '#e7f0ff', // 选中项/浅色底
+  primaryBorder: '#bcd8ff',
+  violet: '#7b61ff',
+  accent: '#00a4ff', // 青蓝——用于「发现 / 雷达」语义
+  brandGradient: 'linear-gradient(135deg, #006eff 0%, #00a4ff 100%)',
+  brandGradientSoft: 'linear-gradient(135deg, rgba(0,110,255,0.10) 0%, rgba(0,164,255,0.10) 100%)',
 
   // 表面与背景（CSS 变量，随 data-theme 切换浅色/深色）
   bg: 'var(--mrd-bg)',
@@ -33,28 +38,44 @@ export const palette = {
   textSub: 'var(--mrd-text-sub)',
   textMute: 'var(--mrd-text-mute)',
 
-  // 侧边栏（深空蓝）
-  siderBg: '#0b1020',
-  siderBg2: '#0d1426',
-  siderBorder: '#1b2438',
-  siderHover: '#161e33',
-  siderActive: '#202a45',
-  siderText: '#94a3b8',
+  // 全局顶栏（深色）
+  headerBg: '#15181f',
+  headerBg2: '#1b1f28',
+  headerBorder: '#272c37',
+  headerText: '#c2cad6',
+  headerTextStrong: '#ffffff',
+  headerHover: 'rgba(255,255,255,0.09)',
+  headerActive: 'rgba(255,255,255,0.14)',
+
+  // 左侧菜单（浅色）
+  siderBg: '#ffffff',
+  siderBg2: '#ffffff',
+  siderBorder: '#e5e8ef',
+  siderHover: '#f2f5fa',
+  siderActive: '#e7f0ff',
+  siderText: '#4b5563',
+  siderTextActive: '#006eff',
 
   // 语义状态
-  success: '#10b981',
-  warning: '#f59e0b',
-  danger: '#ef4444',
-  info: '#0ea5e9',
+  success: '#00a870',
+  warning: '#ed7b2f',
+  danger: '#e34d59',
+  info: '#006eff',
 } as const;
 
-// 卡片通用样式（浅色面板）
+/** 全局顶栏高度（内容区据此让位） */
+export const HEADER_H = 50;
+
+// 卡片通用样式（控制台面板：白底、细边、小圆角、几乎无阴影）
 export const cardStyle: CSSProperties = {
   background: palette.surface,
   border: `1px solid ${palette.border}`,
-  borderRadius: 12,
-  boxShadow: '0 1px 2px 0 rgba(15,23,42,0.04)',
+  borderRadius: 6,
+  boxShadow: '0 1px 2px 0 rgba(15,23,42,0.03)',
 };
+
+/** 页面内容区统一内边距（工具栏/表格/卡片外层） */
+export const pagePadding = '16px 20px 24px';
 
 // Antd 字体族（浅/深色共用）
 const antdFontFamily =
@@ -68,15 +89,15 @@ export const antdLightToken = {
   colorSuccess: palette.success,
   colorWarning: palette.warning,
   colorError: palette.danger,
-  colorBgBase: '#f5f6fb',
+  colorBgBase: '#f0f2f5',
   colorBgContainer: '#ffffff',
-  colorBgLayout: '#f5f6fb',
-  colorText: '#0f172a',
-  colorTextDescription: '#475569',
-  colorTextPlaceholder: '#808da2',
-  colorBorder: '#e2e8f0',
-  colorBorderSecondary: '#eef1f6',
-  borderRadius: 8,
+  colorBgLayout: '#f0f2f5',
+  colorText: '#1c2028',
+  colorTextDescription: '#5c6b7f',
+  colorTextPlaceholder: '#9aa5b5',
+  colorBorder: '#dcdfe6',
+  colorBorderSecondary: '#e9ecf2',
+  borderRadius: 4,
   fontFamily: antdFontFamily,
 };
 
@@ -95,6 +116,29 @@ export const antdDarkToken = {
   colorTextDescription: '#94a3b8',
   colorBorder: '#26304a',
   colorBorderSecondary: '#1e2740',
-  borderRadius: 8,
+  borderRadius: 4,
   fontFamily: antdFontFamily,
+};
+
+/** Antd 组件级令牌：统一控制台的紧凑密度与小圆角 */
+export const antdComponents = {
+  Button: { controlHeight: 32, borderRadius: 4, fontWeight: 400, primaryShadow: 'none' },
+  Table: {
+    headerBg: '#fafbfc',
+    headerColor: '#4c5a67',
+    headerBorderRadius: 0,
+    rowHoverBg: '#f4f8ff',
+    borderColor: '#e9ecf2',
+    cellPaddingBlock: 11,
+    cellPaddingInline: 14,
+    headerSplitColor: 'transparent',
+  },
+  Card: { borderRadiusLG: 6 },
+  Modal: { borderRadiusLG: 6 },
+  Drawer: { colorBgElevated: '#ffffff' },
+  Segmented: { borderRadius: 4 },
+  Input: { borderRadius: 4 },
+  Select: { borderRadius: 4 },
+  Tabs: { horizontalItemPadding: '10px 0', horizontalMargin: '0 0 12px 0' },
+  Tag: { borderRadiusSM: 3 },
 };

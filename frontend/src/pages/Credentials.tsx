@@ -3,7 +3,8 @@ import { Table, Button, Space, Modal, Form, Input, Select, Popconfirm, message }
 import { PlusOutlined, DeleteOutlined, EditOutlined, SafetyCertificateOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCredentials, createCredential, updateCredential, deleteCredential, testCredential, type Credential, type CredTestResult } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
-import { palette, cardStyle } from '../theme';
+import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
+import { palette, pagePadding } from '../theme';
 const { Option } = Select;
 const { TextArea } = Input;
 
@@ -175,27 +176,31 @@ export const Credentials: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="凭据保管箱"
         subtitle="集中管理服务器与网络设备的 SSH/Telnet 账号及证书，用于自动发现与一键连接"
         icon={<SafetyCertificateOutlined />}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
-            添加登录凭证
-          </Button>
-        }
       />
 
-      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
-        <div style={{ ...cardStyle, padding: 4 }}>
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
+        <div style={tablePanelStyle}>
+          <TableToolbar
+            onRefresh={fetchCredentials}
+            loading={loading}
+            left={
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
+                添加登录凭证
+              </Button>
+            }
+          />
           <Table
+            className="mrd-table"
             columns={columns}
             dataSource={credentials}
             rowKey="id"
             loading={loading}
-            pagination={{ pageSize: 8, showSizeChanger: false }}
-            style={{ borderRadius: 8, overflow: 'hidden' }}
+            pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
           />
         </div>
       </div>

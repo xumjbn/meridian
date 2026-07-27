@@ -46,7 +46,7 @@ export const GlobalSearch: React.FC = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const debounceRef = useRef<number | undefined>(undefined);
 
-  // 全局快捷键：Ctrl/Cmd + K 打开
+  // 全局快捷键：Ctrl/Cmd + K 打开；顶栏搜索框点击也通过事件打开
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
@@ -54,8 +54,13 @@ export const GlobalSearch: React.FC = () => {
         setOpen(true);
       }
     };
+    const onOpen = () => setOpen(true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('mrd-open-search', onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('mrd-open-search', onOpen);
+    };
   }, []);
 
   // 防抖检索资产

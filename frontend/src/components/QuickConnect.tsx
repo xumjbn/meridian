@@ -171,7 +171,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     fontSize: 11,
     fontWeight: 600,
     letterSpacing: 0.4,
-    color: '#5b6680',
+    color: palette.textMute,
     textTransform: 'uppercase',
   };
 
@@ -204,7 +204,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
             cursor: 'pointer',
             fontSize: 13,
             lineHeight: 1.2,
-            color: active ? '#ffffff' : palette.siderText,
+            color: active ? palette.siderTextActive : palette.siderText,
             background: active ? palette.siderActive : 'transparent',
           }}
           onMouseEnter={(e) => {
@@ -217,11 +217,11 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
           <span
             style={{
               width: 7, height: 7, borderRadius: '50%', background: statusColor(a.status), flexShrink: 0,
-              boxShadow: opened ? `0 0 0 2px rgba(99,102,241,0.45)` : undefined,
+              boxShadow: opened ? `0 0 0 2px rgba(0,110,255,0.35)` : undefined,
             }}
           />
           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-          <span style={{ fontSize: 10, color: '#5b6680', flexShrink: 0 }}>{a.ip}</span>
+          <span style={{ fontSize: 10, color: palette.textMute, flexShrink: 0 }}>{a.ip}</span>
         </div>
       </Dropdown>
     );
@@ -239,8 +239,8 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
-      background: active ? palette.siderActive : accent ? 'rgba(34,211,238,0.08)' : 'transparent',
-      border: `1px solid ${active ? palette.accent : accent ? 'rgba(34,211,238,0.18)' : 'transparent'}`,
+      background: active ? palette.siderActive : accent ? 'rgba(0,110,255,0.07)' : 'transparent',
+      border: `1px solid ${active ? palette.primaryBorder : accent ? 'rgba(0,110,255,0.18)' : 'transparent'}`,
     });
     const sorted = [...assets].sort(byOnlineThenName);
     return (
@@ -261,7 +261,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
               <Dropdown key={a.id} trigger={['contextMenu']} menu={{ items: hostMenu(a) }}>
                 <Tooltip placement="right" title={`${a.name} · ${a.ip}${tags.length ? ` · ${tags.join(' / ')}` : ''}`}>
                   <div draggable onDragStart={(e) => startHostDrag(e, a)} onClick={() => connect(a)} style={iconBtn(active, false)}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: active ? '#fff' : palette.siderText }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: active ? palette.siderTextActive : palette.siderText }}>
                       {(a.name || a.ip).slice(0, 1).toUpperCase()}
                     </span>
                     <span
@@ -288,7 +288,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
           <ThunderboltOutlined style={{ color: palette.accent }} /> 快速连接
         </span>
         <Tooltip title="刷新主机" placement="right">
-          <ReloadOutlined spin={loading} onClick={load} style={{ color: '#5b6680', cursor: 'pointer', fontSize: 12 }} />
+          <ReloadOutlined spin={loading} onClick={load} style={{ color: palette.textMute, cursor: 'pointer', fontSize: 12 }} />
         </Tooltip>
       </div>
 
@@ -299,7 +299,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         placeholder="搜索主机 / IP / 标签"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        prefix={<TagsOutlined style={{ color: '#5b6680' }} />}
+        prefix={<TagsOutlined style={{ color: palette.textMute }} />}
         style={{ marginBottom: 8 }}
       />
 
@@ -311,14 +311,14 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
           style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', marginBottom: 6,
             borderRadius: 8, cursor: 'pointer', fontSize: 13,
-            color: localActive ? '#ffffff' : palette.siderText,
-            background: localActive ? palette.siderActive : 'rgba(34,211,238,0.08)',
-            border: `1px solid ${localActive ? palette.accent : 'rgba(34,211,238,0.18)'}`,
+            color: localActive ? palette.siderTextActive : palette.siderText,
+            background: localActive ? palette.siderActive : 'rgba(0,110,255,0.07)',
+            border: `1px solid ${localActive ? palette.primaryBorder : 'rgba(0,110,255,0.18)'}`,
           }}
         >
           <DesktopOutlined style={{ color: palette.accent }} />
           <span style={{ flex: 1 }}>本地终端</span>
-          <PlusOutlined style={{ fontSize: 11, color: '#5b6680' }} />
+          <PlusOutlined style={{ fontSize: 11, color: palette.textMute }} />
         </div>
       )}
 
@@ -331,7 +331,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         ) : groups.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<span style={{ color: '#5b6680', fontSize: 12 }}>{q ? '无匹配主机' : '暂无主机'}</span>}
+            description={<span style={{ color: palette.textMute, fontSize: 12 }}>{q ? '无匹配主机' : '暂无主机'}</span>}
             style={{ marginTop: 24 }}
           />
         ) : (
@@ -361,7 +361,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
                   >
                     {folded ? <CaretRightOutlined style={{ fontSize: 10 }} /> : <CaretDownOutlined style={{ fontSize: 10 }} />}
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tag}</span>
-                    <span style={{ fontSize: 10, color: '#5b6680' }}>{hosts.length}</span>
+                    <span style={{ fontSize: 10, color: palette.textMute }}>{hosts.length}</span>
                   </div>
                   {!folded && hosts.map((a) => hostRow(a, tag))}
                 </div>

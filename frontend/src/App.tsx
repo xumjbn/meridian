@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { Layout, Menu, ConfigProvider, theme, Tooltip, Spin } from 'antd';
+import { Menu, ConfigProvider, theme, Tooltip, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   DashboardOutlined,
@@ -10,21 +10,19 @@ import {
   SettingOutlined,
   TeamOutlined,
   FileSearchOutlined,
-  GithubOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   LeftOutlined,
   RightOutlined,
 } from '@ant-design/icons';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Logo } from './components/Logo';
 import { TerminalTabBar } from './components/TerminalTabBar';
 import { QuickConnect } from './components/QuickConnect';
 import { GlobalSearch } from './components/GlobalSearch';
+import { AppHeader, type HeaderNavItem } from './components/AppHeader';
+import { ShortcutHelp } from './components/ShortcutHelp';
 import { TerminalProvider, useTerminals } from './terminalSessions';
 import { login, isTauri, type Asset } from './services/api';
 import { SftpDrawer } from './components/SftpDrawer';
-import { brand, palette, antdLightToken } from './theme';
+import { brand, palette, antdLightToken, antdComponents } from './theme';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
 const ForcePasswordChange = lazy(() => import('./pages/ForcePasswordChange').then((m) => ({ default: m.ForcePasswordChange })));
@@ -41,27 +39,25 @@ const Audit = lazy(() => import('./pages/Audit').then((m) => ({ default: m.Audit
 const K8sClusters = lazy(() => import('./pages/K8sClusters').then((m) => ({ default: m.K8sClusters })));
 const TerminalPage = lazy(() => import('./pages/TerminalPage').then((m) => ({ default: m.TerminalPage })));
 
-const { Sider, Content } = Layout;
-
 const PageFallback: React.FC = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 240 }}>
     <Spin size="large" />
   </div>
 );
 
-const EXPANDED = 224;
-const COLLAPSED = 76;
+const EXPANDED = 236;
+const COLLAPSED = 64;
 
 // 完整导航项（含仅管理员可见的「用户管理」），用于路由高亮与标题解析
 const navItems = [
-  { key: '/', icon: <DashboardOutlined style={{ fontSize: 16 }} />, label: '控制台' },
-  { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 16 }} />, label: '资产清单 (CMDB)' },
-  { key: '/k8s', icon: <CloudServerOutlined style={{ fontSize: 16 }} />, label: 'Kubernetes 集群' },
-  { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 16 }} />, label: '自动发现' },
-  { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 16 }} />, label: '凭据保管箱' },
-  { key: '/users', icon: <TeamOutlined style={{ fontSize: 16 }} />, label: '用户管理' },
-  { key: '/audit', icon: <FileSearchOutlined style={{ fontSize: 16 }} />, label: '审计日志' },
-  { key: '/settings', icon: <SettingOutlined style={{ fontSize: 16 }} />, label: '系统设置' },
+  { key: '/', icon: <DashboardOutlined style={{ fontSize: 15 }} />, label: '控制台' },
+  { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 15 }} />, label: '资产清单 (CMDB)' },
+  { key: '/k8s', icon: <CloudServerOutlined style={{ fontSize: 15 }} />, label: 'Kubernetes 集群' },
+  { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 15 }} />, label: '自动发现' },
+  { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 15 }} />, label: '凭据保管箱' },
+  { key: '/users', icon: <TeamOutlined style={{ fontSize: 15 }} />, label: '用户管理' },
+  { key: '/audit', icon: <FileSearchOutlined style={{ fontSize: 15 }} />, label: '审计日志' },
+  { key: '/settings', icon: <SettingOutlined style={{ fontSize: 15 }} />, label: '系统设置' },
 ];
 
 // 仅管理员可见的菜单项（自动发现涉及全网扫描；系统设置含平台级敏感配置）
@@ -78,16 +74,23 @@ const buildMenu = (isAdmin: boolean) => {
   };
   const grouped: MenuProps['items'] = [
     ...pick(['/']),
-    ...submenu('g-asset', '资产中心', <DatabaseOutlined style={{ fontSize: 16 }} />, ['/assets', '/k8s', '/tasks']),
-    ...submenu('g-sys', '接入与系统', <SettingOutlined style={{ fontSize: 16 }} />, ['/credentials', '/users', '/audit', '/settings']),
+    ...submenu('g-asset', '资产中心', <DatabaseOutlined style={{ fontSize: 15 }} />, ['/assets', '/k8s', '/tasks']),
+    ...submenu('g-sys', '接入与系统', <SettingOutlined style={{ fontSize: 15 }} />, ['/credentials', '/users', '/audit', '/settings']),
   ];
-  return { flat, grouped };
+  // 顶栏一级导航：总览 + 两个下拉分组（与侧栏同一套路由，按角色裁剪）
+  const headerItems: HeaderNavItem[] = [{ key: '/', label: '总览' }];
+  const asset = pick(['/assets', '/k8s', '/tasks']);
+  if (asset.length) headerItems.push({ key: 'h-asset', label: '资产中心', children: asset.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
+  const sys = pick(['/credentials', '/users', '/audit', '/settings']);
+  if (sys.length) headerItems.push({ key: 'h-sys', label: '接入与系统', children: sys.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
+  return { flat, grouped, headerItems };
 };
 
 const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { sessions, activeId, close, setActive, reorder, activityIds, renameSession, recolorSession } = useTerminals();
 
   // 侧栏主机右键菜单触发的全局动作：打开 SFTP / 跳转页面
@@ -108,7 +111,7 @@ const AppLayout: React.FC = () => {
   }, [navigate, setActive]);
 
   const isAdmin = (localStorage.getItem('mrd-role') || 'admin') === 'admin';
-  const { flat: menuNavItems, grouped: groupedItems } = buildMenu(isAdmin);
+  const { grouped: groupedItems, headerItems } = buildMenu(isAdmin);
 
   const selectedKey = (() => {
     const path = location.pathname;
@@ -120,124 +123,60 @@ const AppLayout: React.FC = () => {
   const currentLabel = navItems.find((i) => i.key === selectedKey)?.label ?? '工作台';
   const siderWidth = collapsed ? COLLAPSED : EXPANDED;
 
+  // 跳转页面并退出终端视图（否则常驻终端会挡住页面）
+  const go = (path: string) => { navigate(path); setActive(null); };
+
   return (
     <ConfigProvider
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: antdLightToken,
         components: {
-          Button: { controlHeight: 36, borderRadius: 8, fontWeight: 500, primaryShadow: 'none' },
-          Table: {
-            headerBg: '#f8fafc',
-            headerColor: '#475569',
-            headerBorderRadius: 10,
-            rowHoverBg: '#f7f8fc',
-            borderColor: palette.border,
-            cellPaddingBlock: 14,
+          ...antdComponents,
+          Menu: {
+            itemBg: 'transparent',
+            itemSelectedBg: palette.siderActive,
+            itemSelectedColor: palette.siderTextActive,
+            itemColor: palette.siderText,
+            itemHoverBg: palette.siderHover,
+            itemHoverColor: palette.text,
+            itemHeight: 36,
+            fontSize: 13,
+            itemBorderRadius: 0,
+            itemMarginInline: 0,
+            itemMarginBlock: 0,
+            iconSize: 15,
+            subMenuItemBg: 'transparent',
           },
-          Card: { borderRadiusLG: 12 },
-          Modal: { borderRadiusLG: 14 },
-          Drawer: { colorBgElevated: '#ffffff' },
-          Segmented: { borderRadius: 8 },
         },
       }}
     >
-      <Layout style={{ minHeight: '100vh', background: palette.bg }}>
-        {/* 深色侧边栏 */}
-        <ConfigProvider
-          theme={{
-            algorithm: theme.darkAlgorithm,
-            token: {
-              colorBgBase: palette.siderBg,
-              colorBgContainer: palette.siderBg,
-              colorText: palette.siderText,
-              colorBorder: palette.siderBorder,
-              borderRadius: 8,
-            },
-            components: {
-              Menu: {
-                itemBg: 'transparent',
-                itemSelectedBg: palette.siderActive,
-                itemSelectedColor: '#ffffff',
-                itemColor: palette.siderText,
-                itemHoverBg: palette.siderHover,
-                itemHoverColor: '#ffffff',
-                itemActiveBg: palette.siderActive,
-                itemHeight: 34,
-                fontSize: 13,
-                itemBorderRadius: 9,
-                itemMarginInline: 0,
-                groupTitleColor: '#5b6680',
-                groupTitleFontSize: 11,
-                iconSize: 15,
-                subMenuItemBg: 'transparent',
-              },
-              Tooltip: {
-                colorBgSpotlight: '#1e293b',
-                colorTextLightSolid: '#f8fafc',
-              },
-            },
-          }}
-        >
-          <Sider
-            width={siderWidth}
-            theme="light"
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: palette.bg, overflow: 'hidden' }}>
+        {/* 全局顶栏 */}
+        <AppHeader items={headerItems} activeKey={selectedKey} onNavigate={go} onHelp={() => setHelpOpen(true)} />
+
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
+          {/* 左侧栏（浅色）：快速连接主机树 + 管理导航 */}
+          <div
             className="mrd-sider"
             style={{
-              background: `linear-gradient(180deg, ${palette.siderBg2} 0%, ${palette.siderBg} 100%)`,
-              position: 'fixed',
-              height: '100vh',
-              left: 0,
-              top: 0,
-              bottom: 0,
-              zIndex: 100,
+              width: siderWidth,
+              flexShrink: 0,
+              background: palette.siderBg,
               borderRight: `1px solid ${palette.siderBorder}`,
+              display: 'flex',
+              flexDirection: 'column',
               transition: 'width 0.2s cubic-bezier(0.4,0,0.2,1)',
+              zIndex: 10,
             }}
           >
-           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* Logo 区域 */}
-            <div
-              style={{
-                height: 64,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                padding: collapsed ? 0 : '0 18px',
-                borderBottom: `1px solid ${palette.siderBorder}`,
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              {/* 顶部品牌辉光 */}
-              <div
-                style={{
-                  position: 'absolute',
-                  top: -40,
-                  left: collapsed ? '50%' : 24,
-                  width: 120,
-                  height: 90,
-                  transform: collapsed ? 'translateX(-50%)' : 'none',
-                  background: 'radial-gradient(closest-side, rgba(99,102,241,0.35), transparent)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <Logo size={34} collapsed={collapsed} />
-            </div>
-
-            {/* 主体：快速连接（展开时）+ 管理导航 */}
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: collapsed ? '12px 10px' : '12px 12px' }}>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: collapsed ? '10px 8px' : '10px' }}>
               <div style={{ flex: 1, minHeight: 0, marginBottom: 8 }}>
                 <QuickConnect collapsed={collapsed} />
               </div>
-              <div
-                style={{
-                  flexShrink: 0,
-                  ...(collapsed ? {} : { borderTop: `1px solid ${palette.siderBorder}`, paddingTop: 8 }),
-                }}
-              >
+              <div style={{ flexShrink: 0, borderTop: `1px solid ${palette.siderBorder}`, paddingTop: 6, margin: collapsed ? '0 -8px' : '0 -10px' }}>
                 {!collapsed && (
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#5b6680', padding: '0 6px 4px', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: palette.textMute, padding: '2px 16px 4px', letterSpacing: 0.4 }}>
                     管理
                   </div>
                 )}
@@ -245,90 +184,60 @@ const AppLayout: React.FC = () => {
                   mode="inline"
                   inlineCollapsed={collapsed}
                   selectedKeys={[selectedKey]}
-                  items={collapsed ? menuNavItems : groupedItems}
-                  onClick={(info) => {
-                    navigate(info.key);
-                    setActive(null); // 离开终端、显示所选页面（否则终端常驻挡住页面）
-                  }}
+                  items={groupedItems}
+                  onClick={(info) => go(info.key)}
                   style={{ background: 'transparent', borderRight: 0 }}
                 />
               </div>
             </div>
 
-            {/* 底部：源码 / 版本 / 折叠 */}
-            <div style={{ borderTop: `1px solid ${palette.siderBorder}`, padding: collapsed ? '10px' : '12px 14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: collapsed ? 'center' : 'space-between' }}>
-                {!collapsed && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-                    <Tooltip title="项目源码">
-                      <a
-                        href={brand.repo}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: palette.siderText, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}
-                      >
-                        <GithubOutlined /> 源码
-                      </a>
-                    </Tooltip>
-                    <span style={{ fontSize: 11, color: palette.siderText, fontFamily: 'monospace' }}>{brand.version}</span>
-                  </span>
-                )}
-                <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
-                  <button
-                    onClick={() => setCollapsed((c) => !c)}
-                    style={{
-                      cursor: 'pointer',
-                      width: 30,
-                      height: 30,
-                      borderRadius: 8,
-                      border: `1px solid ${palette.siderBorder}`,
-                      background: 'rgba(148,163,184,0.08)',
-                      color: palette.siderText,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                  </button>
-                </Tooltip>
+            {/* 底部：版本号 */}
+            {!collapsed && (
+              <div
+                style={{
+                  borderTop: `1px solid ${palette.siderBorder}`,
+                  padding: '8px 16px',
+                  fontSize: 11,
+                  color: palette.textMute,
+                  fontFamily: 'monospace',
+                }}
+              >
+                {brand.name} {brand.version}
               </div>
-            </div>
-           </div>
-          </Sider>
-        </ConfigProvider>
-
-        {/* 右侧边缘的展开/收起把手（「展开标签放在右侧」） */}
-        <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
-          <div
-            onClick={() => setCollapsed((c) => !c)}
-            style={{
-              position: 'fixed',
-              left: siderWidth - 1,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: 18,
-              height: 56,
-              zIndex: 101,
-              cursor: 'pointer',
-              background: palette.siderBg2,
-              border: `1px solid ${palette.siderBorder}`,
-              borderLeft: 'none',
-              borderRadius: '0 10px 10px 0',
-              color: palette.siderText,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '2px 0 8px rgba(0,0,0,0.18)',
-              transition: 'left 0.2s cubic-bezier(0.4,0,0.2,1)',
-            }}
-          >
-            {collapsed ? <RightOutlined style={{ fontSize: 12 }} /> : <LeftOutlined style={{ fontSize: 12 }} />}
+            )}
           </div>
-        </Tooltip>
 
-        <Layout style={{ marginLeft: siderWidth, background: palette.bg, transition: 'margin-left 0.2s cubic-bezier(0.4,0,0.2,1)' }}>
-          <Content style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {/* 侧栏右缘的展开/收起把手 */}
+          <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
+            <div
+              onClick={() => setCollapsed((c) => !c)}
+              style={{
+                position: 'absolute',
+                left: siderWidth - 1,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: 14,
+                height: 46,
+                zIndex: 20,
+                cursor: 'pointer',
+                background: '#ffffff',
+                border: `1px solid ${palette.siderBorder}`,
+                borderLeft: 'none',
+                borderRadius: '0 6px 6px 0',
+                color: palette.textMute,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '2px 0 6px rgba(15,23,42,0.06)',
+                transition: 'left 0.2s cubic-bezier(0.4,0,0.2,1)',
+              }}
+            >
+              {collapsed ? <RightOutlined style={{ fontSize: 10 }} /> : <LeftOutlined style={{ fontSize: 10 }} />}
+            </div>
+          </Tooltip>
+
+          {/* 右侧主区 */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {sessions.length > 0 && (
               <TerminalTabBar
                 sessions={sessions}
@@ -375,15 +284,18 @@ const AppLayout: React.FC = () => {
                 </Suspense>
               </div>
             ))}
-          </Content>
-        </Layout>
+          </div>
+        </div>
 
         {/* 全局搜索（Ctrl/Cmd + K） */}
         <GlobalSearch />
 
+        {/* 顶栏「?」打开的快捷键速查表 */}
+        <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+
         {/* 侧栏主机右键「文件传输」打开的 SFTP 抽屉 */}
         <SftpDrawer asset={sftpAsset} open={sftpOpen} onClose={() => setSftpOpen(false)} />
-      </Layout>
+      </div>
     </ConfigProvider>
   );
 };
@@ -443,7 +355,7 @@ export const App: React.FC = () => {
 
   if (isTerminalView && terminalAssetId) {
     return (
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken }}>
+      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         {/* TerminalPage/TerminalItem 依赖 useTerminals，必须置于 Provider 内，否则独立标签页打开会白屏 */}
         <TerminalProvider>
           <Suspense fallback={<PageFallback />}>
@@ -457,7 +369,7 @@ export const App: React.FC = () => {
   // 登录门禁：未登录时渲染登录页（桌面端 authed 恒为 true，不会走到这里）
   if (!authed) {
     return (
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken }}>
+      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         <Suspense fallback={<PageFallback />}>
           <Login
             onSuccess={() => {
@@ -474,7 +386,7 @@ export const App: React.FC = () => {
   // 首次登录强制改密：改密完成前无法进入系统（刷新也会拦截）
   if (mustChange) {
     return (
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken }}>
+      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         <Suspense fallback={<PageFallback />}>
           <ForcePasswordChange onDone={() => setMustChange(false)} />
         </Suspense>

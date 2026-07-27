@@ -12,7 +12,7 @@ import {
   RobotOutlined,
 } from '@ant-design/icons';
 import { PageHeader } from '../components/PageHeader';
-import { palette, brand } from '../theme';
+import { palette, brand, pagePadding } from '../theme';
 import { getSettings, updateSettings, testNotify, aiTest } from '../services/api';
 
 const { Text, Link } = Typography;
@@ -171,7 +171,7 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="系统设置"
         subtitle="扫描引擎参数、安全配置与系统信息"
@@ -183,8 +183,8 @@ export const Settings: React.FC = () => {
         }
       />
 
-      <div style={{ padding: 32 }} className="mrd-fade-up">
-        <div style={{ maxWidth: 880, margin: '0 auto' }}>
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
+        <div style={{ maxWidth: 900 }}>
             {/* 扫描引擎 */}
             <SettingCard
               icon={<ThunderboltOutlined style={{ fontSize: 16 }} />}

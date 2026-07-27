@@ -289,6 +289,11 @@ export interface K8sCluster {
   api_token?: string; // 仅写入（ServiceAccount Bearer Token），后端不回传；留空=不变
   credential_id?: number | null;
   description?: string;
+  // 控制台指纹（由「探测控制台」写入）
+  console_kind?: string;      // uc / kubernetes-dashboard / rancher / kubesphere / web
+  console_title?: string;
+  console_version?: string;
+  console_checked_at?: string | null;
   // 展示字段
   node_count?: number;
   master_count?: number;
@@ -296,6 +301,16 @@ export interface K8sCluster {
   cred_name?: string;
   online?: boolean;
   has_token?: boolean;
+}
+
+/** 控制台探测：单个候选路径的结果 */
+export interface ConsoleProbe {
+  path: string;
+  status: number;
+  title: string;
+  kind: string;
+  version: string;
+  score: number;
 }
 export interface K8sLiveNode {
   name: string; ready: string; role: string; ip: string;
@@ -328,6 +343,9 @@ export const unassignK8sNode = (clusterId: number, assetId: number): Promise<voi
   api.delete(`/k8s/clusters/${clusterId}/nodes/${assetId}`);
 export const getK8sConsole = (clusterId: number): Promise<{ url: string; username: string; password: string }> =>
   api.get(`/k8s/clusters/${clusterId}/console`);
+/** 探测控制台真实路径 / 类型 / 版本，并写回集群配置 */
+export const detectK8sConsole = (clusterId: number): Promise<{ best: ConsoleProbe; candidates: ConsoleProbe[] }> =>
+  api.post(`/k8s/clusters/${clusterId}/detect-console`);
 // Phase 3：实时看板（调 kube-apiserver）
 export const getK8sOverview = (id: number): Promise<K8sOverview> => api.get(`/k8s/clusters/${id}/overview`);
 export const getK8sLiveNodes = (id: number): Promise<K8sLiveNode[]> => api.get(`/k8s/clusters/${id}/live/nodes`);

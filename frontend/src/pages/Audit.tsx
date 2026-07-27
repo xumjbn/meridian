@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Input, Select, Button, Space, message } from 'antd';
-import { ReloadOutlined, FileSearchOutlined } from '@ant-design/icons';
+import { Table, Tag, Input, Select, Button, message } from 'antd';
+import { FileSearchOutlined } from '@ant-design/icons';
 import { getAuditLogs, type AuditLog } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
-import { palette, cardStyle } from '../theme';
+import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
+import { palette, pagePadding } from '../theme';
 
 const { Option } = Select;
 
@@ -134,51 +135,51 @@ export const Audit: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="审计日志"
         subtitle="记录所有写操作的操作人、动作、结果与来源 IP"
         icon={<FileSearchOutlined />}
-        extra={
-          <Button icon={<ReloadOutlined />} onClick={fetchLogs} loading={loading}>
-            刷新
-          </Button>
-        }
       />
 
-      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
-        <Space style={{ marginBottom: 16 }} size={12} wrap>
-          <Input
-            placeholder="按操作人筛选"
-            value={actor}
-            onChange={(e) => setActor(e.target.value)}
-            onPressEnter={fetchLogs}
-            allowClear
-            style={{ width: 200 }}
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
+        <div style={tablePanelStyle}>
+          <TableToolbar
+            onRefresh={fetchLogs}
+            loading={loading}
+            left={
+              <>
+                <Input
+                  placeholder="按操作人筛选"
+                  value={actor}
+                  onChange={(e) => setActor(e.target.value)}
+                  onPressEnter={fetchLogs}
+                  allowClear
+                  style={{ width: 190 }}
+                />
+                <Select
+                  placeholder="动作类型"
+                  value={action}
+                  onChange={(v) => setAction(v)}
+                  allowClear
+                  style={{ width: 165 }}
+                >
+                  <Option value="POST">POST（新增/执行）</Option>
+                  <Option value="PUT">PUT（更新）</Option>
+                  <Option value="DELETE">DELETE（删除）</Option>
+                </Select>
+                <Button type="primary" onClick={fetchLogs}>查询</Button>
+              </>
+            }
           />
-          <Select
-            placeholder="动作类型"
-            value={action}
-            onChange={(v) => setAction(v)}
-            allowClear
-            style={{ width: 160 }}
-          >
-            <Option value="POST">POST（新增/执行）</Option>
-            <Option value="PUT">PUT（更新）</Option>
-            <Option value="DELETE">DELETE（删除）</Option>
-          </Select>
-          <Button type="primary" onClick={fetchLogs}>查询</Button>
-        </Space>
-
-        <div style={{ ...cardStyle, padding: 4 }}>
           <Table
+            className="mrd-table"
             columns={columns}
             dataSource={logs}
             rowKey="id"
             loading={loading}
             size="middle"
-            pagination={{ pageSize: 15, showSizeChanger: false, showTotal: (t) => `共 ${t} 条` }}
-            style={{ borderRadius: 8, overflow: 'hidden' }}
+            pagination={{ pageSize: 15, showSizeChanger: false, showTotal: (t) => `共 ${t} 条`, style: { padding: '0 16px' } }}
           />
         </div>
       </div>

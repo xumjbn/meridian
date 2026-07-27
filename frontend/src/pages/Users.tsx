@@ -3,7 +3,8 @@ import { Table, Button, Space, Modal, Form, Input, Select, Tag, Popconfirm, mess
 import { PlusOutlined, DeleteOutlined, KeyOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { getUsers, createUser, updateUser, deleteUser, type User } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
-import { palette, cardStyle } from '../theme';
+import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
+import { palette, pagePadding } from '../theme';
 
 const { Option } = Select;
 
@@ -200,27 +201,27 @@ export const Users: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
-      <PageHeader
-        title="用户管理"
-        subtitle="管理平台登录账户的角色、状态与密码"
-        icon={<TeamOutlined />}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-            新增用户
-          </Button>
-        }
-      />
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
+      <PageHeader title="用户管理" subtitle="管理平台登录账户的角色、状态与密码" icon={<TeamOutlined />} />
 
-      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
-        <div style={{ ...cardStyle, padding: 4 }}>
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
+        <div style={tablePanelStyle}>
+          <TableToolbar
+            onRefresh={fetchUsers}
+            loading={loading}
+            left={
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
+                新增用户
+              </Button>
+            }
+          />
           <Table
+            className="mrd-table"
             columns={columns}
             dataSource={users}
             rowKey="id"
             loading={loading}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            style={{ borderRadius: 8, overflow: 'hidden' }}
+            pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
           />
         </div>
       </div>

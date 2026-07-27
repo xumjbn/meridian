@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Tag, Typography, message } from 'antd';
-import { BugOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Table, Tag, Typography, message } from 'antd';
+import { BugOutlined } from '@ant-design/icons';
 import { getVulns, type VulnFinding } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
-import { palette, cardStyle } from '../theme';
+import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
+import { palette, pagePadding } from '../theme';
 
 const { Text } = Typography;
 
@@ -78,28 +79,20 @@ export const Vulns: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
-      <PageHeader
-        title="漏洞发现"
-        subtitle="nuclei 漏洞扫描结果"
-        icon={<BugOutlined />}
-        extra={
-          <Button icon={<ReloadOutlined />} onClick={load}>
-            刷新
-          </Button>
-        }
-      />
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
+      <PageHeader title="漏洞发现" subtitle="nuclei 漏洞扫描结果" icon={<BugOutlined />} />
 
-      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
-        <div style={{ ...cardStyle, padding: 4 }}>
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
+        <div style={tablePanelStyle}>
+          <TableToolbar onRefresh={load} loading={loading} />
           <Table
+            className="mrd-table"
             columns={columns}
             dataSource={findings}
             rowKey="id"
             loading={loading}
             locale={{ emptyText: '暂无漏洞发现记录' }}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
-            style={{ borderRadius: 8, overflow: 'hidden' }}
+            pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
           />
         </div>
       </div>

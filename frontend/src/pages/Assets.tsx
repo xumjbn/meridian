@@ -64,7 +64,8 @@ import {
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
 import { SftpDrawer } from '../components/SftpDrawer';
-import { palette, cardStyle } from '../theme';
+import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
+import { palette, pagePadding } from '../theme';
 import { useTerminals } from '../terminalSessions';
 
 const { Text, Title, Paragraph } = Typography;
@@ -866,101 +867,99 @@ export const Assets: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="资产清单 (CMDB)"
         subtitle="登记并维护物理主机与网络设备，支持端口探测与一键交互式 SSH 会话"
         icon={<DatabaseOutlined />}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
-            手动录入资产
-          </Button>
-        }
       />
 
-      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
-        {/* 检索 / 过滤 / 分组 / 常用功能 */}
-        <div style={{ ...cardStyle, padding: '16px 20px', marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <Space wrap size="middle">
-              <Input
-                placeholder="搜索 IP、设备名称..."
-                prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-                style={{ width: 220, borderRadius: 6 }}
-                allowClear
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-              />
-              <Select placeholder="过滤设备类型" style={{ width: 150 }} allowClear onChange={(val) => setFilterType(val || '')}>
-                <Option value="server">PC 服务器</Option>
-                <Option value="switch">以太网交换机</Option>
-                <Option value="router">核心路由器</Option>
-                <Option value="other">其他硬件</Option>
-              </Select>
-              <Select placeholder="过滤在线状态" style={{ width: 150 }} allowClear onChange={(val) => setFilterStatus(val || '')}>
-                <Option value="online">在线</Option>
-                <Option value="offline">离线</Option>
-                <Option value="unknown">未知</Option>
-              </Select>
-            </Space>
-            <Space wrap size="small">
-              <span style={{ fontSize: 12, color: palette.textSub }}>分组</span>
-              <Segmented
-                value={groupBy}
-                onChange={(v) => setGroupBy(v as 'none' | 'type' | 'status' | 'tag')}
-                options={[
-                  { label: '不分组', value: 'none' },
-                  { label: '类型', value: 'type' },
-                  { label: '状态', value: 'status' },
-                  { label: '标签', value: 'tag' },
-                ]}
-              />
-              <Button icon={<TagOutlined />} onClick={() => setIsTagModalOpen(true)}>标签管理</Button>
-              <Upload
-                accept=".csv"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  handleImportCSV(file as File);
-                  return false; // 阻止 antd 自动上传，改由我们手动调用接口
-                }}
-              >
-                <Button icon={<UploadOutlined />}>导入 CSV</Button>
-              </Upload>
-              <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>导出 CSV</Button>
-            </Space>
-          </div>
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
+        <div style={groupBy === 'none' ? tablePanelStyle : { ...tablePanelStyle, background: 'transparent', border: 'none' }}>
+          {/* 工具栏：左=新建/批量操作，右=检索/过滤/分组 */}
+          <TableToolbar
+            onRefresh={fetchAssets}
+            loading={loading}
+            selectedCount={groupBy === 'none' ? selectedRowKeys.length : 0}
+            onClearSelection={() => setSelectedRowKeys([])}
+            left={
+              <>
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
+                  手动录入资产
+                </Button>
+                {groupBy === 'none' && selectedRowKeys.length > 0 && (
+                  <>
+                    <Button icon={<CompassOutlined />} onClick={handleBatchPing}>批量探测</Button>
+                    <Popconfirm
+                      title={`确认删除选中的 ${selectedRowKeys.length} 台资产？`}
+                      onConfirm={handleBatchDelete}
+                      okText="是" cancelText="否" okButtonProps={{ danger: true }}
+                    >
+                      <Button danger icon={<DeleteOutlined />}>批量删除</Button>
+                    </Popconfirm>
+                  </>
+                )}
+                <Button icon={<TagOutlined />} onClick={() => setIsTagModalOpen(true)}>标签管理</Button>
+                <Upload
+                  accept=".csv"
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    handleImportCSV(file as File);
+                    return false; // 阻止 antd 自动上传，改由我们手动调用接口
+                  }}
+                >
+                  <Button icon={<UploadOutlined />}>导入 CSV</Button>
+                </Upload>
+                <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>导出 CSV</Button>
+              </>
+            }
+            right={
+              <>
+                <Input
+                  placeholder="搜索 IP、设备名称..."
+                  prefix={<SearchOutlined style={{ color: palette.textMute }} />}
+                  style={{ width: 210 }}
+                  allowClear
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+                <Select placeholder="设备类型" style={{ width: 130 }} allowClear onChange={(val) => setFilterType(val || '')}>
+                  <Option value="server">PC 服务器</Option>
+                  <Option value="switch">以太网交换机</Option>
+                  <Option value="router">核心路由器</Option>
+                  <Option value="other">其他硬件</Option>
+                </Select>
+                <Select placeholder="在线状态" style={{ width: 120 }} allowClear onChange={(val) => setFilterStatus(val || '')}>
+                  <Option value="online">在线</Option>
+                  <Option value="offline">离线</Option>
+                  <Option value="unknown">未知</Option>
+                </Select>
+                <Segmented
+                  value={groupBy}
+                  onChange={(v) => setGroupBy(v as 'none' | 'type' | 'status' | 'tag')}
+                  options={[
+                    { label: '不分组', value: 'none' },
+                    { label: '类型', value: 'type' },
+                    { label: '状态', value: 'status' },
+                    { label: '标签', value: 'tag' },
+                  ]}
+                />
+              </>
+            }
+          />
 
-          {/* 批量操作条（选中后出现，未分组视图） */}
-          {groupBy === 'none' && selectedRowKeys.length > 0 && (
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${palette.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: palette.text, fontWeight: 600 }}>已选 {selectedRowKeys.length} 项</span>
-              <Button size="small" icon={<CompassOutlined />} onClick={handleBatchPing}>批量探测</Button>
-              <Popconfirm
-                title={`确认删除选中的 ${selectedRowKeys.length} 台资产？`}
-                onConfirm={handleBatchDelete}
-                okText="是" cancelText="否" okButtonProps={{ danger: true }}
-              >
-                <Button size="small" danger icon={<DeleteOutlined />}>批量删除</Button>
-              </Popconfirm>
-              <Button size="small" type="text" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-            </div>
-          )}
-        </div>
-
-        {/* 表格主体 / 分组视图 */}
-        {groupBy === 'none' ? (
-          <div style={{ ...cardStyle, padding: 4 }}>
+          {/* 表格主体 / 分组视图 */}
+          {groupBy === 'none' ? (
             <Table
+              className="mrd-table"
               columns={columns}
               dataSource={assets}
               rowKey="id"
               loading={loading}
               rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
-              pagination={{ pageSize: 8, showSizeChanger: false }}
-              style={{ borderRadius: 8, overflow: 'hidden' }}
+              pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
             />
-          </div>
-        ) : (
+          ) : (
           (() => {
             const groups = groupedAssets();
             return (
@@ -986,7 +985,8 @@ export const Assets: React.FC = () => {
               />
             );
           })()
-        )}
+          )}
+        </div>
 
       {/* 手动录入/编辑资产弹窗 */}
       <Modal

@@ -36,9 +36,9 @@ export const LogoMark: React.FC<LogoMarkProps> = ({ size = 32, variant = 'badge'
     >
       <defs>
         <linearGradient id={gid} x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#6366f1" />
-          <stop offset="0.55" stopColor="#7c5cfb" />
-          <stop offset="1" stopColor="#22d3ee" />
+          <stop stopColor="#006eff" />
+          <stop offset="0.55" stopColor="#0a8bff" />
+          <stop offset="1" stopColor="#00a4ff" />
         </linearGradient>
       </defs>
 
@@ -70,29 +70,20 @@ interface LogoProps {
 }
 
 export const Logo: React.FC<LogoProps> = ({ size = 34, collapsed = false, tone = 'light' }) => {
-  const subColor = tone === 'light' ? 'rgba(148,163,184,0.85)' : palette.textSub;
+  // light = 置于深色底（顶栏）：文字用纯白，保证对比度；dark = 置于浅色底
+  const onDark = tone === 'light';
+  const titleColor = onDark ? '#ffffff' : palette.text;
+  const subColor = onDark ? 'rgba(255,255,255,0.55)' : palette.textMute;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
       <LogoMark size={size} />
       {!collapsed && (
-        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15, minWidth: 0 }}>
-          <span
-            style={{
-              fontSize: 17,
-              fontWeight: 700,
-              letterSpacing: '0.2px',
-              background: palette.brandGradient,
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}
-          >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, minWidth: 0 }}>
+          <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.2px', color: titleColor }}>
             {brand.name}
           </span>
-          <span style={{ fontSize: 10.5, color: subColor, marginTop: 2, whiteSpace: 'nowrap' }}>
-            {brand.zh} · 资产中枢
-          </span>
+          <span style={{ fontSize: 12, color: subColor, whiteSpace: 'nowrap' }}>控制台</span>
         </div>
       )}
     </div>

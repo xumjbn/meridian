@@ -3,7 +3,8 @@ import { Table, Button, Space, Modal, Form, Input, Badge, Popconfirm, message, S
 import { PlusOutlined, PlayCircleOutlined, HistoryOutlined, EditOutlined, DeleteOutlined, CloseOutlined, RadarChartOutlined } from '@ant-design/icons';
 import { getScanTasks, createScanTask, updateScanTask, deleteScanTask, runScanTask, stopScanTask, getScanLogs, getScanStreamUrl, type ScanTask, type ScanLog } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
-import { palette, cardStyle } from '../theme';
+import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
+import { palette, pagePadding } from '../theme';
 
 const scheduleLabelMap: Record<string, string> = {
   '@every 15m': '每 15 分钟',
@@ -429,28 +430,32 @@ export const ScanTasks: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100vh' }}>
+    <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="自动发现"
         subtitle="配置并触发端口网段发现任务，自动将在线主机录入 CMDB 资产"
         icon={<RadarChartOutlined />}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
-            创建扫描任务
-          </Button>
-        }
       />
 
-      <div style={{ padding: '24px 32px 32px 32px' }} className="mrd-fade-up">
+      <div style={{ padding: pagePadding }} className="mrd-page-in">
         {/* 表格主体 */}
-        <div style={{ ...cardStyle, padding: 4 }}>
+        <div style={tablePanelStyle}>
+          <TableToolbar
+            onRefresh={() => fetchTasks(true)}
+            loading={loading}
+            left={
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
+                创建扫描任务
+              </Button>
+            }
+          />
           <Table
+            className="mrd-table"
             columns={columns}
             dataSource={tasks}
             rowKey="id"
             loading={loading}
-            pagination={{ pageSize: 8, showSizeChanger: false }}
-            style={{ borderRadius: 8, overflow: 'hidden' }}
+            pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
           />
         </div>
 

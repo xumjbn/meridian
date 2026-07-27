@@ -671,7 +671,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                 <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid #f0f0f0', paddingTop: 8, lineHeight: 1.6 }}>
                   选中即复制 · 右键/Ctrl+Shift+V 粘贴<br />
                   Ctrl+滚轮 / Ctrl ± 缩放字号 · Ctrl+0 复位<br />
-                  补全：→ 接受首选 · ↑↓ 选后 Enter · 空格/Esc 收起 · Tab 交给 Shell
+                  补全：→ / Tab 接受灰字提示 · Ctrl+空格 看候选 · Tab 无提示时交给 Shell
                 </div>
               </div>
             )}
@@ -857,10 +857,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  // ── 命令自动补全（本地输入行追踪 + 片段提示）────────────────
+  // ── 命令自动补全 ───────────────────────────────────────────
+  // 形态对齐云控制台 WebShell：默认只在光标后显示灰色「幽灵文本」，→/Tab 接受；
+  // 需要看多个候选时按 Ctrl+空格 才显式弹出列表。全程不抢 Enter。
   const [suggestions, setSuggestions] = useState<CmdSnippet[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
-  // 下拉锚点：锚定到光标所在像素位置，默认在输入行上方展开，避免遮挡输入
+  const [listOpen, setListOpen] = useState(false);        // 候选列表是否显式打开
+  const [ghost, setGhost] = useState('');                 // 光标后的灰色补全残余文本
+  // 锚点：锚定到光标所在像素位置（幽灵文本定位 + 列表展开方向）
   const [anchor, setAnchor] = useState<{ left: number; top: number; cellH: number; cw: number; ch: number } | null>(null);
 
   const lineBufferRef = useRef('');                       // 本地输入行缓冲（尽力追踪）
@@ -868,6 +872,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const suggestionsRef = useRef<CmdSnippet[]>([]);
   const activeIdxRef = useRef(0);
   const navigatedRef = useRef(false);                     // 是否用方向键选过项（决定 Enter 是接受还是提交）
+  const listOpenRef = useRef(false);
+  const ghostRef = useRef('');                            // 当前幽灵残余文本
+  const ghostCmdRef = useRef('');                         // 幽灵对应的完整命令（用于频率学习）
 
   // 估算光标在终端容器内的像素位置（用于补全下拉锚定）
   const computeAnchor = useCallback(() => {
@@ -888,35 +895,36 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   useEffect(() => { suggestionsRef.current = suggestions; }, [suggestions]);
   useEffect(() => { activeIdxRef.current = activeIdx; }, [activeIdx]);
+  useEffect(() => { listOpenRef.current = listOpen; }, [listOpen]);
+  useEffect(() => { ghostRef.current = ghost; }, [ghost]);
+
+  // 收起补全 UI（幽灵 + 列表），可选一并清空行缓冲
+  const resetCompletion = useCallback((clearBuffer = false) => {
+    if (clearBuffer) lineBufferRef.current = '';
+    navigatedRef.current = false;
+    ghostCmdRef.current = '';
+    setGhost('');
+    setListOpen(false);
+    setSuggestions([]);
+    setActiveIdx(0);
+  }, []);
 
   // 命令库变更时热重载，并刷新当前提示
   useEffect(() => {
-    const reload = () => {
-      snippetsRef.current = loadSnippets();
-      setSuggestions(matchSnippets(lineBufferRef.current, snippetsRef.current));
-      setActiveIdx(0);
-    };
+    const reload = () => { snippetsRef.current = loadSnippets(); };
     window.addEventListener('cmd-snippets-changed', reload);
     return () => window.removeEventListener('cmd-snippets-changed', reload);
   }, []);
 
-  // 关闭补全时清空提示与缓冲
+  // 关闭补全开关时清空提示与缓冲
   useEffect(() => {
-    if (!completionEnabled) {
-      lineBufferRef.current = '';
-      setSuggestions([]);
-      setActiveIdx(0);
-    }
-  }, [completionEnabled]);
+    if (!completionEnabled) resetCompletion(true);
+  }, [completionEnabled, resetCompletion]);
 
   // 断开 / 重连时重置补全状态，避免缓冲与实际行错位
   useEffect(() => {
-    if (status !== 'connected') {
-      lineBufferRef.current = '';
-      setSuggestions([]);
-      setActiveIdx(0);
-    }
-  }, [status]);
+    if (status !== 'connected') resetCompletion(true);
+  }, [status, resetCompletion]);
 
   const sendToShell = useCallback((data: string) => {
     if (isSyncedRef.current && broadcastGlobalDataRef.current) {
@@ -932,24 +940,61 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     sendToShell(erase + snippet.cmd);
     recordSnippetUsage(snippet.cmd); // 频率学习：常用命令后续排更前
     lineBufferRef.current = snippet.cmd;
-    navigatedRef.current = false;
-    setSuggestions([]);
-    setActiveIdx(0);
+    resetCompletion();
     termRef.current?.focus();
+  }, [sendToShell, resetCompletion]);
+
+  // 接受行内幽灵：幽灵一定是当前输入的纯延伸，直接把残余文本发下去即可（无需退格重打）
+  const acceptGhost = useCallback(() => {
+    const rest = ghostRef.current;
+    if (!rest) return false;
+    const full = ghostCmdRef.current;
+    sendToShell(rest);
+    lineBufferRef.current += rest;
+    if (full) recordSnippetUsage(full);
+    setGhost('');
+    ghostRef.current = '';
+    ghostCmdRef.current = '';
+    setListOpen(false);
+    return true;
   }, [sendToShell]);
 
+  // 依据当前缓冲刷新候选与幽灵文本。
+  // 幽灵只取「以当前输入为前缀」的最优候选（否则无法在光标后原样接续显示）。
   const refreshSuggestions = useCallback(() => {
-    const list = matchSnippets(lineBufferRef.current, snippetsRef.current);
+    const buf = lineBufferRef.current;
+    const list = buf ? matchSnippets(buf, snippetsRef.current) : [];
     setSuggestions(list);
     setActiveIdx(0);
     navigatedRef.current = false;
-    setAnchor(list.length ? computeAnchor() : null);
+
+    const lower = buf.toLowerCase();
+    const hit = buf ? list.find((s) => s.cmd.length > buf.length && s.cmd.toLowerCase().startsWith(lower)) : undefined;
+    const rest = hit ? hit.cmd.slice(buf.length) : '';
+    ghostCmdRef.current = hit ? hit.cmd : '';
+    ghostRef.current = rest;
+    setGhost(rest);
+    if (!list.length) setListOpen(false);
+    setAnchor(list.length || rest ? computeAnchor() : null);
   }, [computeAnchor]);
 
   // 处理一段终端输入；返回 true 表示被补全逻辑消费（不再下发到 shell）
   const handleCompletionInput = useCallback((data: string): boolean => {
-    const isOpen = suggestionsRef.current.length > 0;
-    if (isOpen) {
+    // ── Ctrl+空格：显式弹出候选列表（终端里 Ctrl+Space 发送 NUL）──
+    if (data === '\x00') {
+      const list = matchSnippets(lineBufferRef.current, snippetsRef.current);
+      if (list.length) {
+        setSuggestions(list);
+        setActiveIdx(0);
+        navigatedRef.current = false;
+        setAnchor(computeAnchor());
+        setListOpen(true);
+      }
+      return true; // NUL 不下发
+    }
+
+    // ── 候选列表已显式打开时的按键 ──
+    if (listOpenRef.current && suggestionsRef.current.length > 0) {
       if (data === '\x1b[A') { // ↑ 上移选择
         const n = suggestionsRef.current.length;
         navigatedRef.current = true;
@@ -962,51 +1007,41 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         setActiveIdx((i) => (i + 1) % n);
         return true;
       }
-      if (data === '\x1b') { // Esc 关闭下拉（不下发）
+      if (data === '\x1b') { // Esc 关闭列表（不下发）
+        setListOpen(false);
         navigatedRef.current = false;
-        setSuggestions([]);
-        setActiveIdx(0);
         return true;
       }
-      // → 右箭头：一键接受当前高亮项（无需先按方向键）。
-      // 若用户先按过 ← 移动光标，本地行模型已失真、下拉会被重置关闭，故此处不会误吞行内右移。
-      if (data === '\x1b[C') {
+      // Enter：仅在用户用 ↑↓ 明确选过之后才接受高亮项；否则照常提交执行
+      if ((data === '\r' || data === '\n') && navigatedRef.current) {
         const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
         if (sel) { acceptSuggestion(sel); return true; }
       }
-      // Enter：仅在用户用 ↑↓ 明确选过之后才接受高亮项；
-      // 否则 Enter 永远照常提交执行用户输入的命令（避免 ls 回车被吞成 lsof -i）。
-      if (data === '\r' || data === '\n') {
-        if (navigatedRef.current) {
-          const sel = suggestionsRef.current[activeIdxRef.current] || suggestionsRef.current[0];
-          if (sel) { acceptSuggestion(sel); return true; }
-        }
-      }
-      // 空格：收起下拉（不吞输入，空格照常下发给 shell）；继续输入文字会重新弹出。
+      // 空格：收起列表（空格本身照常下发）
       if (data === ' ') {
         lineBufferRef.current += data;
+        setListOpen(false);
         navigatedRef.current = false;
-        setSuggestions([]);
-        setActiveIdx(0);
+        refreshSuggestions();
         return false;
       }
     }
 
-    // Tab：永远交给原生 shell 做补全（不再被吞）；并关闭下拉、重置缓冲（shell 可能改写当前行）
+    // ── 幽灵提示的接受键：→ 与 Tab ──
+    // → 右移：仅当有幽灵时吞掉并接受；无幽灵时照常下发给 shell 做行内右移
+    if (data === '\x1b[C' && ghostRef.current) {
+      return acceptGhost();
+    }
+    // Tab：有幽灵先接受幽灵；无幽灵则交给原生 shell 补全（文件名/路径），并重置本地缓冲
     if (data === '\t') {
-      lineBufferRef.current = '';
-      navigatedRef.current = false;
-      setSuggestions([]);
-      setActiveIdx(0);
+      if (ghostRef.current) return acceptGhost();
+      resetCompletion(true); // shell 补全会改写当前行，本地模型作废
       return false;
     }
 
     // 回车 / Ctrl-C / Ctrl-U：提交或清行 → 重置缓冲
     if (data === '\r' || data === '\n' || data === '\x03' || data === '\x15') {
-      lineBufferRef.current = '';
-      navigatedRef.current = false;
-      setSuggestions([]);
-      setActiveIdx(0);
+      resetCompletion(true);
       return false;
     }
     // 退格
@@ -1022,12 +1057,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       return false;
     }
     // 其它控制 / 转义序列（方向键移动、Home/End 等）：本地模型已失真，重置
-    lineBufferRef.current = '';
-    navigatedRef.current = false;
-    setSuggestions([]);
-    setActiveIdx(0);
+    resetCompletion(true);
     return false;
-  }, [acceptSuggestion, refreshSuggestions]);
+  }, [acceptSuggestion, acceptGhost, refreshSuggestions, resetCompletion, computeAnchor]);
 
   // 将最新开关与处理函数暴露给 onData，避免连接闭包内引用过期
   const completionApiRef = useRef<{ enabled: boolean; handle: (d: string) => boolean }>({
@@ -1931,8 +1963,31 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </div>
         )}
 
-        {/* 命令自动补全下拉：锚定光标，默认在输入行上方展开，避免遮挡输入 */}
-        {completionEnabled && status === 'connected' && suggestions.length > 0 && anchor && (
+        {/* 行内幽灵补全：光标后的灰色残余文本，与终端同字体同字号，→/Tab 接受 */}
+        {completionEnabled && status === 'connected' && ghost && anchor && !listOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              zIndex: 13,
+              left: anchor.left,
+              top: anchor.top,
+              height: anchor.cellH,
+              lineHeight: `${anchor.cellH}px`,
+              maxWidth: Math.max(0, anchor.cw - anchor.left - 8),
+              overflow: 'hidden',
+              whiteSpace: 'pre',
+              pointerEvents: 'none',
+              fontFamily,
+              fontSize,
+              color: 'rgba(148,163,184,0.62)',
+            }}
+          >
+            {ghost}
+          </div>
+        )}
+
+        {/* 候选列表：仅 Ctrl+空格 显式打开时出现，锚定光标避免遮挡输入 */}
+        {completionEnabled && status === 'connected' && listOpen && suggestions.length > 0 && anchor && (
           <div style={{
             position: 'absolute', zIndex: 14,
             width: 360, maxWidth: '90%',
@@ -1953,8 +2008,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                     padding: '6px 10px', cursor: 'pointer',
-                    background: i === activeIdx ? 'rgba(99,102,241,0.18)' : 'transparent',
-                    borderLeft: i === activeIdx ? '2px solid #6366f1' : '2px solid transparent',
+                    background: i === activeIdx ? 'rgba(0,110,255,0.20)' : 'transparent',
+                    borderLeft: i === activeIdx ? '2px solid #006eff' : '2px solid transparent',
                   }}
                 >
                   <span style={{
@@ -1962,7 +2017,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0,
                   }}>
                     {s.keyword && (
-                      <span style={{ color: '#818cf8', marginRight: 8 }}>{s.keyword}</span>
+                      <span style={{ color: '#4da3ff', marginRight: 8 }}>{s.keyword}</span>
                     )}
                     {s.cmd}
                   </span>
@@ -1978,7 +2033,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               padding: '4px 10px', borderTop: '1px solid #1e293b',
               fontSize: 10, color: '#64748b', background: '#0b1220',
             }}>
-              → / Enter / 单击 接受首选 · ↑↓ 选择 · Tab 交给 Shell · Esc 关闭
+              ↑↓ 选择 · Enter / 单击 接受 · Esc 关闭 · 平时用 → 接受行内灰字提示
             </div>
           </div>
         )}

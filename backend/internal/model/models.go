@@ -193,6 +193,13 @@ type K8sCluster struct {
 	Description  string    `gorm:"type:text" json:"description"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+
+	// ── 控制台指纹（由「探测控制台」写入，见 handler.probeConsole）──
+	ConsoleKind      string     `gorm:"size:40" json:"console_kind"`     // uc / kubernetes-dashboard / rancher / web
+	ConsoleTitle     string     `gorm:"size:200" json:"console_title"`   // 控制台页面标题
+	ConsoleVersion   string     `gorm:"size:60" json:"console_version"`  // 识别到的版本号
+	ConsoleCheckedAt *time.Time `json:"console_checked_at"`              // 最近一次探测时间
+
 	// 非持久化展示字段
 	NodeCount   int    `gorm:"-" json:"node_count"`
 	MasterCount int    `gorm:"-" json:"master_count"`

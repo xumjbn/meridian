@@ -617,7 +617,13 @@ func AutoClassifyK8s(c *gin.Context) {
 				if name == "" {
 					name = "cluster-" + vip
 				}
-				nc := model.K8sCluster{OwnerID: node.OwnerID, Name: name, VIP: vip, ConsolePort: 443, ConsolePath: "/uc"}
+				nc := model.K8sCluster{OwnerID: node.OwnerID, Name: name, VIP: vip, ConsolePort: 443}
+				// 控制台入口不再写死 /uc：探测真实路径与版本，探测不到才回落 /uc
+				if best, _, found := probeConsole(&nc); found {
+					applyConsoleProbe(&nc, best)
+				} else {
+					nc.ConsolePath = "/uc"
+				}
 				db.Create(&nc)
 				cl = &nc
 				created++

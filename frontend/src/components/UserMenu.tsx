@@ -11,9 +11,15 @@ interface ChangePasswordValues {
   confirm: string;
 }
 
-// 右上角当前用户菜单：显示登录用户名，提供修改密码、退出登录
-export const UserMenu: React.FC = () => {
+interface UserMenuProps {
+  /** light = 置于深色顶栏（白字透明底）；dark = 置于浅色页面（描边胶囊） */
+  tone?: 'light' | 'dark';
+}
+
+// 当前用户菜单：显示登录用户名，提供修改密码、退出登录
+export const UserMenu: React.FC<UserMenuProps> = ({ tone = 'dark' }) => {
   const user = localStorage.getItem('mrd-user') || 'admin';
+  const onDark = tone === 'light';
   const [pwdOpen, setPwdOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ChangePasswordValues>();
@@ -76,14 +82,14 @@ export const UserMenu: React.FC = () => {
             alignItems: 'center',
             gap: 8,
             cursor: 'pointer',
-            padding: '4px 10px 4px 4px',
-            borderRadius: 999,
-            border: `1px solid ${palette.border}`,
-            background: palette.surface,
+            padding: onDark ? '4px 10px 4px 6px' : '4px 10px 4px 4px',
+            borderRadius: onDark ? 4 : 999,
+            border: onDark ? '1px solid transparent' : `1px solid ${palette.border}`,
+            background: onDark ? 'transparent' : palette.surface,
           }}
         >
-          <Avatar size={28} style={{ background: palette.brandGradient, flexShrink: 0 }} icon={<UserOutlined />} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: palette.text }}>{user}</span>
+          <Avatar size={24} style={{ background: palette.brandGradient, flexShrink: 0 }} icon={<UserOutlined />} />
+          <span style={{ fontSize: 13, fontWeight: 500, color: onDark ? '#e6eaf0' : palette.text }}>{user}</span>
         </span>
       </Dropdown>
 
