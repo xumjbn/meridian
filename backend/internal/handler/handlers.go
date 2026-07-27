@@ -418,6 +418,16 @@ func UpdateAsset(c *gin.Context) {
 
 	old := asset // 记录变更前的值
 
+	// IP 改动前先查重：IP 上有唯一索引，直接 Save 会抛原始 SQL 错误（500 且不可读），
+	// 这里提前拦成可读的 400。
+	if strings.TrimSpace(req.IP) != "" && req.IP != asset.IP {
+		var dup model.Asset
+		if db.Where("ip = ? AND id <> ?", req.IP, asset.ID).First(&dup).Error == nil {
+			SendError(c, 400, fmt.Sprintf("IP %s 已被资产「%s」占用，请换一个", req.IP, dup.Name))
+			return
+		}
+	}
+
 	asset.Name = req.Name
 	asset.IP = req.IP
 	asset.Type = req.Type

@@ -30,6 +30,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   CompassOutlined,
+  CopyOutlined,
   DashboardOutlined,
   InfoCircleOutlined,
   SyncOutlined,
@@ -464,6 +465,31 @@ export const Assets: React.FC = () => {
     setEditingAsset(record);
     form.setFieldsValue(formValues);
     setModalVisible(true);
+  };
+
+  // 复制资产：以现有资产为模板新建一台。同网段批量录入时最省事——
+  // 类型/端口/凭据/标签/备注全带过来，只有 IP 留空强制填新的（IP 唯一）。
+  const handleCopy = (record: Asset) => {
+    let tags: string[] = [];
+    if (record.tags) {
+      try {
+        tags = JSON.parse(record.tags) || [];
+      } catch {
+        tags = [];
+      }
+    }
+    setEditingAsset(null); // 走「新建」流程而非更新
+    form.setFieldsValue({
+      ...record,
+      id: undefined,
+      ip: '',                       // IP 唯一，必须手填新的
+      name: `${record.name} 副本`,
+      status: undefined,            // 在线状态由探测决定，不继承
+      tags,
+      ports: portsJsonToText(record.ports),
+    });
+    setModalVisible(true);
+    message.info('已按该资产预填，请填写新的 IP 后保存');
   };
 
   const handleDelete = async (id: number) => {
@@ -919,13 +945,24 @@ export const Assets: React.FC = () => {
           >
             采集
           </Button>
-          <Button
-            type="text"
-            size="small"
-            icon={<EditOutlined style={{ color: '#475569' }} />}
-            onClick={() => handleOpenEdit(record)}
-            style={{ padding: 0 }}
-          />
+          <Tooltip title="复制为新资产（沿用配置，只需换 IP）">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined style={{ color: '#475569' }} />}
+              onClick={() => handleCopy(record)}
+              style={{ padding: 0 }}
+            />
+          </Tooltip>
+          <Tooltip title="编辑">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined style={{ color: '#475569' }} />}
+              onClick={() => handleOpenEdit(record)}
+              style={{ padding: 0 }}
+            />
+          </Tooltip>
           <Popconfirm
             title="确定要删除该资产吗？"
             onConfirm={() => handleDelete(record.id!)}
@@ -1088,7 +1125,8 @@ export const Assets: React.FC = () => {
               { required: true, message: '请输入有效的 IP 地址或范围' }
             ]}
           >
-            <Input placeholder="例如: 192.168.1.100" disabled={!!editingAsset} />
+            {/* IP 可改：换网段/迁机器时不必删了重建，后端会查重并记入变更历史 */}
+            <Input placeholder="例如: 192.168.1.100" />
           </Form.Item>
 
           <Form.Item
