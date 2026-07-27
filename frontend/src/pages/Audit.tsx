@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Input, Select, Button, message } from 'antd';
+import { Table, Tag, Input, Select, Button, Space, message } from 'antd';
 import { FileSearchOutlined } from '@ant-design/icons';
 import { getAuditLogs, type AuditLog } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
