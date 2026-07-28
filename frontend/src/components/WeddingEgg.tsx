@@ -142,15 +142,24 @@ export const WeddingEgg: React.FC = () => {
   }, []);
 
   // ── 触发 ──
+  // Esc 必须挂捕获阶段：xterm 要把 \x1b 交给 shell，会在 keydown 上 stopPropagation()，
+  // 终端有焦点时冒泡阶段的 window 监听一次都收不到（实测 win:0 / cap:1）。
+  const openRef = useRef(false);
+  useEffect(() => { openRef.current = open; }, [open]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !openRef.current) return; // 没在放就别拦
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    };
     const onEvent = () => {
       setStage('open'); setCaption(''); setTyped(''); setOpen(true);
     };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onEsc, true);
     window.addEventListener(WEDDING_EGG_EVENT, onEvent);
     return () => {
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onEsc, true);
       window.removeEventListener(WEDDING_EGG_EVENT, onEvent);
     };
   }, [close]);

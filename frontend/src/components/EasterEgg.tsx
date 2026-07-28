@@ -156,11 +156,29 @@ export const EasterEgg: React.FC = () => {
     timersRef.current = [];
   }, []);
 
+  // ── Esc 关闭：必须挂在捕获阶段 ──────────────────────────────
+  // xterm 要把 \x1b 交给 shell，所以它在 keydown 上 stopPropagation()。
+  // 实测：终端有焦点时按 Esc，捕获阶段能收到，冒泡阶段 window/document 一次都收不到——
+  // 所以原来挂在冒泡阶段的这个监听等于没有，动画只能靠点击关。
+  // 单独一个监听而不是并进下面的 konami：konami 保持在冒泡阶段，
+  // 否则在终端里打字也会被当成序列输入，误触发。
+  const openRef = useRef(false);
+  useEffect(() => { openRef.current = open; }, [open]);
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !openRef.current) return; // 没在放就别拦，Esc 要留给弹窗等
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    };
+    window.addEventListener('keydown', onEsc, true);
+    return () => window.removeEventListener('keydown', onEsc, true);
+  }, [close]);
+
   // ── 触发 ──
   useEffect(() => {
     let idx = 0;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { close(); return; }
       const expect = KONAMI[idx];
       const hit = expect.length === 1 ? e.key.toLowerCase() === expect : e.key === expect;
       if (hit) {

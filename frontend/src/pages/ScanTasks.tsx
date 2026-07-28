@@ -60,10 +60,17 @@ export const ScanTasks: React.FC = () => {
     }
   };
 
+  // 同 Dashboard：切到终端标签时本页只是 display:none，组件还挂着。
+  // 不判断可见性的话，有扫描在跑的时候会一直每 3 秒拉一次任务列表，
+  // 而用户根本在看终端。切回来时下一拍（≤3 秒）就会刷新，不影响体验。
+  const pageRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     fetchTasks(true);
     // 定时轮询扫描状态，保持任务列表状态更新
     const timer = setInterval(() => {
+      if (document.hidden) return;
+      if (pageRef.current && !pageRef.current.offsetParent) return;
       const hasRunning = tasksRef.current.some((t) => t.status === 'running');
       if (hasRunning) {
         fetchTasks(false);
@@ -429,7 +436,7 @@ export const ScanTasks: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100%' }}>
+    <div ref={pageRef} style={{ background: palette.bg, minHeight: '100%' }}>
 
       <div style={{ padding: pagePadding }} className="lynx-page-in">
         {/* 表格主体 */}

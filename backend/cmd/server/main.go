@@ -43,6 +43,13 @@ func CORSMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, HEAD")
+		// 让浏览器缓存预检结果。
+		// 桌面端前端跑在 tauri:// 而后端在 127.0.0.1:8765，属于跨源；又因为请求带
+		// Authorization 头，不是简单请求，所以每个接口调用前都要先发一次 OPTIONS。
+		// 不给这个头时 Chrome 只缓存 5 秒，实测（真实 WebView2 抓包）每一次调用
+		// 都实打实地发了 preflight + 真实请求两条，请求数直接翻倍。
+		// 7200 秒是 Chrome 的上限，再大也会被截到这个值。
+		c.Writer.Header().Set("Access-Control-Max-Age", "7200")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

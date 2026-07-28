@@ -219,12 +219,83 @@ body {
 .wjw-wp-glow {
   position: absolute;
   inset: -12%;
+  animation: wjw-wp-glow 14s ease-in-out infinite alternate;
+}
+/* 三套各自的底光，色调决定整张图的情绪 */
+.wjw-wp-glow-love {
   background:
     radial-gradient(38% 46% at 50% 48%, rgba(255, 143, 171, 0.55) 0%, rgba(255, 143, 171, 0) 70%),
     radial-gradient(46% 40% at 14% 88%, rgba(255, 217, 142, 0.4) 0%, rgba(255, 217, 142, 0) 72%),
     radial-gradient(42% 38% at 88% 12%, rgba(199, 125, 255, 0.35) 0%, rgba(199, 125, 255, 0) 72%);
-  animation: wjw-wp-glow 14s ease-in-out infinite alternate;
 }
+.wjw-wp-glow-stars {
+  background:
+    radial-gradient(42% 44% at 50% 26%, rgba(150, 178, 255, 0.5) 0%, rgba(150, 178, 255, 0) 72%),
+    radial-gradient(52% 42% at 82% 78%, rgba(122, 96, 220, 0.34) 0%, rgba(122, 96, 220, 0) 74%),
+    radial-gradient(46% 38% at 12% 20%, rgba(96, 160, 220, 0.3) 0%, rgba(96, 160, 220, 0) 74%);
+}
+.wjw-wp-glow-calm {
+  background:
+    radial-gradient(40% 46% at 50% 44%, rgba(143, 227, 184, 0.46) 0%, rgba(143, 227, 184, 0) 72%),
+    radial-gradient(48% 40% at 16% 82%, rgba(255, 217, 142, 0.32) 0%, rgba(255, 217, 142, 0) 74%),
+    radial-gradient(44% 38% at 86% 18%, rgba(120, 200, 190, 0.3) 0%, rgba(120, 200, 190, 0) 74%);
+}
+
+/* 满屏情话：两层文字交叉铺，行距压到小于字号，行与行互相咬住 */
+.wjw-wp-dense {
+  position: absolute;
+  inset: -14%;
+  overflow: hidden;
+}
+/* 叠加层整层斜压上去，和正着的那层交叉才有「重叠」的观感 */
+.wjw-wp-dense-tilt {
+  transform: rotate(-13deg);
+  opacity: 0.62;
+}
+.wjw-wp-dense-row {
+  position: absolute;
+  left: 0;
+  white-space: nowrap;
+  font-weight: 700;
+  line-height: 0.82; /* 小于 1 才能让上下行压着走 */
+  letter-spacing: 2px;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+.wjw-wp-dense-l { animation-name: wjw-wp-slide-l; }
+.wjw-wp-dense-r { animation-name: wjw-wp-slide-r; }
+/* 萤火虫：小幅漂移 + 明暗，比星星「活」一点 */
+.wjw-wp-fly {
+  position: absolute;
+  border-radius: 50%;
+  background: #ffe9a8;
+  box-shadow: 0 0 6px 2px rgba(255, 233, 168, 0.55);
+  animation-name: wjw-wp-fly;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+/* 自定义图片：铺满居中，不做任何动画 */
+.wjw-wp-img {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.wjw-wp-leaf {
+  position: absolute;
+  animation-name: wjw-wp-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+/* 安心那套做极慢的呼吸，别用爱意那套的心跳节奏 */
+.wjw-wp-center-still { animation: none; }
+.wjw-wp-center-sway { animation: wjw-wp-sway 9s ease-in-out infinite alternate; }
+/* 树 + 猫 + 两行字竖着排，需要比默认更高的画幅 */
+.wjw-wp-center-wide { width: min(46%, 400px); }
 .wjw-wp-center {
   position: absolute;
   left: 50%;
@@ -271,6 +342,30 @@ body {
 @keyframes wjw-wp-bob {
   from { transform: translateY(4px) rotate(-4deg); }
   to { transform: translateY(-10px) rotate(4deg); }
+}
+/* 文字行整体平移。位移量取 -50%/+50%，配合每行重复 14 遍的内容，
+   任何时刻屏幕上都是满的，看不出接缝 */
+@keyframes wjw-wp-slide-l {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes wjw-wp-slide-r {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+@keyframes wjw-wp-fly {
+  from { transform: translate(-6px, 4px); opacity: 0.3; }
+  to { transform: translate(8px, -10px); opacity: 1; }
+}
+@keyframes wjw-wp-fall {
+  0% { transform: translateY(-12vh) rotate(0deg); opacity: 0; }
+  14% { opacity: 1; }
+  86% { opacity: 1; }
+  100% { transform: translateY(52vh) rotate(220deg); opacity: 0; }
+}
+@keyframes wjw-wp-sway {
+  from { transform: translate(-50%, -50%) rotate(-1.2deg); }
+  to { transform: translate(-50%, -50%) rotate(1.2deg); }
 }
 
 /* 尊重系统「减少动态效果」：图案还在，但一切停下来 */

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Row, Col, Spin, message, Button, Timeline, Tag, Empty, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -100,11 +100,20 @@ export const Dashboard: React.FC = () => {
     }
   }, []);
 
+  // 轮询要能判断「本页当前是不是真的看得见」。
+  // 切到终端标签时，App 只是给页面容器套了 display:none，本组件仍然挂着——
+  // 光靠 document.hidden 判断不出来（窗口是可见的），结果是用户在终端里干活的
+  // 整个过程中，控制台每 8 秒照样拉 stats / activity / assets 三个接口。
+  // 实测（真实 WebView2，停在终端页静置 30 秒）：确认仍在轮询。
+  // display:none 子树里的元素 offsetParent 为 null，用它判断最省。
+  const rootRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     fetchAll(true);
-    // 标签页隐藏时暂停轮询，避免后台无谓请求
     const interval = setInterval(() => {
-      if (!document.hidden) fetchAll(false);
+      if (document.hidden) return;
+      if (rootRef.current && !rootRef.current.offsetParent) return; // 被切走了，别白拉
+      fetchAll(false);
     }, 8000);
     return () => clearInterval(interval);
   }, [fetchAll]);
@@ -142,7 +151,7 @@ export const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div style={{ background: palette.bg, minHeight: '100%' }}>
+    <div ref={rootRef} style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
         title="控制台"
         subtitle="终端工作台"

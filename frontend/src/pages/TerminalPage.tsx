@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover, Modal, ConfigProvider, theme as antdTheme } from 'antd';
+import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover, Modal, Slider, ConfigProvider, theme as antdTheme } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -9,7 +9,13 @@ import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUploa
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined, DashboardOutlined } from '@ant-design/icons';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { WEDDING_EGG_RE, fireWeddingEgg } from '../components/WeddingEgg';
-import { TerminalWallpaper, useWallpaper, setWallpaper, WALLPAPER_SHOW_RE, WALLPAPER_HIDE_RE } from '../components/TerminalWallpaper';
+import {
+  TerminalWallpaper, useWallpaper, setWallpaper, wallpaperIdFromCmd,
+  WALLPAPER_SHOW_RE, WALLPAPER_HIDE_RE, WALLPAPER_OPTIONS,
+  useWallpaperOpacity, setWallpaperOpacity, MIN_OPACITY, MAX_OPACITY,
+  readImageAsWallpaper, setCustomWallpaper, clearCustomWallpaper, customWallpaperImage,
+  type WallpaperId,
+} from '../components/TerminalWallpaper';
 import { saveBlob } from '../saveFile';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { palette } from '../theme';
@@ -81,8 +87,9 @@ const termThemes: { label: string; value: string; theme: TermTheme }[] = [
 ];
 const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value === v) || termThemes[0]).theme;
 
-/** wjw 壁纸开着时把 xterm 的底色换成全透明（其余色位不动），好让下层背景透出来 */
-const withWallpaperBg = (t: TermTheme, on: boolean): TermTheme =>
+/** 壁纸开着时把 xterm 的底色换成全透明（其余色位不动），好让下层背景透出来。
+ *  参数是当前选中的那一套（空串=关闭） */
+const withWallpaperBg = (t: TermTheme, on: WallpaperId): TermTheme =>
   (on ? { ...t, background: 'rgba(0,0,0,0)' } : { ...t });
 
 // 复制/粘贴统一走 ../clipboard：桌面端原生剪贴板优先，Web 端 execCommand + API 兜底。
@@ -204,6 +211,12 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
     setToolbarCollapsed(v);
     localStorage.setItem('term_toolbar_collapsed', v ? '1' : '0');
   };
+  // 终端背景：设置面板要读当前选择和透明度。注意这里是外层页面组件，
+  // 各个终端窗格里另有一份订阅（同一个广播，两边保持同步）。
+  const wallpaperOn = useWallpaper();
+  const wallpaperAlpha = useWallpaperOpacity();
+  const bgFileRef = useRef<HTMLInputElement>(null);
+
   // 展开把手要 portal 到标签栏右侧。标签栏先于本页挂载，通常一次就能取到插槽，
   // 取不到时下一帧再试一次。
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
@@ -752,6 +765,78 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                     popupMatchSelectWidth={false}
                   />
                 </div>
+                {/* 终端背景：三套内置 + 自定义图片，透明度可调 */}
+                <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Tooltip title="也可以在终端里直接敲口令：wjw-bg / wjw-bg1 / wjw-bg2 / wjw-bg-hide">
+                      <span style={{ fontSize: 12, color: palette.chromeText, cursor: 'help' }}>背景</span>
+                    </Tooltip>
+                    <Select
+                      size="small"
+                      value={wallpaperOn}
+                      onChange={(val: WallpaperId) => {
+                        // 选了自定义却还没传过图，直接开会是一片空白，所以先引导去传
+                        if (val === 'custom' && !customWallpaperImage()) {
+                          message.info('先选一张图片');
+                          bgFileRef.current?.click();
+                          return;
+                        }
+                        setWallpaper(val);
+                      }}
+                      options={WALLPAPER_OPTIONS}
+                      style={{ width: 170 }}
+                      popupMatchSelectWidth={false}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: palette.chromeText, flexShrink: 0 }}>透明度</span>
+                    <Slider
+                      min={MIN_OPACITY}
+                      max={MAX_OPACITY}
+                      step={0.01}
+                      value={wallpaperAlpha}
+                      onChange={(v: number) => setWallpaperOpacity(v)}
+                      disabled={!wallpaperOn}
+                      tooltip={{ formatter: (v) => `${Math.round((v || 0) * 100)}%` }}
+                      style={{ flex: 1, margin: 0 }}
+                    />
+                    <span style={{ fontSize: 11, color: '#94a3b8', width: 32, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {Math.round(wallpaperAlpha * 100)}%
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Button size="small" onClick={() => bgFileRef.current?.click()} style={{ fontSize: 12 }}>
+                      选择图片
+                    </Button>
+                    {!!customWallpaperImage() && (
+                      <Button size="small" type="text" danger onClick={() => { clearCustomWallpaper(); message.success('已清除自定义图片'); }} style={{ fontSize: 12 }}>
+                        清除
+                      </Button>
+                    )}
+                    {/* 原生 file input 藏起来，用按钮代理，样式才统一 */}
+                    <input
+                      ref={bgFileRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = ''; // 允许连着选同一个文件
+                        if (!f) return;
+                        try {
+                          const dataUrl = await readImageAsWallpaper(f);
+                          setCustomWallpaper(dataUrl);
+                          message.success('背景已更新');
+                        } catch (err) {
+                          message.error(err instanceof Error ? err.message : '图片处理失败');
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <div style={{ fontSize: 12, color: '#94a3b8', borderTop: '1px solid #f0f0f0', paddingTop: 8, lineHeight: 1.6 }}>
                   选中即复制 · 右键/Ctrl+Shift+V 粘贴<br />
                   Ctrl+滚轮 / Ctrl ± 缩放字号 · Ctrl+0 复位<br />
@@ -1338,8 +1423,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         return true;
       }
       // 终端背景开关：先判 -hide，否则 wjw-bg 的正则会先把它吃掉
-      if (WALLPAPER_HIDE_RE.test(line)) { eraseLine(); setWallpaper(false); return true; }
-      if (WALLPAPER_SHOW_RE.test(line)) { eraseLine(); setWallpaper(true); return true; }
+      if (WALLPAPER_HIDE_RE.test(line)) { eraseLine(); setWallpaper(''); return true; }
+      {
+        const m = WALLPAPER_SHOW_RE.exec(line);
+        if (m) { eraseLine(); setWallpaper(wallpaperIdFromCmd(m[1])); return true; }
+      }
       return false;
     }
     if (code === DEL || code === BS) {
@@ -1538,15 +1626,22 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       // 必须能退回 DOM：远程桌面、虚拟机、显卡驱动被禁用等场景下拿不到 WebGL2
       // 上下文，或者运行中上下文丢失（驱动重启、浏览器回收）。这时候宁可慢，
       // 也不能让终端变成黑屏——所以 addon 只是加分项，失败一律吞掉继续用 DOM。
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => {
-          console.warn('[term] WebGL 上下文丢失，退回 DOM 渲染');
-          webgl.dispose();
-        });
-        term.loadAddon(webgl);
-      } catch (e) {
-        console.warn('[term] WebGL 渲染不可用，使用 DOM 渲染', e);
+      // localStorage.term_force_dom = '1' 可强制退回 DOM 渲染：
+      // 一是排障时用来做 A/B 对照，二是万一某些显卡驱动下 WebGL 画面异常，
+      // 用户有个不用重装就能自救的开关。
+      if (localStorage.getItem('term_force_dom') === '1') {
+        console.warn('[term] 已按设置强制使用 DOM 渲染');
+      } else {
+        try {
+          const webgl = new WebglAddon();
+          webgl.onContextLoss(() => {
+            console.warn('[term] WebGL 上下文丢失，退回 DOM 渲染');
+            webgl.dispose();
+          });
+          term.loadAddon(webgl);
+        } catch (e) {
+          console.warn('[term] WebGL 渲染不可用，使用 DOM 渲染', e);
+        }
       }
 
       // 终端内 URL 可点击（http/https）→ 系统浏览器打开
@@ -2367,7 +2462,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         )}
 
         {/* wjw 专属背景：必须排在终端容器之前 + z-index 更低，才压得住在画布下层 */}
-        {wallpaperOn && <TerminalWallpaper />}
+        {wallpaperOn && <TerminalWallpaper variant={wallpaperOn} />}
 
         <div
           ref={terminalRef}
