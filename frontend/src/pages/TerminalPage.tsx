@@ -1228,9 +1228,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     });
   }, [updateCwd]);
 
-  // 终端内常驻文件面板的开关（对标 FinalShell，不再弹抽屉）
-  const [filesOpen, setFilesOpen] = useState(false);
-  const toggleFiles = useCallback(() => setFilesOpen((v) => !v), []);
+  // 终端内常驻文件面板的开关（对标 FinalShell，不再弹抽屉）。
+  // 默认打开：FinalShell 就是一连上就能看见文件树；之前默认关着、又只有一个
+  // 很小的文件夹图标可开，等于做了等于没做。开关状态持久化。
+  const [filesOpen, setFilesOpen] = useState(() => localStorage.getItem('term_files_open') !== '0');
+  const toggleFiles = useCallback(() => {
+    setFilesOpen((v) => {
+      localStorage.setItem('term_files_open', v ? '0' : '1');
+      return !v;
+    });
+  }, []);
 
   // ── 节日特效口令识别 ─────────────────────────────────────
   // 单独维护一小段行缓冲：原先这段逻辑写在补全处理函数里，
@@ -2138,15 +2145,6 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       )}
 
       <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-      {/* 常驻文件面板：贴终端左侧，默认跟随 shell 的当前目录 */}
-      {filesOpen && !isLocal && (
-        <SftpPanel
-          assetId={assetId}
-          cwd={cwd}
-          hasCred={!!asset?.credential_id}
-          onClose={() => setFilesOpen(false)}
-        />
-      )}
       <div style={{ flexGrow: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {/* Placeholder: 空白未连接状态卡片 */}
         {status === 'idle' && (
@@ -2245,8 +2243,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           style={{
             width: '100%',
             height: '100%',
-            padding: '8px',
+            // 底部多留 4px：fit() 按 floor(可用高度/行高) 取行数，余数不足一行时
+            // 最后一行仍会被容器切掉几像素，字形下缘被削（g 看着像 q）。
+            padding: '8px 8px 12px',
             boxSizing: 'border-box',
+            overflow: 'hidden',
             background: termTheme.background,
           }}
         />
@@ -2339,6 +2340,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </div>
         )}
       </div>
+
+      {/* 常驻文件面板：贴终端右侧，默认跟随 shell 的当前目录 */}
+      {filesOpen && !isLocal && (
+        <SftpPanel
+          assetId={assetId}
+          cwd={cwd}
+          hasCred={!!asset?.credential_id}
+          onClose={() => setFilesOpen(false)}
+        />
+      )}
       </div>
 
       {/* 命令面板（Ctrl/⌘+Shift+P）：模糊搜命令库并插入 */}

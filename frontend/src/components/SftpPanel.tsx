@@ -104,7 +104,8 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragRef.current) return;
-      const next = Math.min(MAX_W, Math.max(MIN_W, dragRef.current.startW + (e.clientX - dragRef.current.startX)));
+      // 把手在面板左缘：指针左移(dx<0) 应加宽，故取负
+      const next = Math.min(MAX_W, Math.max(MIN_W, dragRef.current.startW - (e.clientX - dragRef.current.startX)));
       setWidth(next);
     };
     const onUp = () => {
@@ -191,7 +192,12 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
 
   return (
     <div style={{ width, flexShrink: 0, display: 'flex', height: '100%', background: '#111827' }}>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #1f2937' }}>
+      {/* 拖拽调宽把手在左缘：面板贴在终端右侧，向左拖才是加宽 */}
+      <div
+        onMouseDown={(e) => { dragRef.current = { startX: e.clientX, startW: width }; document.body.style.cursor = 'col-resize'; }}
+        style={{ width: 4, flexShrink: 0, cursor: 'col-resize', background: 'transparent' }}
+      />
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', borderLeft: '1px solid #1f2937' }}>
         {/* 标题行 */}
         <div style={{
           height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2,
@@ -291,12 +297,6 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
           />
         )}
       </div>
-
-      {/* 拖拽调宽把手 */}
-      <div
-        onMouseDown={(e) => { dragRef.current = { startX: e.clientX, startW: width }; document.body.style.cursor = 'col-resize'; }}
-        style={{ width: 4, flexShrink: 0, cursor: 'col-resize', background: 'transparent' }}
-      />
     </div>
   );
 };

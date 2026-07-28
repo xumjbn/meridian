@@ -79,6 +79,9 @@ func main() {
 	// 启动资产可用性监控（是否探测由 monitor_enabled 设置控制）
 	monitor.Start(db)
 
+	// 清掉过期会话行，避免会话表随登录次数无限增长
+	handler.PurgeExpiredSessions()
+
 	// 2. 初始化 Gin 引擎
 	r := gin.Default()
 

@@ -202,6 +202,18 @@ type Tag struct {
 }
 
 // AgentSession 持久化 AI Agent 会话（写穿缓存，服务重启不丢；也作为历史对话来源）
+// AuthSession 登录会话。原先只放在进程内存里，而桌面端每次启动都会重新拉起
+// 后端进程，于是上一轮的 token 必然失效——前端却还留着它，开机就是一屏
+// 「获取数据失败」，必须登出再登录。落库后重启不掉线。
+type AuthSession struct {
+	Token     string    `gorm:"primaryKey;size:64" json:"-"`
+	UserID    uint      `gorm:"index" json:"user_id"`
+	Username  string    `gorm:"size:64" json:"username"`
+	Role      string    `gorm:"size:32" json:"role"`
+	ExpiresAt time.Time `gorm:"index" json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type AgentSession struct {
 	ID          string    `gorm:"primaryKey;size:64" json:"id"`
 	RequesterID uint      `gorm:"index" json:"requester_id"`

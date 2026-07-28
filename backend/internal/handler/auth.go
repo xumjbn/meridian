@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -42,13 +43,23 @@ func issueToken(userID uint, username, role string) string {
 		return hex.EncodeToString([]byte(time.Now().String()))
 	}
 	token := hex.EncodeToString(b)
+	exp := time.Now().Add(sessionTTL)
 	sessionMu.Lock()
-	sessions[token] = session{UserID: userID, Username: username, Role: role, ExpiresAt: time.Now().Add(sessionTTL)}
+	sessions[token] = session{UserID: userID, Username: username, Role: role, ExpiresAt: exp}
 	sessionMu.Unlock()
+	// 同时落库：桌面端每次启动都会重开后端进程，只放内存的话上一轮 token 必失效
+	if store.GlobalDB != nil {
+		if err := store.GlobalDB.Create(&model.AuthSession{
+			Token: token, UserID: userID, Username: username, Role: role, ExpiresAt: exp,
+		}).Error; err != nil {
+			log.Printf("issueToken: 会话落库失败（重启后需重新登录）: %v", err)
+		}
+	}
 	return token
 }
 
-// lookupSession 校验 token 并返回会话（过期则清除）
+// lookupSession 校验 token 并返回会话（过期则清除）。
+// 内存未命中时回查数据库——进程重启后内存是空的，但会话仍然有效。
 func lookupSession(token string) (session, bool) {
 	if token == "" {
 		return session{}, false
@@ -56,13 +67,29 @@ func lookupSession(token string) (session, bool) {
 	sessionMu.RLock()
 	s, ok := sessions[token]
 	sessionMu.RUnlock()
-	if !ok {
+	if ok {
+		if time.Now().After(s.ExpiresAt) {
+			revokeToken(token)
+			return session{}, false
+		}
+		return s, true
+	}
+
+	if store.GlobalDB == nil {
 		return session{}, false
 	}
-	if time.Now().After(s.ExpiresAt) {
+	var rec model.AuthSession
+	if err := store.GlobalDB.First(&rec, "token = ?", token).Error; err != nil {
+		return session{}, false
+	}
+	if time.Now().After(rec.ExpiresAt) {
 		revokeToken(token)
 		return session{}, false
 	}
+	s = session{UserID: rec.UserID, Username: rec.Username, Role: rec.Role, ExpiresAt: rec.ExpiresAt}
+	sessionMu.Lock()
+	sessions[token] = s // 回填内存，后续请求不再查库
+	sessionMu.Unlock()
 	return s, true
 }
 
@@ -70,6 +97,9 @@ func revokeToken(token string) {
 	sessionMu.Lock()
 	delete(sessions, token)
 	sessionMu.Unlock()
+	if store.GlobalDB != nil {
+		store.GlobalDB.Where("token = ?", token).Delete(&model.AuthSession{})
+	}
 }
 
 // revokeUserSessions 注销某用户的全部会话（禁用/删除/改密后调用）
@@ -81,6 +111,18 @@ func revokeUserSessions(username string) {
 		}
 	}
 	sessionMu.Unlock()
+	// 必须一并删库：否则禁用/改密后，旧 token 仍能被 lookupSession 从库里查回来
+	if store.GlobalDB != nil {
+		store.GlobalDB.Where("username = ?", username).Delete(&model.AuthSession{})
+	}
+}
+
+// PurgeExpiredSessions 清掉过期会话行，避免会话表无限增长（启动时调用一次）
+func PurgeExpiredSessions() {
+	if store.GlobalDB == nil {
+		return
+	}
+	store.GlobalDB.Where("expires_at < ?", time.Now()).Delete(&model.AuthSession{})
 }
 
 // extractToken 优先取 Authorization: Bearer，其次取 ?token=（供 WS/SSE 使用）

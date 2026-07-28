@@ -62,10 +62,20 @@ api.interceptors.response.use(
     }
     // 会话失效 / 未登录：清理本地状态并回到登录页。
     // 桌面端例外：静默拒绝，不清理、不刷新——避免与后台自动登录竞争清掉刚拿到的 token、或陷入刷新循环。
-    if (res.code === 401 && !isTauri) {
-      clearSession();
-      if (!window.location.pathname.startsWith('/terminal/')) {
-        window.location.reload();
+    if (res.code === 401) {
+      if (isTauri) {
+        // 桌面端：本地存的 token 已失效（后端重启、会话过期等）。
+        // 过去这里什么都不做，于是首屏一片「获取数据失败」，只能手动登出再登录。
+        // 现在清掉坏 token 并广播一次，由 App 重跑静默登录后刷新页面。
+        if (localStorage.getItem('lynx-token')) {
+          localStorage.removeItem('lynx-token');
+          window.dispatchEvent(new CustomEvent('lynx-token-invalid'));
+        }
+      } else {
+        clearSession();
+        if (!window.location.pathname.startsWith('/terminal/')) {
+          window.location.reload();
+        }
       }
     }
     // 标记「服务器确实应答了，只是业务失败」。调用方（如桌面端静默登录）

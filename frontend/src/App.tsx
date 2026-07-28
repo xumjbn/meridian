@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { ConfigProvider, theme, Tooltip, Spin } from 'antd';
 import {
   DashboardOutlined,
@@ -460,6 +460,30 @@ export const App: React.FC = () => {
       unlisten?.();
     };
   }, [tokenReady]);
+
+  // 桌面端 token 失效（后端重启导致会话丢失等）：清掉后重跑一次静默登录并刷新，
+  // 不用再让用户手动登出重登。用 ref 防抖，避免一屏并发请求触发 N 次重登。
+  const relogRef = useRef(false);
+  useEffect(() => {
+    if (!isTauri) return;
+    const onInvalid = async () => {
+      if (relogRef.current) return;
+      relogRef.current = true;
+      try {
+        const r = await login('admin', 'admin');
+        localStorage.setItem('lynx-token', r.token || '');
+        localStorage.setItem('lynx-user', r.username || 'admin');
+        localStorage.setItem('lynx-role', r.role || 'admin');
+        window.location.reload();
+      } catch {
+        setAuthed(false); // 默认口令也不行 → 交给登录页
+      } finally {
+        relogRef.current = false;
+      }
+    };
+    window.addEventListener('lynx-token-invalid', onInvalid);
+    return () => window.removeEventListener('lynx-token-invalid', onInvalid);
+  }, []);
 
   useEffect(() => {
     if (!desktopAuto || localStorage.getItem('lynx-token')) return;
