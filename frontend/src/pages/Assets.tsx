@@ -539,7 +539,7 @@ export const Assets: React.FC = () => {
 
   const handleConnectConsole = (record: Asset) => {
     if (record.id == null) return;
-    openTerminal({ id: record.id, name: record.name, ip: record.ip });
+    openTerminal({ assetId: record.id, name: record.name, ip: record.ip });
   };
 
   const handleShowDetail = (record: Asset) => {

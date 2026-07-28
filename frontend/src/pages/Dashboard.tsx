@@ -111,7 +111,7 @@ export const Dashboard: React.FC = () => {
   const recentHosts = recentIds.map((id) => byId.get(id)).filter((a): a is Asset => !!a).slice(0, 8);
   const unknown = (stats?.total_assets ?? 0) - (stats?.online_assets ?? 0) - (stats?.offline_assets ?? 0);
 
-  const connect = (a: Asset) => a.id && openTerminal({ id: a.id, name: a.name, ip: a.ip });
+  const connect = (a: Asset) => a.id && openTerminal({ assetId: a.id, name: a.name, ip: a.ip });
 
   // 顶部统计条：一行紧凑数字，替掉原来四个占半屏的大卡
   const statItems = [
@@ -181,7 +181,7 @@ export const Dashboard: React.FC = () => {
                           color: active ? palette.primaryDeep : palette.text,
                         }}
                       >
-                        {s.id < 0 ? <DesktopOutlined /> : <CodeOutlined />}
+                        {s.assetId < 0 ? <DesktopOutlined /> : <CodeOutlined />}
                         <span style={{ fontWeight: 500 }}>{s.customName || s.name}</span>
                         <span style={{ fontFamily: 'monospace', fontSize: 11, color: palette.textMute }}>{s.ip}</span>
                       </div>

@@ -300,7 +300,7 @@ export const K8sClusters: React.FC = () => {
     }
   };
 
-  const toTerminal = (a: Asset) => a.id && openTerminal({ id: a.id, name: a.name, ip: a.ip });
+  const toTerminal = (a: Asset) => a.id && openTerminal({ assetId: a.id, name: a.name, ip: a.ip });
 
   const phaseColor = (p: string) =>
     p === 'Running' ? 'green' : p === 'Pending' ? 'gold' : p === 'Succeeded' ? 'blue' : p === 'Failed' ? 'red' : 'default';

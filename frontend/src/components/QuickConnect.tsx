@@ -102,15 +102,15 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   };
 
   const connect = (a: Asset) => {
-    open({ id: a.id!, name: a.name, ip: a.ip });
+    open({ assetId: a.id!, name: a.name, ip: a.ip });
     pushRecent(a.id);
   };
-  // 每次新建一个独立的本地终端：用更小的负数 id 保证唯一（可同时开多个）
+  // 每次新建一个独立的本地终端：用更小的负数资产 id 保证后端会话互不干扰
   const connectLocal = () => {
-    const localIds = sessions.filter((s) => s.id < 0).map((s) => s.id);
+    const localIds = sessions.filter((s) => s.assetId < 0).map((s) => s.assetId);
     const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
     const n = localIds.length + 1;
-    open({ id: nextId, name: n > 1 ? `本地终端 ${n}` : '本地终端', ip: '本机' });
+    open({ assetId: nextId, name: n > 1 ? `本地终端 ${n}` : '本地终端', ip: '本机' });
   };
 
   // 右键菜单动作

@@ -219,7 +219,7 @@ export const TerminalTabBar: React.FC<Props> = ({
       {/* 终端会话标签（HTML5 拖拽重排） */}
       {sessions.map((s) => {
         const active = activeId === s.id;
-        const isLocal = s.id < 0;
+        const isLocal = s.assetId < 0;   // 负数资产 id = 本地终端；s.id 现在是会话 id
         const isDropTarget = overId === s.id && dragId !== s.id;
         const editing = editingId === s.id;
         const iconColor = s.color || (active ? palette.siderTextActive : isLocal ? palette.accent : palette.chromeTextMute);

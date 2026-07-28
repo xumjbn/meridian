@@ -389,7 +389,8 @@ const AppLayout: React.FC = () => {
               <div key={s.id} style={{ flex: 1, minHeight: 0, position: 'relative', display: activeId === s.id ? 'block' : 'none' }}>
                 <Suspense fallback={<PageFallback />}>
                   <TerminalPage
-                    assetId={s.id}
+                    assetId={s.assetId}
+                    sessionId={s.id}
                     embedded
                     onClose={() => close(s.id)}
                     onOpenSettings={() => { setActive(null); navigate('/settings'); }}
@@ -416,7 +417,7 @@ const AppLayout: React.FC = () => {
         <NewConnectionModal
           open={newConnOpen}
           onClose={() => setNewConnOpen(false)}
-          onConnect={(s) => openSession(s)}
+          onConnect={(s) => openSession({ assetId: s.id, name: s.name, ip: s.ip })}
         />
       </div>
     </ConfigProvider>

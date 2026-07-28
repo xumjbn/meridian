@@ -164,6 +164,8 @@ const derivePreset = (rows: RowNode[]): LayoutType | undefined => {
 };
 
 interface TerminalPageProps {
+  /** 会话唯一 ID（同一主机可开多个终端，不能再用 assetId 当会话标识） */
+  sessionId?: number;
   assetId: number;
   /** 在 App 内部以标签页形式嵌入（填满容器，关闭走回调而非关闭浏览器窗口） */
   embedded?: boolean;
@@ -172,7 +174,9 @@ interface TerminalPageProps {
   onOpenSettings?: () => void;
 }
 
-export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = false, onClose, onOpenSettings }) => {
+export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, embedded = false, onClose, onOpenSettings }) => {
+  // 独立标签页打开时没有会话 ID，退回用 assetId 判定「是否当前标签」
+  const sid = sessionId ?? assetId;
   const [fullscreen, setFullscreen] = useState(false);
   // 某个分屏最大化（在多分屏下临时全屏一个，再点恢复）
   const [maximizedPaneId, setMaximizedPaneId] = useState<string | null>(null);
@@ -199,8 +203,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   const { globalSyncedIds, connectedIds, syncAllConnected, activeId, markActivity } = useTerminals();
 
   // 本会话非激活时有新输出 → 标记活动（标签提示点）。用 ref 取最新激活态，避免闭包过期。
-  const sessionActiveRef = useRef(activeId === assetId);
-  useEffect(() => { sessionActiveRef.current = activeId === assetId; }, [activeId, assetId]);
+  const sessionActiveRef = useRef(activeId === sid);
+  useEffect(() => { sessionActiveRef.current = activeId === sid; }, [activeId, sid]);
   const notifyActivity = useCallback(() => {
     if (!sessionActiveRef.current) markActivity(assetId);
   }, [markActivity, assetId]);
@@ -343,7 +347,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
   // 「在新分屏打开」：仅当前激活的终端页响应（侧栏右键菜单触发）
   useEffect(() => {
     const handler = (e: Event) => {
-      if (!embedded || activeId !== assetId) return;
+      if (!embedded || activeId !== sid) return;
       const id = (e as CustomEvent<number>).detail;
       if (typeof id === 'number') addPane(id);
     };
@@ -502,7 +506,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     onSplit={() => addPane()}
                     onCloseTab={handleClose}
                     // 单分屏且本会话就是当前标签时，窗格头部整条并入标签栏
-                    hoistBar={embedded && totalPanes === 1 && activeId === assetId}
+                    hoistBar={embedded && totalPanes === 1 && activeId === sid}
                   />
                 </div>
               </React.Fragment>
@@ -546,36 +550,27 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
            在深色终端上就是一条竖白线。之前只写了 .terminal-container 前缀的
            规则，命中不全（viewport 上还有内联样式），这里放宽选择器并把
            track / corner / 内联底色一并压掉。 */
+        /* 终端右缘那条白线就是滚动条：macOS WebKit 一旦被 ::-webkit-scrollbar
+           规则接管就会改用经典滚动条，槽/边角带浅色底，在深色终端上显示为一条
+           竖白线。反复调色覆盖不掉（viewport 上还有内联样式与系统绘制），
+           索性整条隐藏——滚轮、Shift+滚轮、Ctrl+F 搜索都不受影响，
+           VS Code 内置终端与 Tabby 也是这个做法。 */
         .xterm .xterm-viewport,
         .terminal-container .xterm-viewport {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(148,163,184,0.35) transparent;
+          scrollbar-width: none;                 /* Firefox */
+          -ms-overflow-style: none;              /* 旧 Edge */
           background-color: transparent !important;
         }
         .xterm .xterm-viewport::-webkit-scrollbar,
-        .terminal-container .xterm-viewport::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-          background: transparent;
-        }
+        .terminal-container .xterm-viewport::-webkit-scrollbar,
         .xterm .xterm-viewport::-webkit-scrollbar-track,
-        .xterm .xterm-viewport::-webkit-scrollbar-track-piece,
         .xterm .xterm-viewport::-webkit-scrollbar-corner,
         .terminal-container .xterm-viewport::-webkit-scrollbar-track,
         .terminal-container .xterm-viewport::-webkit-scrollbar-corner {
-          background: transparent;
-          border: none;
-          box-shadow: none;
-        }
-        .xterm .xterm-viewport::-webkit-scrollbar-thumb,
-        .terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
-          background: rgba(148,163,184,0.28);
-          border-radius: 6px;
-          border: none;
-        }
-        .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover,
-        .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
-          background: rgba(148,163,184,0.5);
+          width: 0 !important;
+          height: 0 !important;
+          display: none !important;
+          background: transparent !important;
         }
         /* xterm 自身也可能给 .xterm 元素画边框/底色，统一去掉 */
         .terminal-container .xterm,
