@@ -6,7 +6,6 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined } from '@ant-design/icons';
-import { LogoMark, LogoWordmark } from '../components/Logo';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { saveBlob } from '../saveFile';
 import { LiveMetricsBar } from '../components/LiveMetricsBar';
@@ -19,6 +18,8 @@ import { copyText, pasteText } from '../clipboard';
 import { CommandPalette } from '../components/CommandPalette';
 import { ShortcutHelp } from '../components/ShortcutHelp';
 import { TERM_TAB_SLOT_ID } from '../components/TerminalTabBar';
+import { takePendingAuth } from '../pendingAuth';
+import { SftpPanel } from '../components/SftpPanel';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -571,24 +572,22 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
           components: { Tooltip: { colorBgSpotlight: '#1e2740', colorTextLightSolid: '#f1f5f9' } },
         }}
       >
+      {/* 这里原先还挂着一份徽标 + wjw 字标 + 「远程终端多屏中心」，
+          与全局顶栏的品牌区完全重复，且把整条撑得很宽。只留一个短标签。 */}
       <div style={{
-        minHeight: '48px',
+        minHeight: '40px',
         background: palette.chromeBg,
         borderBottom: `1px solid ${palette.chromeBorder}`,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: 'flex-end',
         gap: 12,
-        padding: '6px 16px',
+        padding: '4px 12px',
         zIndex: 50,
       }}>
-        <Space size="small" style={{ flexShrink: 0 }}>
-          <LogoMark size={22} />
-          <LogoWordmark height={15} color={palette.chromeTextStrong} />
-          <span style={{ fontSize: 13, color: palette.chromeText, whiteSpace: 'nowrap' }}>
-            远程终端多屏中心
-          </span>
-        </Space>
+        <span style={{ fontSize: 12, color: palette.chromeTextMute, whiteSpace: 'nowrap', marginRight: 'auto' }}>
+          多屏工作台
+        </span>
 
         <Space size="small" wrap style={{ rowGap: 6, justifyContent: 'flex-end' }}>
           {/* 分屏布局控制 */}
@@ -1196,12 +1195,19 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   //   1) OSC 7：shell 配置了该上报时会主动推送 file://host/path，最准确
   //   2) 窗口标题：多数发行版默认 PS1 会把 \u@\h:\w 写进标题，从中解析路径
   // 都拿不到时留空，文件面板回落到家目录（与原有行为一致）。
+  // shell 当前工作目录。ref 供随时读取，state 供文件面板订阅变化（跟随 cd）。
   const cwdRef = useRef('');
+  const [cwd, setCwd] = useState('');
+  const updateCwd = useCallback((p: string) => {
+    if (!p || p === cwdRef.current) return;
+    cwdRef.current = p;
+    setCwd(p);
+  }, []);
   const bindCwdTracking = useCallback((term: Terminal) => {
     try {
       term.parser.registerOscHandler(7, (data: string) => {
         const m = /^file:\/\/[^/]*(\/.*)$/.exec(String(data).trim());
-        if (m) cwdRef.current = decodeURIComponent(m[1]);
+        if (m) updateCwd(decodeURIComponent(m[1]));
         return false; // 不拦截，继续走默认处理
       });
     } catch {
@@ -1210,17 +1216,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     term.onTitleChange((title) => {
       // 形如 user@host: /var/log 或 user@host:~/work
       const m = /:\s*(~?\/[^\s]*)\s*$/.exec(title || '');
-      if (m) cwdRef.current = m[1];
+      if (m) updateCwd(m[1]);
     });
-  }, []);
+  }, [updateCwd]);
 
-  // 打开文件管理并直接进入当前目录（远程主机走 SFTP）
-  const openFilesHere = useCallback(() => {
-    if (!asset) return;
-    window.dispatchEvent(
-      new CustomEvent('lynx-open-sftp', { detail: { asset, path: cwdRef.current } }),
-    );
-  }, [asset]);
+  // 终端内常驻文件面板的开关（对标 FinalShell，不再弹抽屉）
+  const [filesOpen, setFilesOpen] = useState(false);
+  const toggleFiles = useCallback(() => setFilesOpen((v) => !v), []);
 
   // ── 节日特效口令识别 ─────────────────────────────────────
   // 单独维护一小段行缓冲：原先这段逻辑写在补全处理函数里，
@@ -1559,9 +1561,16 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           if (msg.type === 'pong') {
             if (lastPingRef.current) setLatency(Date.now() - lastPingRef.current);
           } else if (msg.type === 'auth_request') {
-            setAuthRequired(true);
-            setConnecting(false);
-            term.write('\x1b[33m[SYSTEM] 该资产未关联凭证，等待输入临时凭据...\x1b[0m\r\n');
+            // 「新建连接」里已经输过账号密码的，直接应答，不再让用户敲第二遍
+            const pending = takePendingAuth(assetId);
+            if (pending) {
+              term.write('\x1b[33m[SYSTEM] 正在使用新建连接时输入的凭据登录...\x1b[0m\r\n');
+              socket.send(JSON.stringify({ type: 'auth_response', username: pending.username, password: pending.password }));
+            } else {
+              setAuthRequired(true);
+              setConnecting(false);
+              term.write('\x1b[33m[SYSTEM] 该资产未关联凭证，等待输入临时凭据...\x1b[0m\r\n');
+            }
           } else if (msg.type === 'status') {
             if (msg.message === 'connected') {
               setConnecting(false);
@@ -1885,9 +1894,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           size="small"
           type="text"
           icon={<FolderOpenOutlined />}
-          onClick={openFilesHere}
-          title="文件管理（直接进入终端当前所在目录）"
-          style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+          onClick={toggleFiles}
+          title="文件面板（贴终端左侧常驻，自动跟随当前目录）"
+          style={{
+            padding: '0 4px', fontSize: 11, display: 'flex', alignItems: 'center',
+            color: filesOpen ? '#38bdf8' : '#94a3b8',
+          }}
         />
       )}
       {status !== 'idle' && (
@@ -2105,7 +2117,17 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       </div>
       )}
 
-      <div style={{ flexGrow: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+      {/* 常驻文件面板：贴终端左侧，默认跟随 shell 的当前目录 */}
+      {filesOpen && !isLocal && (
+        <SftpPanel
+          assetId={assetId}
+          cwd={cwd}
+          hasCred={!!asset?.credential_id}
+          onClose={() => setFilesOpen(false)}
+        />
+      )}
+      <div style={{ flexGrow: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {/* Placeholder: 空白未连接状态卡片 */}
         {status === 'idle' && (
           <div style={{
@@ -2296,6 +2318,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             </div>
           </div>
         )}
+      </div>
       </div>
 
       {/* 命令面板（Ctrl/⌘+Shift+P）：模糊搜命令库并插入 */}

@@ -42,7 +42,8 @@ api.interceptors.request.use(async (config) => {
   const url = config.url || '';
   const isAuthCall = /\/login$|\/register$/.test(url);
   if (isTauri && !isAuthCall && !localStorage.getItem('lynx-token')) {
-    await waitForToken(10000);
+    // 首次安装时 sidecar 要冷启动 + 建库 + 迁移，10s 常常不够，超时后请求裸发就会 401
+    await waitForToken(45000);
   }
   const token = localStorage.getItem('lynx-token');
   if (token) {

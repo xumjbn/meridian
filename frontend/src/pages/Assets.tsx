@@ -21,7 +21,9 @@ import {
   Timeline,
   Spin,
   Tooltip,
-  Upload
+  Upload,
+  Row,
+  Col
 } from 'antd';
 import {
   SearchOutlined,
@@ -1101,44 +1103,73 @@ export const Assets: React.FC = () => {
         onCancel={() => setModalVisible(false)}
         footer={null}
         destroyOnHidden
-        width={500}
+        width={640}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ ssh_port: 22 }} style={{ marginTop: 16 }}>
-          <Form.Item
-            label="资产显示名称"
-            name="name"
-            rules={[{ required: true, message: '请输入资产显示名称' }]}
-          >
-            <Input placeholder="例如: 腾讯云测试机, 汇聚交换机" />
-          </Form.Item>
+        {/* 9 个字段原先单列铺开，弹窗高得要滚动。短字段两两并排，整体矮一半左右。 */}
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          initialValues={{ ssh_port: 22 }}
+          style={{ marginTop: 12 }}
+          size="small"
+        >
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                label="资产显示名称"
+                name="name"
+                rules={[{ required: true, message: '请输入资产显示名称' }]}
+                style={{ marginBottom: 12 }}
+              >
+                <Input placeholder="例如: 腾讯云测试机" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="管理 IP 地址"
+                name="ip"
+                rules={[{ required: true, message: '请输入有效的 IP 地址或范围' }]}
+                style={{ marginBottom: 12 }}
+              >
+                {/* IP 可改：换网段/迁机器时不必删了重建，后端会查重并记入变更历史 */}
+                <Input placeholder="例如: 192.168.1.100" />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item
-            label="管理 IP 地址"
-            name="ip"
-            rules={[
-              { required: true, message: '请输入有效的 IP 地址或范围' }
-            ]}
-          >
-            {/* IP 可改：换网段/迁机器时不必删了重建，后端会查重并记入变更历史 */}
-            <Input placeholder="例如: 192.168.1.100" />
-          </Form.Item>
-
-          <Form.Item
-            label="资产类型"
-            name="type"
-            rules={[{ required: true, message: '请选择资产类型' }]}
-          >
-            <Select placeholder="选择资产硬件类别">
-              <Option value="server">PC 服务器</Option>
-              <Option value="switch">以太网交换机</Option>
-              <Option value="router">核心路由器</Option>
-              <Option value="other">其他硬件</Option>
-            </Select>
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                label="资产类型"
+                name="type"
+                rules={[{ required: true, message: '请选择资产类型' }]}
+                style={{ marginBottom: 12 }}
+              >
+                <Select placeholder="选择资产硬件类别">
+                  <Option value="server">PC 服务器</Option>
+                  <Option value="switch">以太网交换机</Option>
+                  <Option value="router">核心路由器</Option>
+                  <Option value="other">其他硬件</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="SSH 端口"
+                name="ssh_port"
+                tooltip="终端连接、SFTP 文件传输与认证采集使用的 SSH 端口，支持非标端口，默认 22"
+                style={{ marginBottom: 12 }}
+              >
+                <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="默认 22" />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Form.Item
             label="资产标签"
             name="tags"
+            style={{ marginBottom: 12 }}
           >
             <Select
               mode="tags"
@@ -1163,40 +1194,40 @@ export const Assets: React.FC = () => {
             </Select>
           </Form.Item>
 
-          <Form.Item
-            label="关联扫描及登录凭证"
-            name="credential_id"
-          >
-            <Select placeholder="选择自动登录凭证 (可留空，连接时手动输入)" allowClear>
-              {credentials.map((c) => (
-                <Option value={c.id} key={c.id}>
-                  {c.name} ({c.username})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            label="SSH 端口"
-            name="ssh_port"
-            tooltip="终端连接、SFTP 文件传输与认证采集使用的 SSH 端口，支持非标端口，默认 22"
-          >
-            <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="默认 22" />
-          </Form.Item>
-
-          <Form.Item
-            label="开放端口"
-            name="ports"
-            tooltip="手动登记该资产对外开放的端口，逗号分隔；自动发现/在线探测也会回填此项"
-          >
-            <Input placeholder="如 22, 80, 443（逗号分隔，可留空）" />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                label="关联扫描及登录凭证"
+                name="credential_id"
+                style={{ marginBottom: 12 }}
+              >
+                <Select placeholder="可留空，连接时手动输入" allowClear>
+                  {credentials.map((c) => (
+                    <Option value={c.id} key={c.id}>
+                      {c.name} ({c.username})
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="开放端口"
+                name="ports"
+                tooltip="手动登记该资产对外开放的端口，逗号分隔；自动发现/在线探测也会回填此项"
+                style={{ marginBottom: 12 }}
+              >
+                <Input placeholder="如 22, 80, 443（可留空）" />
+              </Form.Item>
+            </Col>
+          </Row>
 
           {isAdmin && (
             <Form.Item
               label="归属用户"
               name="owner_id"
               tooltip="将该资产分配给指定用户；该用户将拥有此资产的查看与操作权限"
+              style={{ marginBottom: 12 }}
             >
               <Select placeholder="选择归属用户 (默认归创建者)" allowClear showSearch optionFilterProp="children">
                 {users.map((u) => (
@@ -1211,11 +1242,12 @@ export const Assets: React.FC = () => {
           <Form.Item
             label="描述与备忘"
             name="description"
+            style={{ marginBottom: 12 }}
           >
-            <Input.TextArea rows={3} placeholder="备注用途、位置、负责人等..." />
+            <Input.TextArea rows={2} placeholder="备注用途、位置、负责人等..." />
           </Form.Item>
 
-          <Form.Item style={{ marginBottom: 0, marginTop: 24, textAlign: 'right' }}>
+          <Form.Item style={{ marginBottom: 0, marginTop: 8, textAlign: 'right' }}>
             <Space>
               <Button onClick={() => setModalVisible(false)}>取消</Button>
               <Button type="primary" htmlType="submit">

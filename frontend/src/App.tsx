@@ -22,6 +22,7 @@ import { ShortcutHelp } from './components/ShortcutHelp';
 import { TerminalProvider, useTerminals } from './terminalSessions';
 import { login, isTauri, type Asset } from './services/api';
 import { SftpDrawer } from './components/SftpDrawer';
+import { NewConnectionModal } from './components/NewConnectionModal';
 import { brand, palette, antdLightToken, antdComponents } from './theme';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
@@ -44,6 +45,30 @@ const PageFallback: React.FC = () => (
     <Spin size="large" />
   </div>
 );
+
+// 桌面端启动屏：等本机服务起来并拿到 token。首次安装要建库+迁移，可能十几秒，
+// 所以超过 6s 补一句说明，免得看着像卡死。
+const BootScreen: React.FC = () => {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 6000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div style={{
+      height: '100vh', display: 'flex', flexDirection: 'column', gap: 14,
+      alignItems: 'center', justifyContent: 'center', background: palette.chromeBg,
+    }}>
+      <Spin size="large" />
+      <div style={{ color: palette.chromeTextStrong, fontSize: 14 }}>正在启动本机服务…</div>
+      {slow && (
+        <div style={{ color: palette.chromeTextMute, fontSize: 12, maxWidth: 320, textAlign: 'center', lineHeight: 1.7 }}>
+          首次安装需要初始化数据库，请稍候
+        </div>
+      )}
+    </div>
+  );
+};
 
 const EXPANDED = 236;
 const COLLAPSED = 64;
@@ -87,7 +112,7 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const { sessions, activeId, close, setActive, reorder, activityIds, renameSession, recolorSession } = useTerminals();
+  const { sessions, activeId, open: openSession, close, setActive, reorder, activityIds, renameSession, recolorSession } = useTerminals();
 
   // 侧栏主机右键菜单触发的全局动作：打开 SFTP / 跳转页面
   const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
@@ -127,6 +152,9 @@ const AppLayout: React.FC = () => {
   const currentLabel = navItems.find((i) => i.key === selectedKey)?.label ?? '工作台';
   const siderWidth = collapsed ? COLLAPSED : EXPANDED;
 
+  // 「+」新建连接弹窗
+  const [newConnOpen, setNewConnOpen] = useState(false);
+
   // ── 终端模式 ─────────────────────────────────────────────────
   const [termModePref, setTermModePref] = useState(() => localStorage.getItem(TERM_MODE_KEY) === '1');
   const [siderPeek, setSiderPeek] = useState(false);
@@ -144,10 +172,15 @@ const AppLayout: React.FC = () => {
   // Ctrl/⌘ + Shift + Enter 切换。用捕获阶段监听，抢在 xterm 把按键吃掉之前处理。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
         toggleTermMode();
+      } else if (e.key === 'N' || e.key === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        setNewConnOpen(true);
       }
     };
     window.addEventListener('keydown', onKey, true);
@@ -314,6 +347,7 @@ const AppLayout: React.FC = () => {
                 onRecolor={recolorSession}
                 termMode={termMode}
                 onToggleTermMode={toggleTermMode}
+                onNewConnection={() => setNewConnOpen(true)}
               />
             )}
 
@@ -362,6 +396,13 @@ const AppLayout: React.FC = () => {
 
         {/* 侧栏主机右键「文件传输」打开的 SFTP 抽屉 */}
         <SftpDrawer asset={sftpAsset} open={sftpOpen} initialPath={sftpPath} onClose={() => setSftpOpen(false)} />
+
+        {/* 标签栏「+」：填 SSH 登录信息直接开一个会话 */}
+        <NewConnectionModal
+          open={newConnOpen}
+          onClose={() => setNewConnOpen(false)}
+          onConnect={(s) => openSession(s)}
+        />
       </div>
     </ConfigProvider>
   );
@@ -373,6 +414,15 @@ export const App: React.FC = () => {
   const desktopAuto = isTauri && localStorage.getItem('lynx-logged-out') !== '1';
   const [authed, setAuthed] = useState(localStorage.getItem('lynx-auth') === '1' || desktopAuto);
   const [mustChange, setMustChange] = useState(!isTauri && localStorage.getItem('lynx-must-change') === '1');
+  // 桌面端首次安装：sidecar 冷启动 + 建库 + 迁移期间还没有 token，此时若直接渲染
+  // 主界面，各页面会抢在登录完成前发请求并弹 401 报错。先卡在启动屏，拿到 token 再进。
+  const [tokenReady, setTokenReady] = useState(!!localStorage.getItem('lynx-token'));
+  useEffect(() => {
+    if (tokenReady) return;
+    const onReady = () => setTokenReady(true);
+    window.addEventListener('lynx-auth-ready', onReady);
+    return () => window.removeEventListener('lynx-auth-ready', onReady);
+  }, [tokenReady]);
 
   useEffect(() => {
     if (!desktopAuto || localStorage.getItem('lynx-token')) return;
@@ -446,6 +496,15 @@ export const App: React.FC = () => {
             }}
           />
         </Suspense>
+      </ConfigProvider>
+    );
+  }
+
+  // 桌面端启动屏：token 未就绪前不渲染主界面，避免首屏一片「获取数据失败」
+  if (desktopAuto && !tokenReady) {
+    return (
+      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
+        <BootScreen />
       </ConfigProvider>
     );
   }

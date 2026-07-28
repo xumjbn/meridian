@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Dropdown, Input, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined, ExpandOutlined, CompressOutlined, PlusOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
 import type { TermSession } from '../terminalSessions';
 
@@ -22,6 +22,8 @@ interface Props {
   /** 终端模式：只留本标签栏与终端，顶栏隐藏、侧栏改悬浮 */
   termMode?: boolean;
   onToggleTermMode?: () => void;
+  /** 「+」新建连接：弹 SSH 登录框 */
+  onNewConnection?: () => void;
 }
 
 const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899'];
@@ -45,6 +47,7 @@ export const TerminalTabBar: React.FC<Props> = ({
   onRecolor,
   termMode = false,
   onToggleTermMode,
+  onNewConnection,
 }) => {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
@@ -198,7 +201,8 @@ export const TerminalTabBar: React.FC<Props> = ({
         zIndex: 50,
       }}
     >
-      {/* 当前页面标签 */}
+      {/* 当前页面标签：与顶栏品牌区的页名确有重复，但终端模式下顶栏是隐藏的，
+          这是唯一能退回页面的入口，故保留。 */}
       <div style={{ ...tabBase, ...(activeId === null ? activeStyle : idleStyle) }} onClick={onSelectPage}>
         <AppstoreOutlined style={{ fontSize: 14 }} />
         {currentPageLabel}
@@ -278,6 +282,22 @@ export const TerminalTabBar: React.FC<Props> = ({
           </Dropdown>
         );
       })}
+
+      {/* 「+」新建连接：直接弹 SSH 登录框，不用先去资产页录入 */}
+      {onNewConnection && (
+        <Tooltip title="新建连接 (Ctrl/⌘+Shift+N)" placement="bottom">
+          <div
+            onClick={onNewConnection}
+            style={{
+              flexShrink: 0, width: 26, height: 24, marginLeft: 2, borderRadius: 4, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: palette.chromeTextMute,
+            }}
+          >
+            <PlusOutlined style={{ fontSize: 13 }} />
+          </div>
+        </Tooltip>
+      )}
 
       {/* 单分屏时，活动会话的状态/操作从窗格头部搬到这里（见 TERM_TAB_SLOT_ID），
           省掉一整条 32px 横条，也不再把会话名写第二遍。 */}
