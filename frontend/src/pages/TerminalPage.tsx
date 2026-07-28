@@ -183,8 +183,12 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
     window.addEventListener('lynx-term-help', onHelp);
     return () => window.removeEventListener('lynx-term-help', onHelp);
   }, []);
-  // 顶部工具栏折叠：收起后扩大终端输出区域（持久化）
-  const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => localStorage.getItem('term_toolbar_collapsed') === '1');
+  // 顶部工具栏折叠：收起后扩大终端输出区域（持久化）。
+  // 默认折叠——分屏/同步/外观这些是偶尔才用的开关，常驻会让终端上方堆到三层，
+  // 比 cmd 那种「一条标题栏 + 正文」厚一倍多。需要时点把手展开。
+  const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(
+    () => localStorage.getItem('term_toolbar_collapsed') !== '0',
+  );
   const toggleToolbar = (v: boolean) => {
     setToolbarCollapsed(v);
     localStorage.setItem('term_toolbar_collapsed', v ? '1' : '0');
@@ -575,14 +579,14 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       {/* 这里原先还挂着一份徽标 + wjw 字标 + 「远程终端多屏中心」，
           与全局顶栏的品牌区完全重复，且把整条撑得很宽。只留一个短标签。 */}
       <div style={{
-        minHeight: '40px',
+        minHeight: '34px',
         background: palette.chromeBg,
         borderBottom: `1px solid ${palette.chromeBorder}`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'flex-end',
-        gap: 12,
-        padding: '4px 12px',
+        gap: 10,
+        padding: '2px 10px',
         zIndex: 50,
       }}>
         <span style={{ fontSize: 12, color: palette.chromeTextMute, whiteSpace: 'nowrap', marginRight: 'auto' }}>
@@ -2066,13 +2070,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       {/* 分屏窗口头部小状态栏（多分屏时每个窗格各有一条） */}
       {!hoistBar && (
       <div style={{
-        height: '32px',
+        height: '26px',
+        flexShrink: 0,
         background: '#1e293b',
         borderBottom: '1px solid #334155',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 8px',
+        padding: '0 6px',
         zIndex: 10,
       }}>
         <Space size="small" style={{ flex: 1, minWidth: 0 }}>

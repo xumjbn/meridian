@@ -436,15 +436,28 @@ export const App: React.FC = () => {
   const [bootMsg, setBootMsg] = useState('');
   useEffect(() => {
     if (tokenReady) return;
-    const onReady = () => setTokenReady(true);
+    // 静默登录成功：解除启动屏；若此前已因超时落到登录页，这里把用户接回来
+    const onReady = () => { setTokenReady(true); setAuthed(true); };
     window.addEventListener('lynx-auth-ready', onReady);
-    // 兜底：静默登录内部会重试 40 轮（最长约 6 分钟）才落到登录页。若把渲染
-    // 一直卡在启动屏，sidecar 起不来时用户看到的就是永远转圈。25s 拿不到
-    // token 就放行渲染——页面自己会报错，至少界面是活的、能退出登录换账号。
-    const t = setTimeout(() => setBootTimedOut(true), 25000);
+    // sidecar 挂了就别再等了，直接把原因显示出来并去登录页
+    let unlisten: (() => void) | undefined;
+    if (isTauri) {
+      import('@tauri-apps/api/event')
+        .then((m) => m.listen<string>('lynx-backend-exit', (e) => {
+          setBootMsg(String(e.payload || '后端进程已退出'));
+          setBootTimedOut(true);
+        }))
+        .then((fn) => { unlisten = fn; })
+        .catch(() => { /* 非桌面端或插件不可用：忽略 */ });
+    }
+    // 兜底：20s 还没拿到 token 就去登录页。注意不能直接放行渲染主界面——
+    // 没有 token 时各页面会立刻发请求并全部 401，用户看到的是一屏「获取数据失败」，
+    // 那还不如给个能手动登录的入口。
+    const t = setTimeout(() => setBootTimedOut(true), 20000);
     return () => {
       window.removeEventListener('lynx-auth-ready', onReady);
       clearTimeout(t);
+      unlisten?.();
     };
   }, [tokenReady]);
 
@@ -516,11 +529,23 @@ export const App: React.FC = () => {
     );
   }
 
-  // 登录门禁：未登录时渲染登录页（桌面端 authed 恒为 true，不会走到这里）
-  if (!authed) {
+  // 登录门禁：未登录、或桌面端等 token 超时（bootTimedOut）时渲染登录页。
+  // 超时后不进主界面——没有 token 进去就是满屏「获取数据失败」。
+  if (!authed || (desktopAuto && !tokenReady && bootTimedOut)) {
     return (
       <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         <Suspense fallback={<PageFallback />}>
+          {/* 桌面端自动登录失败而落到这里时，把原因一并带上，
+              否则用户只看到一个莫名其妙冒出来的登录框 */}
+          {desktopAuto && bootMsg && (
+            <div style={{
+              position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
+              background: '#7c2d12', color: '#fed7aa', fontSize: 12,
+              padding: '6px 14px', textAlign: 'center', fontFamily: 'monospace',
+            }}>
+              本机服务未就绪：{bootMsg}
+            </div>
+          )}
           <Login
             onSuccess={() => {
               localStorage.removeItem('lynx-logged-out'); // 恢复桌面端自动登录

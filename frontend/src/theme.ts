@@ -11,7 +11,7 @@ export const brand = {
   name: 'wjw',
   zh: 'wjw',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v0.89',
+  version: 'v0.90',
   repo: 'https://github.com/xumjbn/meridian',
 } as const;
 
@@ -76,7 +76,7 @@ export const palette = {
 } as const;
 
 /** 全局顶栏高度（内容区据此让位） */
-export const HEADER_H = 50;
+export const HEADER_H = 44;
 
 // 卡片通用样式（控制台面板：白底、细边、小圆角、几乎无阴影）
 export const cardStyle: CSSProperties = {

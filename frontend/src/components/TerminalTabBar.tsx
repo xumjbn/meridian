@@ -28,7 +28,7 @@ interface Props {
 
 const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899'];
 
-const TAB_BAR_HEIGHT = 42;
+const TAB_BAR_HEIGHT = 34;
 
 /** 标签栏右侧插槽的 DOM id：单分屏时终端窗格把自己的状态条 portal 进来 */
 export const TERM_TAB_SLOT_ID = 'lynx-term-tab-slot';
@@ -166,10 +166,10 @@ export const TerminalTabBar: React.FC<Props> = ({
     display: 'inline-flex',
     alignItems: 'center',
     gap: 8,
-    height: 30,
-    padding: '0 12px',
-    borderRadius: 8,
-    fontSize: 13,
+    height: 26,
+    padding: '0 10px',
+    borderRadius: 6,
+    fontSize: 12.5,
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     border: '1px solid transparent',
@@ -194,7 +194,7 @@ export const TerminalTabBar: React.FC<Props> = ({
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        padding: '0 14px',
+        padding: '0 10px',
         overflowX: 'auto',
         position: 'sticky',
         top: 0,
