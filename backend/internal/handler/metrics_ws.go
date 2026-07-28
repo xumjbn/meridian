@@ -10,6 +10,7 @@ import (
 	"backend/internal/store"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -50,9 +51,16 @@ func StreamAssetMetrics(c *gin.Context) {
 	}
 	defer ws.Close()
 
+	// 先推一帧可读原因，再正经发关闭帧——直接 Close 会让浏览器只看到
+	// code 1006（异常断开），前端无从判断到底是没连上还是被拒绝。
 	sendErr := func(msg string) {
 		_ = ws.SetWriteDeadline(time.Now().Add(metricsWriteWait))
 		_ = ws.WriteJSON(gin.H{"ok": false, "message": msg})
+		_ = ws.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, msg),
+			time.Now().Add(metricsWriteWait),
+		)
 	}
 
 	if asset.CredentialID == nil {

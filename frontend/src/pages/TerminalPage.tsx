@@ -541,24 +541,47 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
         .term-splitter-col:hover, .term-splitter-row:hover {
           background: rgba(99,102,241,0.55);
         }
-        /* 终端滚动条改深色，避免默认浅色滚动条在终端右侧显示为「白色竖线」 */
+        /* 终端右侧那条「白线」是滚动条：xterm 给 .xterm-viewport 设了内联
+           background-color，加上 macOS WebKit 默认的浅色滚动条槽/边角，
+           在深色终端上就是一条竖白线。之前只写了 .terminal-container 前缀的
+           规则，命中不全（viewport 上还有内联样式），这里放宽选择器并把
+           track / corner / 内联底色一并压掉。 */
+        .xterm .xterm-viewport,
         .terminal-container .xterm-viewport {
           scrollbar-width: thin;
           scrollbar-color: rgba(148,163,184,0.35) transparent;
+          background-color: transparent !important;
         }
+        .xterm .xterm-viewport::-webkit-scrollbar,
         .terminal-container .xterm-viewport::-webkit-scrollbar {
-          width: 10px;
-          height: 10px;
-        }
-        .terminal-container .xterm-viewport::-webkit-scrollbar-track {
+          width: 8px;
+          height: 8px;
           background: transparent;
         }
+        .xterm .xterm-viewport::-webkit-scrollbar-track,
+        .xterm .xterm-viewport::-webkit-scrollbar-track-piece,
+        .xterm .xterm-viewport::-webkit-scrollbar-corner,
+        .terminal-container .xterm-viewport::-webkit-scrollbar-track,
+        .terminal-container .xterm-viewport::-webkit-scrollbar-corner {
+          background: transparent;
+          border: none;
+          box-shadow: none;
+        }
+        .xterm .xterm-viewport::-webkit-scrollbar-thumb,
         .terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
           background: rgba(148,163,184,0.28);
           border-radius: 6px;
+          border: none;
         }
+        .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover,
         .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
           background: rgba(148,163,184,0.5);
+        }
+        /* xterm 自身也可能给 .xterm 元素画边框/底色，统一去掉 */
+        .terminal-container .xterm,
+        .terminal-container .xterm-screen {
+          border: none;
+          outline: none;
         }
       `}} />
 
@@ -1256,17 +1279,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     });
   }, [updateCwd]);
 
-  // 终端内常驻文件面板的开关（对标 FinalShell，不再弹抽屉）。
-  // 默认关闭：面板一挂上就会发起 SFTP 连接，开个终端不该顺带多连一条。
-  // 但按钮带文字标签，不再是之前那个找不着的小图标。状态持久化，
-  // 上次开着的下次仍开着。
-  const [filesOpen, setFilesOpen] = useState(() => localStorage.getItem('term_files_open') === '1');
-  const toggleFiles = useCallback(() => {
-    setFilesOpen((v) => {
-      localStorage.setItem('term_files_open', v ? '0' : '1');
-      return !v;
-    });
-  }, []);
+  // 终端内文件面板的开关（对标 FinalShell，不再弹抽屉）。
+  // 每次开终端一律从关闭开始，且不持久化：面板一挂上就会发起一条 SFTP 连接，
+  // 开个终端不该顺带多连一条。之前做过"记住上次状态"，结果旧状态残留下来，
+  // 表现成"怎么改都还是自动打开"。要看文件就点一下右上角的「文件」。
+  const [filesOpen, setFilesOpen] = useState(false);
+  const toggleFiles = useCallback(() => setFilesOpen((v) => !v), []);
 
   // ── 节日特效口令识别 ─────────────────────────────────────
   // 单独维护一小段行缓冲：原先这段逻辑写在补全处理函数里，

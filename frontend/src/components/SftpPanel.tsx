@@ -203,14 +203,14 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
           height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2,
           padding: '0 4px 0 8px', background: '#1e293b', borderBottom: '1px solid #334155',
         }}>
-          <span style={{ fontSize: 11, color: '#cbd5e1', flex: 1, minWidth: 0 }}>文件</span>
+          <span style={{ fontSize: 13, color: '#cbd5e1', flex: 1, minWidth: 0 }}>文件</span>
           <Tooltip title={follow ? '已跟随终端当前目录，点击固定' : '已固定，点击恢复跟随'}>
             <span style={{ ...iconBtn, color: follow ? '#38bdf8' : '#64748b' }} onClick={() => setFollow((f) => !f)}>
               {follow ? <PushpinOutlined style={{ fontSize: 12 }} /> : <PushpinFilled style={{ fontSize: 12 }} />}
             </span>
           </Tooltip>
           <Tooltip title="关闭文件面板">
-            <span style={iconBtn} onClick={onClose}><CloseOutlined style={{ fontSize: 11 }} /></span>
+            <span style={iconBtn} onClick={onClose}><CloseOutlined style={{ fontSize: 13 }} /></span>
           </Tooltip>
         </div>
 
@@ -235,39 +235,39 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
           onChange={(e) => setEditPath(e.target.value)}
           onPressEnter={() => load(editPath)}
           variant="borderless"
-          style={{ fontSize: 11, color: '#94a3b8', background: '#0f172a', borderRadius: 0, height: 24, flexShrink: 0 }}
+          style={{ fontSize: 13, color: '#94a3b8', background: '#0f172a', borderRadius: 0, height: 24, flexShrink: 0 }}
         />
 
         {/* 列表 */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', fontSize: 12 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', fontSize: 13 }}>
           {!hasCred && (
-            <div style={{ padding: 12, color: '#64748b', fontSize: 11, lineHeight: 1.7 }}>
+            <div style={{ padding: 12, color: '#64748b', fontSize: 13, lineHeight: 1.7 }}>
               该资产未绑定 SSH 凭据，无法使用文件传输。请先在「编辑资产」里绑定凭据。
             </div>
           )}
-          {hasCred && err && <div style={{ padding: 12, color: '#f87171', fontSize: 11 }}>{err}</div>}
+          {hasCred && err && <div style={{ padding: 12, color: '#f87171', fontSize: 13 }}>{err}</div>}
           {hasCred && !err && entries.map((r) => (
             <Dropdown key={r.path} trigger={['contextMenu']} menu={{ items: rowMenu(r), onClick: ({ key }) => onRowMenu(key, r) }}>
               <div
                 onDoubleClick={() => (r.is_dir ? load(r.path) : download(r))}
                 title={`${r.name}${r.is_dir ? '' : ` · ${fmtSize(r.size, false)}`}\n双击${r.is_dir ? '进入' : '下载'}，右键更多`}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '2px 8px',
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '4px 8px',
                   cursor: 'pointer', color: '#cbd5e1', whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = '#1e293b'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
                 {r.is_dir
-                  ? <FolderFilled style={{ color: '#f59e0b', fontSize: 12, flexShrink: 0 }} />
-                  : <FileOutlined style={{ color: '#64748b', fontSize: 12, flexShrink: 0 }} />}
+                  ? <FolderFilled style={{ color: '#f59e0b', fontSize: 14, flexShrink: 0 }} />
+                  : <FileOutlined style={{ color: '#64748b', fontSize: 14, flexShrink: 0 }} />}
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
-                <span style={{ fontSize: 10, color: '#475569', flexShrink: 0 }}>{fmtSize(r.size, r.is_dir)}</span>
+                <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>{fmtSize(r.size, r.is_dir)}</span>
               </div>
             </Dropdown>
           ))}
           {hasCred && !err && !loading && entries.length === 0 && (
-            <div style={{ padding: 12, color: '#475569', fontSize: 11 }}>空目录</div>
+            <div style={{ padding: 12, color: '#475569', fontSize: 13 }}>空目录</div>
           )}
         </div>
 
@@ -281,7 +281,7 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
             onChange={(e) => setMkdirVal(e.target.value)}
             onPressEnter={doMkdir}
             onBlur={() => setMkdirOn(false)}
-            style={{ fontSize: 11, borderRadius: 0, flexShrink: 0 }}
+            style={{ fontSize: 13, borderRadius: 0, flexShrink: 0 }}
           />
         )}
         {renaming && (
@@ -293,7 +293,7 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
             onChange={(e) => setRenameVal(e.target.value)}
             onPressEnter={doRename}
             onBlur={() => setRenaming(null)}
-            style={{ fontSize: 11, borderRadius: 0, flexShrink: 0 }}
+            style={{ fontSize: 13, borderRadius: 0, flexShrink: 0 }}
           />
         )}
       </div>

@@ -223,6 +223,10 @@ func main() {
 		api.GET("/ws/terminal/:id", handler.ConnectTerminal)
 		// 本机 Shell 终端（本地终端，桌面端/回环自用）
 		api.GET("/ws/local-terminal", handler.ConnectLocalTerminal)
+		// 实时资源监控：常驻一条 SSH 连接周期采样并推送。
+		// 此前漏注册，前端连过去是 404，握手失败即 code 1006，
+		// 界面只能一直显示「监控连接中…」。
+		api.GET("/ws/metrics/:id", handler.StreamAssetMetrics)
 	}
 
 	// 5. 启动服务：默认仅监听本机 127.0.0.1:8080；容器部署时由 LISTEN_ADDR

@@ -1,6 +1,6 @@
 [package]
 name = "lynx-desktop"
-version = "0.94.0"
+version = "0.95.0"
 description = "wjw — 桌面端（Tauri + Go sidecar）"
 edition = "2021"
 rust-version = "1.77"
