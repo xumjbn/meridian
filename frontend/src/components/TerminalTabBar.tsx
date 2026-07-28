@@ -195,12 +195,18 @@ export const TerminalTabBar: React.FC<Props> = ({
         alignItems: 'center',
         gap: 6,
         padding: '0 10px',
-        overflowX: 'auto',
         position: 'sticky',
         top: 0,
         zIndex: 50,
       }}
     >
+      {/* 只让标签区横向滚动。此前整条都是 overflowX:auto，右侧的实时指标/
+          文件/重连等控件跟标签挤在同一个滚动容器里，窗口一窄就被推出可视区，
+          看着像「实时指标不见了」。现在右侧控件钉在外面，永远可见。 */}
+      <div style={{
+        flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
+        overflowX: 'auto', overflowY: 'hidden', height: '100%',
+      }}>
       {/* 当前页面标签：与顶栏品牌区的页名确有重复，但终端模式下顶栏是隐藏的，
           这是唯一能退回页面的入口，故保留。 */}
       <div style={{ ...tabBase, ...(activeId === null ? activeStyle : idleStyle) }} onClick={onSelectPage}>
@@ -298,10 +304,11 @@ export const TerminalTabBar: React.FC<Props> = ({
           </div>
         </Tooltip>
       )}
+      </div>
 
-      {/* 单分屏时，活动会话的状态/操作从窗格头部搬到这里（见 TERM_TAB_SLOT_ID），
-          省掉一整条 32px 横条，也不再把会话名写第二遍。 */}
-      <div id={TERM_TAB_SLOT_ID} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', flexShrink: 0 }} />
+      {/* 单分屏时，活动会话的状态/操作从窗格头部搬到这里（见 TERM_TAB_SLOT_ID）。
+          在滚动容器之外，窗口再窄也不会被标签挤走。 */}
+      <div id={TERM_TAB_SLOT_ID} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginLeft: 6 }} />
 
       {/* 终端模式开关（Ctrl/⌘+Shift+Enter 同效） */}
       {onToggleTermMode && (
