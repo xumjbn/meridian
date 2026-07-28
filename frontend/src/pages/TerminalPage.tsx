@@ -451,7 +451,9 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       height: '100%',
       background: '#0B0F19',
       boxSizing: 'border-box',
-      padding: '4px',
+      // 单屏时不留外边距：这圈留白配上窗格边框，把终端"框"成一个容器，
+      // 视觉上比 cmd 那种「标题栏贴正文」厚不少。多分屏时才需要它分隔窗格。
+      padding: totalPanes > 1 ? '4px' : 0,
       display: 'flex',
       flexDirection: 'column',
       position: 'relative', // 供某分屏最大化时绝对铺满
@@ -817,6 +819,29 @@ interface TerminalItemProps {
   onCloseTab?: () => void;             // 关闭整个标签（仅一个分屏时的 Ctrl/⌘+Shift+W）
   hoistBar?: boolean;                  // 窗格头部上提到标签栏（单分屏），本地不再占 32px
 }
+
+// fit() 之后按「真实渲染行高」回算行数。
+//
+// FitAddon 用的 cellHeight 可能是小数（如 15.8），按它算得下 50 行；但浏览器
+// 渲染时每行取整成 16px，50 行实际占 800px，超出容器可用高度 790px，最后一行
+// 被切掉几像素，字形下缘被削（grep 看着像 qrep）。这里用 DOM 里的实际行高
+// 重新判断，放不下就少排一行。
+const clampRowsToActualHeight = (container: HTMLElement | null, term: Terminal): boolean => {
+  if (!container) return false;
+  const rowEl = container.querySelector('.xterm-rows > div') as HTMLElement | null;
+  if (!rowEl) return false;
+  const rowH = rowEl.getBoundingClientRect().height;
+  if (!rowH) return false;
+  const cs = getComputedStyle(container);
+  // clientHeight 含 padding，需减掉才是内容区
+  const avail = container.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const maxRows = Math.max(1, Math.floor(avail / rowH));
+  if (maxRows < term.rows) {
+    term.resize(term.cols, maxRows);
+    return true;
+  }
+  return false;
+};
 
 // 判断一段输入是否为可见字符（含粘贴文本）；控制字符 / 转义序列返回 false
 const isPrintableInput = (s: string): boolean => {
@@ -1482,6 +1507,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         try {
           fitAddon.fit();
+          clampRowsToActualHeight(el, term);
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
           }
@@ -1530,6 +1556,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
           try {
             fitAddon.fit();
+            clampRowsToActualHeight(el, term);
             if (socket.readyState === WebSocket.OPEN) {
               socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
             }
@@ -1734,6 +1761,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     const fitSafe = () => {
       try {
         fitAddonRef.current?.fit();
+        clampRowsToActualHeight(terminalRef.current, term);
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
         }
@@ -1956,14 +1984,18 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         background: '#0B0F19',
         // 最大化：在分屏容器内绝对铺满；否则正常占位
         ...(isMaximized ? { position: 'absolute' as const, inset: 4, zIndex: 30 } : { position: 'relative' as const }),
-        // 响铃闪一下；同步且连接成功时泛靛蓝光边框
+        // 响铃闪一下；同步且连接成功时泛靛蓝光边框。
+        // 这三种都是有信息量的状态，才画边框；单屏常态不画——那圈灰线只是把
+        // 终端框成容器，纯装饰。多分屏时保留，用来区分窗格归属。
         border: bellFlash
           ? '1px solid #f59e0b'
           : paneDragOver
           ? '1px solid #22d3ee'
           : isSynced && status === 'connected'
           ? '1px solid #6366f1'
-          : '1px solid #1e293b',
+          : canClose
+          ? '1px solid #1e293b'
+          : '1px solid transparent',
         boxShadow: bellFlash
           ? '0 0 10px rgba(245,158,11,0.5)'
           : isSynced && status === 'connected'
@@ -2243,9 +2275,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           style={{
             width: '100%',
             height: '100%',
-            // 底部多留 4px：fit() 按 floor(可用高度/行高) 取行数，余数不足一行时
-            // 最后一行仍会被容器切掉几像素，字形下缘被削（g 看着像 q）。
-            padding: '8px 8px 12px',
+            // 贴边留最小内边距即可；行数溢出由 clampRowsToActualHeight 兜底
+            padding: '4px 6px 6px',
             boxSizing: 'border-box',
             overflow: 'hidden',
             background: termTheme.background,
