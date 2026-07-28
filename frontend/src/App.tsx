@@ -17,6 +17,7 @@ import { TerminalTabBar } from './components/TerminalTabBar';
 import { QuickConnect } from './components/QuickConnect';
 import { GlobalSearch } from './components/GlobalSearch';
 import { EasterEgg } from './components/EasterEgg';
+import { WeddingEgg } from './components/WeddingEgg';
 import { AppHeader, type HeaderNavItem } from './components/AppHeader';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { TerminalProvider, useTerminals } from './terminalSessions';
@@ -407,6 +408,9 @@ const AppLayout: React.FC = () => {
 
         {/* 彩蛋：输入 wjw i love u */}
         <EasterEgg />
+
+        {/* 结婚纪念日彩蛋：终端里输入 wedding */}
+        <WeddingEgg />
 
         {/* 顶栏「?」打开的快捷键速查表 */}
         <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />

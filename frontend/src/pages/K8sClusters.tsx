@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import {
   Button, Card, Modal, Form, Input, InputNumber, Select, message, Table, Tag, Space,
-  Popconfirm, Drawer, Empty, Tooltip, Tabs, Statistic, Alert, Dropdown,
+  Popconfirm, Drawer, Empty, Tooltip, Tabs, Statistic, Alert, Dropdown, Checkbox,
 } from 'antd';
 import {
   CloudServerOutlined, PlusOutlined, ReloadOutlined, LinkOutlined, EditOutlined,
-  DeleteOutlined, CodeOutlined, ClusterOutlined, ApiOutlined,
+  DeleteOutlined, CodeOutlined, ClusterOutlined, ApiOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
 import {
   getK8sClusters, createK8sCluster, updateK8sCluster, deleteK8sCluster, getK8sCluster,
   getUnassignedK8sNodes, assignK8sNodes, unassignK8sNode, getK8sConsole, getCredentials,
   getK8sOverview, getK8sLiveNodes, getK8sLivePods, autoClassifyK8s, detectK8sConsole, syncK8sNodes,
+  bootstrapK8sTokenBySSH,
   type K8sCluster, type Asset, type Credential, type K8sLiveNode, type K8sLivePod, type K8sOverview,
+  type K8sSSHBootstrapReq,
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
@@ -300,6 +302,74 @@ export const K8sClusters: React.FC = () => {
     }
   };
 
+  // 用 SSH 凭据自动配置：后端 SSH 登到 master，自动建只读 SA 取 Token 并落库，顺带同步节点。
+  // 用户不需要再去哪台机器上手敲 kubectl create token 再把 JWT 粘回来。
+  const [bootCluster, setBootCluster] = useState<K8sCluster | null>(null);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootForm] = Form.useForm<K8sSSHBootstrapReq>();
+
+  const openBootstrap = (cl: K8sCluster) => {
+    bootForm.setFieldsValue({
+      host: cl.vip,
+      ssh_port: 22,
+      credential_id: cl.credential_id ?? null, // 显式置空，避免沿用上一个集群残留的选择
+      namespace: 'kube-system',
+      service_account: 'assetmanager',
+      create_missing: true,
+    });
+    setBootCluster(cl);
+  };
+
+  const runBootstrap = async (values: K8sSSHBootstrapReq) => {
+    if (!bootCluster) return;
+    setBootLoading(true);
+    try {
+      const r = await bootstrapK8sTokenBySSH(bootCluster.id!, values);
+      setBootCluster(null);
+      Modal.success({
+        title: `已自动配置 Token — ${bootCluster.name}`,
+        width: 640,
+        content: (
+          <div style={{ marginTop: 8 }}>
+            <p style={{ marginBottom: 6 }}>
+              ServiceAccount <b style={{ fontFamily: 'monospace' }}>{r.service_account}</b>
+              　取 Token 方式 <Tag>{r.method}</Tag>
+            </p>
+            <p style={{ marginBottom: 6, fontSize: 12, color: palette.textSub }}>
+              远端 kubectl：<span style={{ fontFamily: 'monospace' }}>{r.kubectl || '-'}</span>
+              　·　API Server <span style={{ fontFamily: 'monospace' }}>{r.api_server}</span>
+            </p>
+            {r.sync && (
+              <p style={{ marginBottom: 6 }}>
+                节点同步：API 返回 {r.sync.total} 个，归类 <b>{r.sync.assigned}</b>、
+                更新 <b>{r.sync.updated}</b>、补录 <b>{r.sync.created}</b>。
+              </p>
+            )}
+            {r.sync_error && (
+              <Alert type="warning" showIcon style={{ marginBottom: 8 }}
+                message="Token 已保存，但节点同步失败"
+                description={<>{r.sync_error}<br />请检查集群的「API Server」地址是否可从本机访问。</>} />
+            )}
+            {r.log.length > 0 && (
+              <div style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto' }}>
+                {r.log.map((l, i) => (
+                  <div key={i} style={{ fontSize: 12, fontFamily: 'monospace', color: palette.textMute }}>{l}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        ),
+      });
+      load();
+      if (drawerCluster?.id === bootCluster.id) openNodes(bootCluster);
+    } catch (e: any) {
+      // 后端把「试过哪些 kubectl、卡在哪一步」都写进了错误信息，别截断
+      Modal.error({ title: '自动配置失败', width: 640, content: <div style={{ marginTop: 8 }}>{e?.message || '未知错误'}</div> });
+    } finally {
+      setBootLoading(false);
+    }
+  };
+
   const toTerminal = (a: Asset) => a.id && openTerminal({ assetId: a.id, name: a.name, ip: a.ip });
 
   const phaseColor = (p: string) =>
@@ -410,6 +480,12 @@ export const K8sClusters: React.FC = () => {
                   </Tooltip>
                   <Tooltip title="探测该 VIP 上控制台的真实入口路径、类型与版本，并写回配置">
                     <Button size="small" icon={<ApiOutlined />} loading={detectingId === cl.id} onClick={() => runDetectConsole(cl)}>探测控制台</Button>
+                  </Tooltip>
+                  <Tooltip title="用已有 SSH 凭据登到 master，自动创建只读 ServiceAccount 并取 API Token，随后拉取节点入库——不用手工粘贴 Token">
+                    <Button size="small" type={cl.has_token ? 'default' : 'primary'} ghost={!cl.has_token}
+                      icon={<ThunderboltOutlined />} onClick={() => openBootstrap(cl)}>
+                      {cl.has_token ? '重取 Token' : '用 SSH 凭据自动配置'}
+                    </Button>
                   </Tooltip>
                   {cl.has_token && (
                     <Tooltip title="从 kube-apiserver 拉节点清单并按 IP 归类到本集群（不需要 SSH，也不依赖 /etc/hosts 标记）">
@@ -522,6 +598,52 @@ export const K8sClusters: React.FC = () => {
         </Form>
       </Modal>
 
+      {/* 用 SSH 凭据自动配置 Token */}
+      <Modal
+        open={!!bootCluster}
+        title={`用 SSH 凭据自动配置 — ${bootCluster?.name || ''}`}
+        onCancel={() => setBootCluster(null)}
+        onOk={() => bootForm.submit()}
+        okText="开始配置"
+        cancelText="取消"
+        confirmLoading={bootLoading}
+        destroyOnHidden
+      >
+        <Alert style={{ marginBottom: 12 }} type="info" showIcon
+          message="后端会 SSH 登到下面这台机器"
+          description="自动寻找可用的 kubectl（含 k3s / microk8s / sudo / 常见 kubeconfig 路径），创建一个只读 ServiceAccount（只允许读 nodes / pods / namespaces），取回 Token 加密落库，然后立刻同步节点。Token 不会回传到浏览器。" />
+        <Form form={bootForm} layout="vertical" onFinish={runBootstrap}>
+          <Space style={{ width: '100%' }} size="middle" align="start">
+            <Form.Item label="master 地址" name="host" style={{ flex: 1, minWidth: 300 }}
+              rules={[{ required: true, message: '请输入可 SSH 登录的 master 地址' }]}
+              tooltip="默认用集群 VIP；若 VIP 不能 SSH（比如只是个 LB），改成任意一台 control-plane 节点的 IP">
+              <Input placeholder="如 10.0.0.11" />
+            </Form.Item>
+            <Form.Item label="SSH 端口" name="ssh_port" style={{ width: 120 }}>
+              <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+          <Form.Item label="SSH 凭据" name="credential_id"
+            rules={[{ required: true, message: '请选择一份 SSH 凭据' }]}
+            tooltip="默认用集群绑定的凭据。这个账号需要能在 master 上执行 kubectl（或已配置免密 sudo）">
+            <Select placeholder="选择一份 SSH 凭据（密码或私钥）"
+              options={creds.filter((c) => c.type !== 'telnet').map((c) => ({ label: `${c.name} (${c.username})`, value: c.id }))} />
+          </Form.Item>
+          <Space style={{ width: '100%' }} size="middle" align="start">
+            <Form.Item label="命名空间" name="namespace" style={{ width: 200 }}>
+              <Input placeholder="kube-system" />
+            </Form.Item>
+            <Form.Item label="ServiceAccount 名" name="service_account" style={{ flex: 1, minWidth: 220 }}
+              tooltip="已存在则复用，不会重复创建；对应的只读 ClusterRole 名为 <名字>-readonly">
+              <Input placeholder="assetmanager" />
+            </Form.Item>
+          </Space>
+          <Form.Item name="create_missing" valuePropName="checked" style={{ marginBottom: 0 }}>
+            <Checkbox>把资产表里没有的节点补录为新资产</Checkbox>
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* 集群节点 + 实时看板抽屉 */}
       <Drawer
         open={!!drawerCluster}
@@ -562,7 +684,12 @@ export const K8sClusters: React.FC = () => {
         {drawerCluster && !drawerCluster.has_token && (
           <Alert style={{ marginBottom: 12 }} type="info" showIcon
             message="未配置 API Token，无法显示实时看板"
-            description="编辑该集群、填入 kube-apiserver 的 ServiceAccount Bearer Token，即可拉取实时节点 / Pod。" />
+            description="点右边的按钮，用已有 SSH 凭据自动取 Token；也可以编辑集群手工粘贴 ServiceAccount Bearer Token。"
+            action={
+              <Button size="small" type="primary" icon={<ThunderboltOutlined />} onClick={() => openBootstrap(drawerCluster)}>
+                用 SSH 凭据自动配置
+              </Button>
+            } />
         )}
         {liveErr && <Alert style={{ marginBottom: 12 }} type="error" showIcon message={liveErr} />}
 

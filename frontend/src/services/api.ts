@@ -421,6 +421,32 @@ export interface SyncNodesResult {
 /** 从 kube-apiserver 拉节点清单并归类（不依赖 SSH 与 /etc/hosts 标记） */
 export const syncK8sNodes = (clusterId: number, createMissing: boolean): Promise<SyncNodesResult> =>
   api.post(`/k8s/clusters/${clusterId}/sync-nodes?create_missing=${createMissing ? 1 : 0}`);
+
+/** 「用 SSH 凭据自动配置」请求参数，全部可选：留空就用集群自身的 VIP / 绑定凭据 / 默认 SA */
+export interface K8sSSHBootstrapReq {
+  host?: string;
+  ssh_port?: number;
+  credential_id?: number | null;
+  namespace?: string;
+  service_account?: string;
+  sync_nodes?: boolean;
+  create_missing?: boolean;
+}
+export interface K8sSSHBootstrapResult {
+  kubectl: string;          // 远端最终用上的 kubectl 调用方式
+  method: string;           // create-token / sa-secret / manual-secret
+  api_server: string;
+  service_account: string;  // namespace/name
+  token_saved: boolean;
+  log: string[];            // 诊断信息，后端已保证不含 Token
+  sync?: SyncNodesResult;   // 顺带做的节点同步结果
+  sync_error?: string;      // Token 存了但同步失败（多半是 apiserver 地址不对）
+}
+/** SSH 登到 master 自动建只读 SA、取 Token 并落库，随后同步节点。Token 不回传前端 */
+export const bootstrapK8sTokenBySSH = (
+  clusterId: number,
+  body: K8sSSHBootstrapReq,
+): Promise<K8sSSHBootstrapResult> => api.post(`/k8s/clusters/${clusterId}/ssh-bootstrap`, body);
 // Phase 3：实时看板（调 kube-apiserver）
 export const getK8sOverview = (id: number): Promise<K8sOverview> => api.get(`/k8s/clusters/${id}/overview`);
 export const getK8sLiveNodes = (id: number): Promise<K8sLiveNode[]> => api.get(`/k8s/clusters/${id}/live/nodes`);
@@ -609,11 +635,50 @@ export interface Capabilities {
 }
 export const getCapabilities = (): Promise<Capabilities> => api.get('/capabilities');
 
-// 本地终端 WebSocket 地址（连后端本机 Shell）
-export const getLocalTerminalWsUrl = (): string => {
+// ── 本地终端 Shell 选择 ──
+// 这里的取值必须和后端 sshproxy 的白名单一致；后端还会再校验一次，前端传了
+// 白名单外的值只会被静默退回默认 Shell，不会真的执行。
+export interface LocalShellOption { value: string; label: string }
+
+/** 本地终端跑在运行本程序的这台机器上，所以按浏览器/WebView 所在平台给候选即可 */
+export const isWindowsHost = (): boolean => /windows|win32/i.test(navigator.userAgent);
+
+export const LOCAL_SHELL_OPTIONS: LocalShellOption[] = isWindowsHost()
+  ? [
+      { value: '', label: '默认（PowerShell）' },
+      { value: 'powershell', label: 'Windows PowerShell' },
+      { value: 'pwsh', label: 'PowerShell 7 (pwsh)' },
+      { value: 'cmd', label: '命令提示符 (cmd)' },
+    ]
+  : [
+      { value: '', label: '默认（$SHELL）' },
+      { value: 'bash', label: 'bash' },
+      { value: 'zsh', label: 'zsh' },
+      { value: 'fish', label: 'fish' },
+      { value: 'sh', label: 'sh' },
+    ];
+
+const LOCAL_SHELL_KEY = 'lynx-local-shell';
+
+/** 读取记住的 Shell 选择；存的值若已不在候选里（换了平台）则当作默认 */
+export const getLocalShellPref = (): string => {
+  const v = localStorage.getItem(LOCAL_SHELL_KEY) || '';
+  return LOCAL_SHELL_OPTIONS.some((o) => o.value === v) ? v : '';
+};
+export const setLocalShellPref = (v: string): void => {
+  try { localStorage.setItem(LOCAL_SHELL_KEY, v); } catch { /* 隐私模式下写失败不影响本次连接 */ }
+};
+
+// 本地终端 WebSocket 地址（连后端本机 Shell）；shell 省略时用记住的选择
+export const getLocalTerminalWsUrl = (shell?: string): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('lynx-token') || '';
-  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  const sh = shell ?? getLocalShellPref();
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  if (sh) params.set('shell', sh);
+  const qs = params.toString();
+  const q = qs ? `?${qs}` : '';
   if (BACKEND_ORIGIN) {
     return `ws://127.0.0.1:8765/api/ws/local-terminal${q}`;
   }
@@ -636,15 +701,51 @@ export const getMetricsWsUrl = (assetId: number): string => {
 };
 
 /** 实时资源监控推送帧 */
+export interface MountUsage {
+  path: string;
+  used_kb: number;
+  total_kb: number;
+}
+
+export interface ProcInfo {
+  name: string;
+  cpu: number;
+  mem: number;
+}
+
 export interface LiveMetrics {
   ok: boolean;
   message?: string;
   os?: string;
+  hostname?: string;
+  kernel?: string;
+  distro?: string;
+  uptime_sec?: number;
+
   cpu_percent?: number;
+  cpu_cores?: number;
+  load1?: number;
+  load5?: number;
+  load15?: number;
+
   mem_used_kb?: number;
   mem_total_kb?: number;
+  mem_cache_kb?: number;
+  swap_used_kb?: number;
+  swap_total_kb?: number;
+
   disk_used_kb?: number;
   disk_total_kb?: number;
+  mounts?: MountUsage[];
+
+  // 速率，单位统一为 字节/秒；首帧一律 0（只用来打基准）
+  net_rx_bps?: number;
+  net_tx_bps?: number;
+  disk_read_bps?: number;
+  disk_write_bps?: number;
+
+  tcp_count?: number;
+  procs?: ProcInfo[];
   ts?: number;
 }
 

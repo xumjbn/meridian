@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -38,8 +39,42 @@ func (u *unixPty) Close() error {
 	return u.f.Close()
 }
 
-// startLocalPty 在本机启动用户默认 Shell 并分配 PTY。
-func startLocalPty(cols, rows int) (localPty, string, error) {
+// allowedShells 是本地终端唯一允许拉起的程序白名单。
+// 这个端点等价于「在本机执行任意程序」，所以绝不能把前端传来的字符串当成路径直接
+// exec——只认下面这几个固定名字，再由本机自行定位可执行文件；非法值一律退回默认。
+var allowedShells = []string{"bash", "zsh", "sh", "fish"}
+
+// resolveShell 把白名单标识符解析成本机上的绝对路径；不在白名单或本机没装时返回空串。
+func resolveShell(name string) string {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "" {
+		return ""
+	}
+	ok := false
+	for _, s := range allowedShells {
+		if n == s {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return ""
+	}
+	if p, err := exec.LookPath(n); err == nil {
+		return p
+	}
+	// 后端可能由 GUI 启动（PATH 很窄，LookPath 找不到 brew 装的 fish/zsh），再探常见目录
+	for _, dir := range []string{"/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"} {
+		p := filepath.Join(dir, n)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// defaultShell 未指定 Shell（或指定了本机没有的 Shell）时用的默认值。
+func defaultShell() string {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		for _, s := range []string{"/bin/bash", "/bin/zsh", "/bin/sh"} {
@@ -52,11 +87,21 @@ func startLocalPty(cols, rows int) (localPty, string, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
+	return shell
+}
 
-	// bash/zsh 以登录 shell 启动，确保加载 profile（macOS 下 PATH 才正确）
+// startLocalPty 按 shell 指定的类型启动本机 Shell 并分配 PTY；shell 为空或非法时用默认 Shell。
+func startLocalPty(cols, rows int, shell string) (localPty, string, error) {
+	resolved := resolveShell(shell)
+	if resolved == "" {
+		resolved = defaultShell()
+	}
+	shell = resolved
+
+	// bash/zsh/fish 以登录 shell 启动，确保加载 profile（macOS 下 PATH 才正确）
 	var args []string
 	switch filepath.Base(shell) {
-	case "bash", "zsh", "-bash", "-zsh":
+	case "bash", "zsh", "fish", "-bash", "-zsh":
 		args = []string{"-l"}
 	}
 

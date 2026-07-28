@@ -23,7 +23,11 @@ type localPty interface {
 // 协议与 ProxyTerminal 完全一致：服务端→前端用 BinaryMessage 传输输出、
 // TextMessage 传 status（message=="connected" 表示就绪）；前端→服务端用
 // BinaryMessage 传键入、TextMessage 传 {type:"resize"|"ping"}。
-func ProxyLocal(ws *websocket.Conn) {
+//
+// shell 来自握手 URL 的 ?shell= 查询参数（由 handler 取出后传入），是用户可控输入：
+// 白名单校验一律放在各平台的 startLocalPty 里做——那是通往 exec/ConPTY 的唯一入口，
+// 校验贴着它写才不会被后来新增的调用方绕过。
+func ProxyLocal(ws *websocket.Conn, shell string) {
 	defer ws.Close()
 
 	var writeMu sync.Mutex
@@ -39,7 +43,7 @@ func ProxyLocal(ws *websocket.Conn) {
 
 	status("正在启动本地终端...")
 
-	lp, desc, err := startLocalPty(80, 24)
+	lp, desc, err := startLocalPty(80, 24, shell)
 	if err != nil {
 		status(fmt.Sprintf("启动本地终端失败: %v", err))
 		return

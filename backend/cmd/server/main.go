@@ -153,6 +153,8 @@ func main() {
 		api.GET("/k8s/clusters/:id/console", handler.GetK8sConsole)
 		api.POST("/k8s/clusters/:id/detect-console", handler.DetectK8sConsole) // 探测控制台真实路径/类型/版本
 		api.POST("/k8s/clusters/:id/sync-nodes", handler.SyncK8sNodesFromAPI)  // 按 kube API 节点表归类
+		// SSH 登到 master 自动建只读 SA 并取 Token，省掉手工粘贴（成功后自动同步一次节点）
+		api.POST("/k8s/clusters/:id/ssh-bootstrap", handler.BootstrapK8sTokenBySSH)
 		api.GET("/k8s/nodes/unassigned", handler.ListUnassignedK8sNodes)
 		api.POST("/k8s/auto-classify", handler.AutoClassifyK8s)
 		// Phase 3：调 kube-apiserver 拉实时看板（需集群配置 API Token）

@@ -8,6 +8,8 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined, DashboardOutlined } from '@ant-design/icons';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
+import { WEDDING_EGG_RE, fireWeddingEgg } from '../components/WeddingEgg';
+import { TerminalWallpaper, useWallpaper, setWallpaper, WALLPAPER_SHOW_RE, WALLPAPER_HIDE_RE } from '../components/TerminalWallpaper';
 import { saveBlob } from '../saveFile';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { palette } from '../theme';
@@ -18,7 +20,7 @@ import { loadSnippets, matchSnippets, recordSnippetUsage, recordHistory, matchHi
 import { copyText, pasteText } from '../clipboard';
 import { CommandPalette } from '../components/CommandPalette';
 import { ShortcutHelp } from '../components/ShortcutHelp';
-import { TERM_TAB_SLOT_ID } from '../components/TerminalTabBar';
+import { TERM_TAB_SLOT_ID, TERM_TOOLBAR_SLOT_ID } from '../components/TerminalTabBar';
 import { takePendingAuth, clearPendingAuth } from '../pendingAuth';
 import { SftpPanel } from '../components/SftpPanel';
 import '@xterm/xterm/css/xterm.css';
@@ -78,6 +80,10 @@ const termThemes: { label: string; value: string; theme: TermTheme }[] = [
     green: '#28a745', yellow: '#dbab09', blue: '#0366d6', magenta: '#5a32a3', cyan: '#0598bc', white: '#6a737d' } },
 ];
 const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value === v) || termThemes[0]).theme;
+
+/** wjw 壁纸开着时把 xterm 的底色换成全透明（其余色位不动），好让下层背景透出来 */
+const withWallpaperBg = (t: TermTheme, on: boolean): TermTheme =>
+  (on ? { ...t, background: 'rgba(0,0,0,0)' } : { ...t });
 
 // 复制/粘贴统一走 ../clipboard：桌面端原生剪贴板优先，Web 端 execCommand + API 兜底。
 const writeClipboard = (text: string) => copyText(text);
@@ -198,6 +204,16 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
     setToolbarCollapsed(v);
     localStorage.setItem('term_toolbar_collapsed', v ? '1' : '0');
   };
+  // 展开把手要 portal 到标签栏右侧。标签栏先于本页挂载，通常一次就能取到插槽，
+  // 取不到时下一帧再试一次。
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!toolbarCollapsed) { setToolbarSlot(null); return; }
+    const pick = () => setToolbarSlot(document.getElementById(TERM_TOOLBAR_SLOT_ID));
+    pick();
+    const raf = requestAnimationFrame(pick);
+    return () => cancelAnimationFrame(raf);
+  }, [toolbarCollapsed]);
   const [assets, setAssets] = useState<Asset[]>([]);
 
   // 挂载全局终端会话的广播控制
@@ -791,22 +807,22 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
       )}
 
       <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative', background: palette.chromeBgDeep }}>
-        {/* 工具栏收起态：右上角悬浮的展开按钮（与收起按钮同侧） */}
-        {toolbarCollapsed && (
-          <Tooltip title="展开工具栏" placement="bottom">
+        {/* 工具栏收起态的展开把手。以前是浮在终端顶部正中的一个小凸起，看着就是块刘海；
+            现在 portal 到标签栏右侧，和其它控件排成一行，终端区域保持干净。 */}
+        {toolbarCollapsed && toolbarSlot && createPortal(
+          <Tooltip title="展开多屏工具栏" placement="bottomRight">
             <Button
               size="small"
+              type="text"
               icon={<DownOutlined />}
               onClick={() => toggleToolbar(false)}
               style={{
-                // 居中顶部「把手」，避免压住窗格右上角的「重新连接 / 关闭」按钮
-                position: 'absolute', top: 2, left: '50%', transform: 'translateX(-50%)', zIndex: 1400,
-                height: 18, paddingTop: 0, paddingBottom: 0, lineHeight: '14px',
-                background: 'rgba(30,41,59,0.92)', color: '#cbd5e1', border: '1px solid #334155',
-                borderTopLeftRadius: 0, borderTopRightRadius: 0,
+                width: 26, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: palette.chromeTextMute,
               }}
             />
-          </Tooltip>
+          </Tooltip>,
+          toolbarSlot,
         )}
         {renderGrid()}
         {/* 悬浮 AI 助手（收起为右下角按钮，展开为可调宽浮层，带历史切换） */}
@@ -923,6 +939,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const outputBytesRef = useRef(0);
   const termThemeRef = useRef(termTheme);
   useEffect(() => { termThemeRef.current = termTheme; }, [termTheme]);
+
+  // wjw 专属背景（口令 wjw-bg 开 / wjw-bg-hide 关）。
+  // 背景层铺在 xterm 画布下面，所以开着的时候 xterm 自己画的底色必须是透明的，
+  // 否则那层不透明的 background 会把壁纸整个盖住（实测：只改容器 background 没有用）。
+  const wallpaperOn = useWallpaper();
+  const wallpaperRef = useRef(wallpaperOn);
+  useEffect(() => { wallpaperRef.current = wallpaperOn; }, [wallpaperOn]);
   const termEncodingRef = useRef(termEncoding);
   useEffect(() => { termEncodingRef.current = termEncoding; }, [termEncoding]);
 
@@ -1299,14 +1322,24 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     if (code === CR || code === LF) {
       const line = festLineRef.current;
       festLineRef.current = '';
+      // 用退格逐字擦掉已输入内容：Ctrl-U 在 PowerShell 里不清行，
+      // 反而会把 ^U 原样回显到屏幕上；退格则 bash / PowerShell 都认。
+      const eraseLine = () => sendToShell(String.fromCharCode(DEL).repeat(line.length));
       const birthday = EASTER_EGG_BIRTHDAY_RE.test(line);
       if (birthday || EASTER_EGG_RE.test(line)) {
-        // 用退格逐字擦掉已输入内容：Ctrl-U 在 PowerShell 里不清行，
-        // 反而会把 ^U 原样回显到屏幕上；退格则 bash / PowerShell 都认。
-        sendToShell(String.fromCharCode(DEL).repeat(line.length));
+        eraseLine();
         fireEasterEgg(birthday ? 'birthday' : undefined); // 不指定则按当天日期选节日主题
         return true;
       }
+      // 结婚纪念日专属演出（wedding），和节日主题分开走一套更长的时间轴
+      if (WEDDING_EGG_RE.test(line)) {
+        eraseLine();
+        fireWeddingEgg();
+        return true;
+      }
+      // 终端背景开关：先判 -hide，否则 wjw-bg 的正则会先把它吃掉
+      if (WALLPAPER_HIDE_RE.test(line)) { eraseLine(); setWallpaper(false); return true; }
+      if (WALLPAPER_SHOW_RE.test(line)) { eraseLine(); setWallpaper(true); return true; }
       return false;
     }
     if (code === DEL || code === BS) {
@@ -1423,7 +1456,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       scrollback: 5000,
       fontSize: fontSize,
       fontFamily: fontFamily,
-      theme: { ...termThemeRef.current },
+      theme: withWallpaperBg(termThemeRef.current, wallpaperRef.current),
+      // 必须在 open() 之前定死，运行中改不了；而壁纸是随时能敲口令开关的，
+      // 所以这里恒开。关着壁纸时底色仍是不透明色值，观感与之前完全一致。
+      allowTransparency: true,
       allowProposedApi: true,
     });
     termRef.current = term;
@@ -1798,7 +1834,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     term.options.fontSize = fontSize;
     term.options.fontFamily = fontFamily;
-    term.options.theme = { ...termTheme };
+    term.options.theme = withWallpaperBg(termTheme, wallpaperOn);
 
     const fitSafe = () => {
       try {
@@ -1817,7 +1853,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
     };
-  }, [fontSize, fontFamily, termTheme]);
+  }, [fontSize, fontFamily, termTheme, wallpaperOn]);
 
   const handleAuthSubmit = (values: any) => {
     const activeWs = wsRef.current;
@@ -2237,7 +2273,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       {metricsOpen && !isLocal && (
         <MetricsPanel assetId={assetId} onClose={() => setMetricsOpen(false)} />
       )}
-      <div style={{ flexGrow: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+      {/* 壁纸开着时 xterm 与容器都是透明的，底色改由这层兜住 */}
+      <div style={{ flexGrow: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden', background: termTheme.background }}>
         {/* Placeholder: 空白未连接状态卡片 */}
         {status === 'idle' && (
           <div style={{
@@ -2329,6 +2366,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </div>
         )}
 
+        {/* wjw 专属背景：必须排在终端容器之前 + z-index 更低，才压得住在画布下层 */}
+        {wallpaperOn && <TerminalWallpaper />}
+
         <div
           ref={terminalRef}
           className="terminal-container"
@@ -2339,7 +2379,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             padding: '4px 6px 6px',
             boxSizing: 'border-box',
             overflow: 'hidden',
-            background: termTheme.background,
+            // 壁纸开着时容器也要透出去；底色改由外层 wrapper 提供
+            background: wallpaperOn ? 'transparent' : termTheme.background,
+            // 显式定位 + z-index：终端容器本身是静态元素，
+            // 而壁纸是绝对定位的，不写死层级它会浮到终端文字上面
+            position: 'relative',
+            zIndex: 1,
           }}
         />
 

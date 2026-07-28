@@ -32,30 +32,46 @@ type syncNodeResult struct {
 	Msg     string `json:"msg,omitempty"`
 }
 
+// syncNodesSummary 一次同步的汇总结果（同时用作接口返回体）
+type syncNodesSummary struct {
+	Total    int              `json:"total"`
+	Assigned int              `json:"assigned"`
+	Updated  int              `json:"updated"`
+	Created  int              `json:"created"`
+	Details  []syncNodeResult `json:"details"`
+}
+
 // SyncK8sNodesFromAPI 从 kube-apiserver 拉节点清单并归类到该集群
 func SyncK8sNodesFromAPI(c *gin.Context) {
 	cl, ok := loadClusterWithToken(c)
 	if !ok {
 		return
 	}
-
-	body, code, err := kubeGet(cl, "/api/v1/nodes")
+	// 是否把 API 里有、资产表里没有的节点自动补录为新资产
+	createMissing := strings.EqualFold(c.Query("create_missing"), "true") || c.Query("create_missing") == "1"
+	sum, err := syncK8sNodesCore(c, cl, createMissing)
 	if err != nil {
-		SendError(c, 502, "连接 kube-apiserver 失败: "+err.Error())
+		SendError(c, 502, err.Error())
 		return
 	}
+	SendSuccess(c, sum)
+}
+
+// syncK8sNodesCore 同步逻辑本体：拉节点表 → 匹配资产 → 归类/补录 → 写审计。
+// 抽成独立函数是为了让「SSH 自动配置」拿到 Token 后能立刻复用同一套归类逻辑，
+// 不必让前端再发一次请求（也就不会出现「Token 存了但节点没同步」的中间态）。
+func syncK8sNodesCore(c *gin.Context, cl *model.K8sCluster, createMissing bool) (*syncNodesSummary, error) {
+	body, code, err := kubeGet(cl, "/api/v1/nodes")
+	if err != nil {
+		return nil, fmt.Errorf("连接 kube-apiserver 失败: %v", err)
+	}
 	if code != 200 {
-		SendError(c, 502, fmt.Sprintf("kube API 返回 %d: %s", code, truncateStr(string(body), 200)))
-		return
+		return nil, fmt.Errorf("kube API 返回 %d: %s", code, truncateStr(string(body), 200))
 	}
 	var list kubeNodeList
 	if err := json.Unmarshal(body, &list); err != nil {
-		SendError(c, 502, "解析节点列表失败: "+err.Error())
-		return
+		return nil, fmt.Errorf("解析节点列表失败: %v", err)
 	}
-
-	// 是否把 API 里有、资产表里没有的节点自动补录为新资产
-	createMissing := strings.EqualFold(c.Query("create_missing"), "true") || c.Query("create_missing") == "1"
 
 	db := store.GlobalDB
 	details := make([]syncNodeResult, 0, len(list.Items))
@@ -155,8 +171,8 @@ func SyncK8sNodesFromAPI(c *gin.Context) {
 		Status: 200, IP: c.ClientIP(),
 	})
 
-	SendSuccess(c, gin.H{
-		"total": len(list.Items), "assigned": assigned, "updated": updated,
-		"created": created, "details": details,
-	})
+	return &syncNodesSummary{
+		Total: len(list.Items), Assigned: assigned, Updated: updated,
+		Created: created, Details: details,
+	}, nil
 }

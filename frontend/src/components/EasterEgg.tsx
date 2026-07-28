@@ -71,7 +71,7 @@ interface Star { x: number; y: number; z: number; ph: number }
 interface Ambient { x: number; y: number; v: number; r: number; sway: number; ph: number; color: string }
 
 /** 心形参数方程（经典 16sin³t），返回以中心为原点的点集 */
-const heartPoints = (count: number, scale: number): { x: number; y: number }[] => {
+export const heartPoints = (count: number, scale: number): { x: number; y: number }[] => {
   const pts: { x: number; y: number }[] = [];
   for (let i = 0; i < count; i++) {
     const t = (Math.PI * 2 * i) / count;
@@ -96,7 +96,7 @@ const ringPoints = (count: number, radius: number): { x: number; y: number }[] =
 };
 
 /** 把文字画到离屏 canvas 后逐像素采样，得到组成字形的点集（不依赖字体文件） */
-const textPoints = (text: string, maxWidth: number): { x: number; y: number }[] => {
+export const textPoints = (text: string, maxWidth: number): { x: number; y: number }[] => {
   const off = document.createElement('canvas');
   const octx = off.getContext('2d');
   if (!octx) return [];

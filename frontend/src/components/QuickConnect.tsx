@@ -15,12 +15,21 @@ import {
   FolderOpenOutlined,
   EditOutlined,
 } from '@ant-design/icons';
-import { getAssets, getCapabilities, type Asset } from '../services/api';
+import {
+  getAssets,
+  getCapabilities,
+  getLocalShellPref,
+  setLocalShellPref,
+  LOCAL_SHELL_OPTIONS,
+  type Asset,
+} from '../services/api';
 import { useTerminals } from '../terminalSessions';
 import { palette } from '../theme';
 
 const UNGROUPED = '未分组';
 const RECENT_KEY = 'lynx-recent-hosts';
+// 「平台默认 Shell」在菜单里的占位 key（真实值是空串，不能直接当 antd 的 key 用）
+const DEFAULT_SHELL_KEY = '__default__';
 
 const parseTags = (s?: string): string[] => {
   if (!s) return [];
@@ -62,6 +71,8 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [localShell, setLocalShell] = useState(false);
+  // 用哪个 Shell 开本地终端（''=平台默认）。只影响之后新建的终端，已开的不变。
+  const [shellKind, setShellKind] = useState<string>(getLocalShellPref);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [recentIds, setRecentIds] = useState<number[]>(loadRecent);
 
@@ -111,6 +122,22 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
     const n = localIds.length + 1;
     open({ assetId: nextId, name: n > 1 ? `本地终端 ${n}` : '本地终端', ip: '本机' });
+  };
+
+  // Shell 选择菜单。antd 的 key 不能是空串（选中态匹配不上），故默认项用 DEFAULT_SHELL_KEY 占位。
+  const shellLabel = LOCAL_SHELL_OPTIONS.find((o) => o.value === shellKind)?.label ?? LOCAL_SHELL_OPTIONS[0].label;
+  const shellMenu: MenuProps = {
+    selectable: true,
+    selectedKeys: [shellKind || DEFAULT_SHELL_KEY],
+    items: LOCAL_SHELL_OPTIONS.map((o) => ({ key: o.value || DEFAULT_SHELL_KEY, label: o.label })),
+    onClick: ({ key, domEvent }) => {
+      // 下拉是 React portal：DOM 上挂在 body，但事件仍沿 React 树冒泡到「本地终端」那一行，
+      // 不拦住的话选个 Shell 会顺手多开一个终端
+      domEvent.stopPropagation();
+      const v = key === DEFAULT_SHELL_KEY ? '' : key;
+      setShellKind(v);
+      setLocalShellPref(v); // 记住选择，下次开本地终端沿用
+    },
   };
 
   // 右键菜单动作
@@ -246,11 +273,14 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, alignItems: 'center', gap: 6 }}>
         {localShell && (
-          <Tooltip title="新建本地终端" placement="right">
-            <div onClick={connectLocal} style={iconBtn(localActive, true)}>
-              <DesktopOutlined style={{ color: palette.accent, fontSize: 16 }} />
-            </div>
-          </Tooltip>
+          // 窄栏放不下 Shell 下拉，改挂到右键菜单上
+          <Dropdown menu={shellMenu} trigger={['contextMenu']} placement="bottomLeft">
+            <Tooltip title={`新建本地终端（${shellLabel}）· 右键换 Shell`} placement="right">
+              <div onClick={connectLocal} style={iconBtn(localActive, true)}>
+                <DesktopOutlined style={{ color: palette.accent, fontSize: 16 }} />
+              </div>
+            </Tooltip>
+          </Dropdown>
         )}
         <div style={{ width: 24, height: 1, background: palette.siderBorder, flexShrink: 0 }} />
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
@@ -303,11 +333,11 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         style={{ marginBottom: 8 }}
       />
 
-      {/* 本地终端入口 */}
+      {/* 本地终端入口：点整行开终端，右侧小标签点开可换 Shell（cmd / PowerShell / pwsh） */}
       {localShell && (
         <div
           onClick={connectLocal}
-          title="新建本地终端（连接运行本程序的这台机器，可同时开多个）"
+          title={`新建本地终端（连接运行本程序的这台机器，可同时开多个）\n当前 Shell：${shellLabel}`}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', marginBottom: 6,
             borderRadius: 8, cursor: 'pointer', fontSize: 13,
@@ -318,6 +348,21 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         >
           <DesktopOutlined style={{ color: palette.accent }} />
           <span style={{ flex: 1 }}>本地终端</span>
+          <Dropdown menu={shellMenu} trigger={['click']} placement="bottomRight">
+            <span
+              // 选 Shell 的点击不能冒泡到整行，否则顺手多开一个终端
+              onClick={(e) => e.stopPropagation()}
+              title={`选择 Shell（当前：${shellLabel}）`}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0,
+                padding: '1px 5px', borderRadius: 5, fontSize: 11, lineHeight: '16px',
+                color: palette.textMute, background: 'rgba(127,127,127,0.14)',
+              }}
+            >
+              {shellKind || '默认'}
+              <CaretDownOutlined style={{ fontSize: 9 }} />
+            </span>
+          </Dropdown>
           <PlusOutlined style={{ fontSize: 11, color: palette.textMute }} />
         </div>
       )}

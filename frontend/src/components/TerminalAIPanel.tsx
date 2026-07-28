@@ -21,6 +21,13 @@ interface Props {
 const MIN_W = 320;
 const MAX_W = 760;
 
+// 悬浮球的位置：存的是「距容器右下角的偏移」而不是绝对坐标。
+// 用右下偏移，窗口缩放时球会跟着角走，不会跑到可视区外面去。
+const BALL_POS_KEY = 'ai_ball_pos';
+const BALL_DEFAULT = { right: 16, bottom: 16 };
+/** 小于这个位移量算点击，不算拖拽——否则手一抖就打不开面板了 */
+const DRAG_SLOP = 4;
+
 /**
  * 悬浮式 AI 助手面板：默认收起为右下角悬浮按钮，点击展开；宽度可拖拽调节；
  * 支持新建 / 切换历史对话。Agent 在后端独立 SSH 通道执行命令（自动执行 + 高危拦截）。
@@ -33,6 +40,60 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId, onOpe
     const s = parseInt(localStorage.getItem('ai_panel_width') || '', 10);
     return s >= MIN_W && s <= MAX_W ? s : 420;
   });
+
+  // 悬浮球位置。默认在右下角，但那儿常压住终端最后几行输出，所以做成可拖的。
+  const [ballPos, setBallPos] = useState<{ right: number; bottom: number }>(() => {
+    try {
+      const raw = localStorage.getItem(BALL_POS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Number.isFinite(p?.right) && Number.isFinite(p?.bottom)) return p;
+      }
+    } catch { /* 存坏了就用默认位置 */ }
+    return BALL_DEFAULT;
+  });
+  const ballRef = useRef<HTMLElement | null>(null);
+  // 拖拽过程中的临时状态。用 ref 而不是 state：mousemove 频率高，
+  // 每次 setState 都会重渲染整个面板组件。
+  const ballDragRef = useRef<{ x: number; y: number; right: number; bottom: number; moved: boolean } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const d = ballDragRef.current;
+      if (!d) return;
+      const dx = e.clientX - d.x;
+      const dy = e.clientY - d.y;
+      if (!d.moved && Math.abs(dx) + Math.abs(dy) > DRAG_SLOP) {
+        d.moved = true;
+        setDragging(true);
+      }
+      if (!d.moved) return;
+      // 往左拖 = right 变大；往上拖 = bottom 变大
+      const host = ballRef.current?.offsetParent as HTMLElement | null;
+      const el = ballRef.current;
+      const maxR = Math.max(0, (host?.clientWidth || 0) - (el?.offsetWidth || 0));
+      const maxB = Math.max(0, (host?.clientHeight || 0) - (el?.offsetHeight || 0));
+      setBallPos({
+        right: Math.min(maxR, Math.max(0, d.right - dx)),
+        bottom: Math.min(maxB, Math.max(0, d.bottom - dy)),
+      });
+    };
+    const onUp = () => {
+      if (!ballDragRef.current) return;
+      const moved = ballDragRef.current.moved;
+      ballDragRef.current = null;
+      document.body.style.cursor = '';
+      setDragging(false);
+      // 没怎么动就是想点开面板；真拖过了就只落位，不要顺手把面板弹出来
+      if (!moved) setOpen(true);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  useEffect(() => { localStorage.setItem(BALL_POS_KEY, JSON.stringify(ballPos)); }, [ballPos]);
 
   const [target, setTarget] = useState<number>(defaultAssetId);
   const [prompt, setPrompt] = useState('');
@@ -171,17 +232,30 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId, onOpe
   // ── 收起态：右下角悬浮按钮（未启用也常驻，点开引导配置）──────────
   if (!open) {
     return (
-      <Tooltip title={enabled ? '' : 'AI 助手未启用，点击查看如何开启'} placement="left">
+      <Tooltip title={enabled ? '按住可拖动' : 'AI 助手未启用，点击查看如何开启'} placement="left">
         <Button
           type="primary"
           icon={<RobotOutlined />}
-          onClick={() => setOpen(true)}
+          ref={(el) => { ballRef.current = el as unknown as HTMLElement | null; }}
+          // 开面板放在 mouseup 里判定：拖完手一松不该顺带把面板弹出来。
+          // 这里不接 onClick，否则拖拽结束时浏览器仍会补一次 click。
+          onMouseDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            ballDragRef.current = { x: e.clientX, y: e.clientY, right: ballPos.right, bottom: ballPos.bottom, moved: false };
+            document.body.style.cursor = 'grabbing';
+          }}
           style={{
-            position: 'absolute', right: 16, bottom: 16, zIndex: 1500,
+            position: 'absolute', right: ballPos.right, bottom: ballPos.bottom, zIndex: 1500,
             height: 40, borderRadius: 20,
+            cursor: dragging ? 'grabbing' : 'grab',
+            // 拖的时候半透明，好看清底下被挡住的终端内容
+            opacity: dragging ? 0.6 : (enabled ? 1 : 0.92),
+            transition: dragging ? 'none' : 'opacity .15s',
             boxShadow: enabled ? '0 6px 20px rgba(99,102,241,0.45)' : '0 6px 20px rgba(100,116,139,0.35)',
             background: enabled ? 'linear-gradient(135deg,#6366f1,#7c5cfb)' : 'linear-gradient(135deg,#64748b,#475569)',
-            border: 'none', opacity: enabled ? 1 : 0.92,
+            border: 'none',
+            userSelect: 'none',
           }}
         >
           AI 助手

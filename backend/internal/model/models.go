@@ -117,6 +117,14 @@ func (c *Credential) BeforeSave(tx *gorm.DB) error {
 	return nil
 }
 
+// AfterSave 同理：落库后把内存里的密码/私钥还原成明文，
+// 免得调用方拿着刚保存过的结构体去拨 SSH 却带着密文当密码。
+func (c *Credential) AfterSave(tx *gorm.DB) error {
+	c.Password = crypto.MustDecrypt(c.Password)
+	c.PrivateKey = crypto.MustDecrypt(c.PrivateKey)
+	return nil
+}
+
 // AfterFind 读出后解密，并回填 has_* 展示位。
 // 历史明文数据没有密文前缀，会原样返回，保证升级后旧凭据仍可用。
 func (c *Credential) AfterFind(tx *gorm.DB) error {
@@ -282,6 +290,16 @@ func (c *K8sCluster) BeforeSave(tx *gorm.DB) error {
 func (c *K8sCluster) AfterFind(tx *gorm.DB) error {
 	c.APIToken = crypto.MustDecrypt(c.APIToken)
 	c.HasToken = c.APIToken != ""
+	return nil
+}
+
+// AfterSave 把内存里的 token 还原成明文。
+// BeforeSave 是「就地」把字段改成密文的，落库之后调用方手里这个结构体
+// 也跟着变成了密文——接着拿它去发 Authorization 头就成了 Bearer enc:v1:...，
+// 在真集群上稳定 401。这个坑踩过一次，所以在这里统一还原，
+// 而不是指望每个调用点自己记得复位。
+func (c *K8sCluster) AfterSave(tx *gorm.DB) error {
+	c.APIToken = crypto.MustDecrypt(c.APIToken)
 	return nil
 }
 

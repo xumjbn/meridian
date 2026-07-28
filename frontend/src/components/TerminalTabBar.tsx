@@ -35,6 +35,10 @@ const TAB_BAR_HEIGHT = 34;
 /** 标签栏右侧插槽的 DOM id：单分屏时终端窗格把自己的状态条 portal 进来 */
 export const TERM_TAB_SLOT_ID = 'lynx-term-tab-slot';
 
+/** 多屏工具栏的「展开」把手插槽：原先是浮在终端顶部正中的一个小凸起，
+ *  视觉上就是块刘海。挪到标签栏右侧和其它控件排在一行。 */
+export const TERM_TOOLBAR_SLOT_ID = 'lynx-term-toolbar-slot';
+
 // 项目内部的会话标签栏：左侧是「当前页面」，右侧是已打开的终端会话标签（可拖拽调序）
 export const TerminalTabBar: React.FC<Props> = ({
   sessions,
@@ -314,6 +318,9 @@ export const TerminalTabBar: React.FC<Props> = ({
       {/* 单分屏时，活动会话的状态/操作从窗格头部搬到这里（见 TERM_TAB_SLOT_ID）。
           在滚动容器之外，窗口再窄也不会被标签挤走。 */}
       <div id={TERM_TAB_SLOT_ID} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginLeft: 6 }} />
+
+      {/* 多屏工具栏的展开把手（收起时才有内容） */}
+      <div id={TERM_TOOLBAR_SLOT_ID} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginLeft: 4 }} />
 
       {/* 终端模式开关（Ctrl/⌘+Shift+Enter 同效） */}
       {onToggleTermMode && (

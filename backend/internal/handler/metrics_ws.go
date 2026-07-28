@@ -97,13 +97,16 @@ func StreamAssetMetrics(c *gin.Context) {
 
 	// 首次探测确定平台：POSIX 脚本跑不通就退到 PowerShell，之后固定用命中的那条，
 	// 免得每一轮都白跑一次失败的命令。
+	// 速率基准跟着这条连接走：首帧只用来打基准，网络/磁盘速率从第二帧才有值
+	st := &rateState{}
+
 	script := posixMetricsScript
 	if m, ok := runMetricsOnce(client, script); ok {
-		pushMetrics(ws, m)
+		pushMetrics(ws, m, st)
 	} else {
 		script = windowsMetricsScript
 		if m, ok := runMetricsOnce(client, script); ok {
-			pushMetrics(ws, m)
+			pushMetrics(ws, m, st)
 		} else {
 			sendErr("无法采集该主机的资源用量（目标系统可能不受支持）")
 			return
@@ -126,7 +129,7 @@ func StreamAssetMetrics(c *gin.Context) {
 				// 单次失败不断开：网络抖动或瞬时负载导致的失败下一轮多半能恢复
 				continue
 			}
-			if !pushMetrics(ws, m) {
+			if !pushMetrics(ws, m, st) {
 				return
 			}
 		}
@@ -147,18 +150,75 @@ func runMetricsOnce(client *ssh.Client, script string) (hostMetrics, bool) {
 	return parseMetrics(string(out))
 }
 
+// rateState 记录上一帧的累计计数器，用来把「累计字节」换算成「每秒速率」。
+// 网络吞吐和磁盘 IO 在系统里都只有自开机以来的累计值，单看一帧没有意义。
+type rateState struct {
+	at                        time.Time
+	rx, tx, diskRead, diskWrt int64
+	valid                     bool
+}
+
+// rates 用当前帧与上一帧求差得出速率（字节/秒），并把当前帧存为下一次的基准。
+// 首帧没有基准，速率一律给 0，不要凭一帧去猜。
+func (s *rateState) rates(m hostMetrics) (rx, tx, dr, dw float64) {
+	now := time.Now()
+	if s.valid {
+		if dt := now.Sub(s.at).Seconds(); dt > 0.05 {
+			// 计数器回绕或主机重启会导致负值，这种帧直接算 0，别喷出个天文数字
+			d := func(cur, prev int64) float64 {
+				if cur < prev {
+					return 0
+				}
+				return float64(cur-prev) / dt
+			}
+			rx = d(m.NetRxBytes, s.rx)
+			tx = d(m.NetTxBytes, s.tx)
+			dr = d(m.DiskReadByte, s.diskRead)
+			dw = d(m.DiskWriteByt, s.diskWrt)
+		}
+	}
+	s.at, s.rx, s.tx, s.diskRead, s.diskWrt, s.valid =
+		now, m.NetRxBytes, m.NetTxBytes, m.DiskReadByte, m.DiskWriteByt, true
+	return
+}
+
 // pushMetrics 推一帧数据；返回 false 表示连接已不可写
-func pushMetrics(ws wsWriter, m hostMetrics) bool {
+func pushMetrics(ws wsWriter, m hostMetrics, st *rateState) bool {
+	rx, tx, dr, dw := st.rates(m)
 	_ = ws.SetWriteDeadline(time.Now().Add(metricsWriteWait))
 	err := ws.WriteJSON(gin.H{
-		"ok":            true,
-		"os":            m.OS,
-		"cpu_percent":   m.CPUPercent,
+		"ok":       true,
+		"os":       m.OS,
+		"hostname": m.Hostname,
+		"kernel":   m.Kernel,
+		"distro":   m.Distro,
+		"uptime_sec": m.UptimeS,
+
+		"cpu_percent": m.CPUPercent,
+		"cpu_cores":   m.CPUCores,
+		"load1":       m.Load1,
+		"load5":       m.Load5,
+		"load15":      m.Load15,
+
 		"mem_used_kb":   m.MemUsedKB,
 		"mem_total_kb":  m.MemTotalKB,
+		"mem_cache_kb":  m.MemCacheKB,
+		"swap_used_kb":  m.SwapUsedKB,
+		"swap_total_kb": m.SwapTotalKB,
+
 		"disk_used_kb":  m.DiskUsedKB,
 		"disk_total_kb": m.DiskTotalKB,
-		"ts":            time.Now().UnixMilli(),
+		"mounts":        m.Mounts,
+
+		// 速率单位统一为 字节/秒，前端只管挑单位显示
+		"net_rx_bps":     rx,
+		"net_tx_bps":     tx,
+		"disk_read_bps":  dr,
+		"disk_write_bps": dw,
+
+		"tcp_count": m.TCPCount,
+		"procs":     m.Procs,
+		"ts":        time.Now().UnixMilli(),
 	})
 	return err == nil
 }

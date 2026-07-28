@@ -201,3 +201,82 @@ body {
 .lynx-page-in {
   animation: lynx-fade-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* ── wjw 专属终端背景（口令 wjw-bg / wjw-bg-hide，见 TerminalWallpaper.tsx） ──
+   放在 xterm 画布下层，只做氛围。所有动画只动 transform / opacity：
+   这几条属性能被合成器单独处理，不触发布局与重绘，
+   否则终端刚换成 WebGL 渲染省下来的 CPU 又会被壁纸吃回去。 */
+.wjw-wp {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  pointer-events: none; /* 选中 / 右键 / 点击必须照常落到终端上 */
+  user-select: none;
+  will-change: opacity;
+}
+.wjw-wp-glow {
+  position: absolute;
+  inset: -12%;
+  background:
+    radial-gradient(38% 46% at 50% 48%, rgba(255, 143, 171, 0.55) 0%, rgba(255, 143, 171, 0) 70%),
+    radial-gradient(46% 40% at 14% 88%, rgba(255, 217, 142, 0.4) 0%, rgba(255, 217, 142, 0) 72%),
+    radial-gradient(42% 38% at 88% 12%, rgba(199, 125, 255, 0.35) 0%, rgba(199, 125, 255, 0) 72%);
+  animation: wjw-wp-glow 14s ease-in-out infinite alternate;
+}
+.wjw-wp-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(52%, 460px);
+  transform: translate(-50%, -50%);
+  animation: wjw-wp-beat 4.6s ease-in-out infinite;
+}
+.wjw-wp-heart {
+  position: absolute;
+  animation-name: wjw-wp-rise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+/* svg 默认是 inline，会被行高撑出一截空白并把高宽算歪；统一改块级按视野比例定高 */
+.wjw-wp svg {
+  display: block;
+  height: auto;
+}
+.wjw-wp-pet {
+  position: absolute;
+  animation-name: wjw-wp-bob;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes wjw-wp-glow {
+  from { transform: scale(1) translate(0, 0); }
+  to { transform: scale(1.08) translate(1.5%, -1.5%); }
+}
+@keyframes wjw-wp-beat {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  18% { transform: translate(-50%, -50%) scale(1.045); }
+  36% { transform: translate(-50%, -50%) scale(1.012); }
+  54% { transform: translate(-50%, -50%) scale(1.032); }
+}
+@keyframes wjw-wp-rise {
+  0% { transform: translateY(22vh) rotate(-12deg); opacity: 0; }
+  16% { opacity: 1; }
+  84% { opacity: 1; }
+  100% { transform: translateY(-42vh) rotate(14deg); opacity: 0; }
+}
+@keyframes wjw-wp-bob {
+  from { transform: translateY(4px) rotate(-4deg); }
+  to { transform: translateY(-10px) rotate(4deg); }
+}
+
+/* 尊重系统「减少动态效果」：图案还在，但一切停下来 */
+@media (prefers-reduced-motion: reduce) {
+  .wjw-wp *,
+  .wjw-wp {
+    animation: none !important;
+  }
+}

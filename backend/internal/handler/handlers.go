@@ -811,12 +811,15 @@ func ConnectLocalTerminal(c *gin.Context) {
 		c.String(http.StatusForbidden, "本地终端在当前部署下未启用（仅桌面端/本机可用）")
 		return
 	}
+	// 先取出查询参数：gin.Context 在 handler 返回后会被回收/复用，不能带进下面的 goroutine。
+	// 具体值合法性由 sshproxy 的白名单负责，这里只负责传递。
+	shell := c.Query("shell")
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("ConnectLocalTerminal: WebSocket Upgrade failed: %v", err)
 		return
 	}
-	go sshproxy.ProxyLocal(ws)
+	go sshproxy.ProxyLocal(ws, shell)
 }
 
 // wsStatus 向终端 WebSocket 推送一条 status 消息（前端会渲染到终端）
