@@ -34,6 +34,8 @@ export const LiveMetricsBar: React.FC<Props> = ({ assetId, active }) => {
   useEffect(() => {
     if (!active || assetId < 0) return;
     let closed = false;
+    // 是否收到过数据帧。没收到就断，说明是连不上/被拒，不能一直显示「连接中」
+    let gotFrame = false;
 
     const connect = () => {
       if (closed) return;
@@ -42,6 +44,7 @@ export const LiveMetricsBar: React.FC<Props> = ({ assetId, active }) => {
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data) as LiveMetrics;
+          gotFrame = true;
           if (!data.ok) { setErr(data.message || '监控不可用'); return; }
           setErr('');
           retryRef.current = 0;
@@ -51,8 +54,19 @@ export const LiveMetricsBar: React.FC<Props> = ({ assetId, active }) => {
           /* 忽略无法解析的帧 */
         }
       };
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         if (closed) return;
+        // 一帧都没收到就被关掉：连不上或被服务端拒绝。此前这里只是静默重连，
+        // err 和 m 都是空，界面就永远停在「监控连接中…」，没有任何提示。
+        if (!gotFrame) {
+          const n = retryRef.current + 1;
+          const why = ev.reason ? `：${ev.reason}` : ev.code ? `（code ${ev.code}）` : '';
+          setErr(n >= 5
+            ? `监控连接失败${why}，已停止重试。请确认该主机凭据可用、SSH 可达。`
+            : `监控连接失败${why}，第 ${n} 次重试中…`);
+        }
+        // 连不上时最多重试 5 轮，避免对不可达主机无限重连
+        if (!gotFrame && retryRef.current >= 5) return;
         // 指数退避重连：2s、4s、8s… 上限 30s
         const delay = Math.min(30000, 2000 * 2 ** retryRef.current);
         retryRef.current += 1;
@@ -78,7 +92,13 @@ export const LiveMetricsBar: React.FC<Props> = ({ assetId, active }) => {
     );
   }
   if (!m) {
-    return <span style={{ fontSize: 11, color: palette.chromeTextMute, whiteSpace: 'nowrap' }}>监控连接中…</span>;
+    // 后端每 2s 推一帧，正常情况下这个状态只闪现一下；久留必是连接有问题，
+    // 而那种情况已由上面的 err 分支给出原因。
+    return (
+      <Tooltip title="正在建立监控连接（后端每 2 秒采样一次）">
+        <span style={{ fontSize: 11, color: palette.chromeTextMute, whiteSpace: 'nowrap' }}>监控连接中…</span>
+      </Tooltip>
+    );
   }
 
   const cpu = Math.round(m.cpu_percent || 0);

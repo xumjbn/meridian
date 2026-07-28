@@ -565,6 +565,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       {/* 顶部全局状态栏（可折叠以扩大输出区域）；深色，与全局顶栏/侧栏同色 */}
       {!toolbarCollapsed && (
       <ConfigProvider
+        componentSize="small"   // 统一压小控件，这一条不该比标签栏还厚
         theme={{
           algorithm: antdTheme.darkAlgorithm,
           token: {
@@ -574,6 +575,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
             colorBorder: palette.chromeBorder,
             colorPrimary: palette.primary,
             borderRadius: 4,
+            controlHeight: 22,
+            controlHeightSM: 20,
           },
           components: { Tooltip: { colorBgSpotlight: '#1e2740', colorTextLightSolid: '#f1f5f9' } },
         }}
@@ -581,21 +584,21 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
       {/* 这里原先还挂着一份徽标 + wjw 字标 + 「远程终端多屏中心」，
           与全局顶栏的品牌区完全重复，且把整条撑得很宽。只留一个短标签。 */}
       <div style={{
-        minHeight: '34px',
+        minHeight: '26px',
         background: palette.chromeBg,
         borderBottom: `1px solid ${palette.chromeBorder}`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'flex-end',
-        gap: 10,
-        padding: '2px 10px',
+        gap: 8,
+        padding: '0 10px',
         zIndex: 50,
       }}>
-        <span style={{ fontSize: 12, color: palette.chromeTextMute, whiteSpace: 'nowrap', marginRight: 'auto' }}>
+        <span style={{ fontSize: 11, color: palette.chromeTextMute, whiteSpace: 'nowrap', marginRight: 'auto' }}>
           多屏工作台
         </span>
 
-        <Space size="small" wrap style={{ rowGap: 6, justifyContent: 'flex-end' }}>
+        <Space size={6} wrap style={{ rowGap: 4, justifyContent: 'flex-end' }}>
           {/* 分屏布局控制 */}
           <span style={{ fontSize: 12, color: palette.chromeText, display: 'inline-flex', alignItems: 'center' }}>
             布局:
@@ -1254,9 +1257,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   }, [updateCwd]);
 
   // 终端内常驻文件面板的开关（对标 FinalShell，不再弹抽屉）。
-  // 默认打开：FinalShell 就是一连上就能看见文件树；之前默认关着、又只有一个
-  // 很小的文件夹图标可开，等于做了等于没做。开关状态持久化。
-  const [filesOpen, setFilesOpen] = useState(() => localStorage.getItem('term_files_open') !== '0');
+  // 默认关闭：面板一挂上就会发起 SFTP 连接，开个终端不该顺带多连一条。
+  // 但按钮带文字标签，不再是之前那个找不着的小图标。状态持久化，
+  // 上次开着的下次仍开着。
+  const [filesOpen, setFilesOpen] = useState(() => localStorage.getItem('term_files_open') === '1');
   const toggleFiles = useCallback(() => {
     setFilesOpen((v) => {
       localStorage.setItem('term_files_open', v ? '0' : '1');
@@ -1949,12 +1953,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           type="text"
           icon={<FolderOpenOutlined />}
           onClick={toggleFiles}
-          title="文件面板（贴终端左侧常驻，自动跟随当前目录）"
+          title="文件面板（贴终端右侧常驻，自动跟随当前目录）；打开时才建立 SFTP 连接"
           style={{
-            padding: '0 4px', fontSize: 11, display: 'flex', alignItems: 'center',
+            padding: '0 6px', fontSize: 11, display: 'flex', alignItems: 'center',
             color: filesOpen ? '#38bdf8' : '#94a3b8',
           }}
-        />
+        >
+          文件
+        </Button>
       )}
       {status !== 'idle' && (
         <Button size="small" type="link" onClick={manualReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
