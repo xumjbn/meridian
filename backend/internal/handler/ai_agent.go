@@ -167,9 +167,15 @@ func getAgentSession(id string) *agentSession {
 	if s.Asset.CredentialID != nil {
 		store.GlobalDB.First(&s.Cred, *s.Asset.CredentialID)
 	}
+	// 再查一次并在锁内安装：两个请求同时未命中时都会走到这里各建一个对象，
+	// 后写入的覆盖先写入的，落败的那个仍在自己的私有副本上跑 runLoop 并回写
+	// 数据库，造成状态分叉与重复 SSH 会话。这里让先到者胜出。
 	agentMu.Lock()
+	defer agentMu.Unlock()
+	if existing := agentSessions[id]; existing != nil {
+		return existing
+	}
 	agentSessions[id] = s
-	agentMu.Unlock()
 	return s
 }
 
@@ -598,12 +604,16 @@ func StartAgent(c *gin.Context) {
 	agentSessions[s.ID] = s
 	agentMu.Unlock()
 
-	s.mu.Lock()
-	s.runLoop()
-	s.LastUsed = time.Now()
-	persistSession(s)
-	resp := agentStateResp(s)
-	s.mu.Unlock()
+	// 必须 defer 解锁：runLoop/persistSession 一旦 panic，gin 的 Recovery 会吃掉
+	// panic 并正常返回，但这把锁永远不会释放，该会话后续所有请求都会永久阻塞。
+	resp := func() any {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.runLoop()
+		s.LastUsed = time.Now()
+		persistSession(s)
+		return agentStateResp(s)
+	}()
 
 	SendSuccess(c, resp)
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 
 	"backend/internal/model"
@@ -161,6 +160,3 @@ type wsWriter interface {
 	SetWriteDeadline(t time.Time) error
 	WriteJSON(v interface{}) error
 }
-
-// 保证 windowsMetricsScript 里的 PowerShell 调用在非 Windows shell 上也能被识别为失败
-var _ = strings.TrimSpace

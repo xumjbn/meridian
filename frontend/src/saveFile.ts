@@ -20,11 +20,6 @@ type SavePicker = (opts: SavePickerOptions) => Promise<{
   createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }>;
 }>;
 
-/** 当前环境是否支持「选择保存位置」 */
-export const canPickSaveLocation = (): boolean =>
-  isTauri ||
-  (typeof window !== 'undefined' && typeof (window as { showSaveFilePicker?: SavePicker }).showSaveFilePicker === 'function');
-
 /** 桌面端（Tauri）：调系统原生保存对话框 + 写文件。WebView2 里没有 showSaveFilePicker，必须走这条。 */
 const saveViaTauri = async (blob: Blob, filename: string): Promise<boolean | null> => {
   try {

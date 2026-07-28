@@ -18,7 +18,7 @@ import { copyText, pasteText } from '../clipboard';
 import { CommandPalette } from '../components/CommandPalette';
 import { ShortcutHelp } from '../components/ShortcutHelp';
 import { TERM_TAB_SLOT_ID } from '../components/TerminalTabBar';
-import { takePendingAuth } from '../pendingAuth';
+import { takePendingAuth, clearPendingAuth } from '../pendingAuth';
 import { SftpPanel } from '../components/SftpPanel';
 import '@xterm/xterm/css/xterm.css';
 
@@ -830,6 +830,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const [authRequired, setAuthRequired] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [statusText, setStatusText] = useState('正在加载资产信息...');
+  // socket.onclose 是建联那一刻创建的闭包，直接读 statusText 只会拿到当时的旧值，
+  // 后续 setStatusText 更新不到它。用 ref 兜住最新文案。
+  const statusTextRef = useRef(statusText);
+  useEffect(() => { statusTextRef.current = statusText; }, [statusText]);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected' | 'idle'>(
     assetId > 0 ? 'connecting' : 'idle'
   );
@@ -1308,11 +1312,17 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       setStatus('idle');
       return;
     }
+    // 快速连换两台主机时，先发的请求可能后返回。若不丢弃过期响应，旧的
+    // setAsset 会把 asset 覆盖回上一台，连接 effect 随即拆掉刚建好的连接，
+    // 而 asset.id !== assetId 的守卫又挡住重建，分屏就停在「已断开」不自愈。
+    let stale = false;
     const fetchAsset = async () => {
       try {
         const data = await getAsset(assetId);
+        if (stale) return;
         setAsset(data);
       } catch (e) {
+        if (stale) return;
         message.error('加载资产信息失败');
         setStatusText('资产加载失败，请检查 ID 是否正确');
         setErrorDetail('未找到该资产数据');
@@ -1320,7 +1330,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       }
     };
     fetchAsset();
-  }, [assetId]);
+    return () => { stale = true; };
+  }, [assetId, isLocal]);
 
   // 3. 建立 WebSocket 隧道
   useEffect(() => {
@@ -1644,8 +1655,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       } else {
         setErrorDetail((prev) => {
           if (prev) return prev;
-          if (statusText && (statusText.includes('失败') || statusText.includes('错误'))) {
-            return statusText;
+          const last = statusTextRef.current;
+          if (last && (last.includes('失败') || last.includes('错误'))) {
+            return last;
           }
           return 'WebSocket 远程连接意外关闭，请检查目标机 SSH 服务或网络路由。';
         });
@@ -1693,6 +1705,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         if (onWheel) containerEl.removeEventListener('wheel', onWheel);
       }
       term.dispose();
+      // 「新建连接」填了密码但始终没收到 auth_request（例如资产已绑凭据、
+      // 或连接直接失败）时，这份明文会一直躺在内存 Map 里。会话拆除时抹掉。
+      clearPendingAuth(assetId);
     };
   }, [asset?.id, assetId, instanceId]);
 

@@ -14,11 +14,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-var DB *gorm.Model
-
-// Wait, the type of DB should be *gorm.DB, not *gorm.Model! 
-// Let's declare it as var DB *gorm.DB.
-
 var GlobalDB *gorm.DB
 
 // dbPath 返回数据库文件路径（不含 pragma 参数），供密钥文件定位等复用

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Drawer, Table, Button, Space, Upload, Input, Modal, Popconfirm, message, Tag, Tooltip } from 'antd';
 import {
   FolderFilled,
@@ -68,18 +68,23 @@ export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose, initialPath 
 
   const noCred = !asset?.credential_id;
 
+  // 同 SftpPanel：连续进目录时丢弃过期响应，避免显示的目录与实际所在目录不符
+  const reqSeq = useRef(0);
   const load = async (p: string) => {
     if (!asset?.id) return;
+    const seq = ++reqSeq.current;
     setLoading(true);
     try {
       const res = await sftpList(asset.id, p);
+      if (seq !== reqSeq.current) return;
       setEntries(res.entries || []);
       setPath(res.path);
     } catch (e: any) {
+      if (seq !== reqSeq.current) return;
       message.error(e?.message || '读取目录失败');
       setEntries([]);
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
   };
 

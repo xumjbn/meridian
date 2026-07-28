@@ -28,7 +28,7 @@ type syncNodeResult struct {
 	Name    string `json:"name"`
 	Role    string `json:"role"`
 	Matched bool   `json:"matched"` // 是否在资产表中找到对应主机
-	Action  string `json:"action"`  // assigned / updated / created / skipped
+	Action  string `json:"action"`  // assigned / updated / created / skipped / failed
 	Msg     string `json:"msg,omitempty"`
 }
 
@@ -129,7 +129,13 @@ func SyncK8sNodesFromAPI(c *gin.Context) {
 		if v := strings.TrimSpace(n.Status.NodeInfo.KubeletVersion); v != "" {
 			asset.OSVersion = "Kubernetes " + v
 		}
-		db.Save(&asset)
+		// 写失败时不能再计入 assigned/updated，否则同步结果是假的
+		if err := db.Save(&asset).Error; err != nil {
+			res.Action = "failed"
+			res.Msg = err.Error()
+			details = append(details, res)
+			continue
+		}
 
 		if res.Action == "assigned" {
 			if wasAssigned {

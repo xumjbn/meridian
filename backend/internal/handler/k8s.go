@@ -165,7 +165,12 @@ func UpdateK8sCluster(c *gin.Context) {
 	if t := strings.TrimSpace(req.APIToken); t != "" {
 		cl.APIToken = t // 留空则保持原 token 不变
 	}
-	store.GlobalDB.Save(cl)
+	// 写失败必须报出来：sqlite 在并发写下会返回 SQLITE_BUSY，
+	// 吞掉的话接口照样 200，用户以为改成功了其实没落库。
+	if err := store.GlobalDB.Save(cl).Error; err != nil {
+		SendError(c, 500, "保存集群失败: "+err.Error())
+		return
+	}
 	enrichCluster(cl)
 	SendSuccess(c, cl)
 }
@@ -223,6 +228,7 @@ func AssignK8sNodes(c *gin.Context) {
 	}
 	db := store.GlobalDB
 	assigned := 0
+	var failed []string
 	for _, aid := range req.AssetIDs {
 		var asset model.Asset
 		if db.First(&asset, aid).Error != nil {
@@ -238,7 +244,11 @@ func AssignK8sNodes(c *gin.Context) {
 			asset.K8sRole = "worker"
 		}
 		asset.Tags = mergeTagJSON(asset.Tags, "k8s")
-		db.Save(&asset)
+		// 之前这里不看返回值，写失败也照样 assigned++，前端显示归类成功但库里没变
+		if err := db.Save(&asset).Error; err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", asset.IP, err))
+			continue
+		}
 		assigned++
 	}
 	db.Create(&model.AuditLog{
@@ -246,7 +256,7 @@ func AssignK8sNodes(c *gin.Context) {
 		Path:   fmt.Sprintf("集群#%d 归类 %d 个节点", cl.ID, assigned),
 		Status: 200, IP: c.ClientIP(),
 	})
-	SendSuccess(c, gin.H{"assigned": assigned})
+	SendSuccess(c, gin.H{"assigned": assigned, "failed": failed})
 }
 
 // UnassignK8sNode 把节点移出集群

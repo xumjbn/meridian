@@ -66,20 +66,26 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
   const [mkdirOn, setMkdirOn] = useState(false);
   const [mkdirVal, setMkdirVal] = useState('');
 
+  // 连续快速进目录时响应可能乱序返回，只认最后一次请求的结果，
+  // 否则界面会退回上一层，而后续上传/新建目录又都作用在错误路径上。
+  const reqSeq = useRef(0);
   const load = useCallback(async (p: string) => {
     if (!assetId || !hasCred) return;
+    const seq = ++reqSeq.current;
     setLoading(true);
     setErr('');
     try {
       const res = await sftpList(assetId, p);
+      if (seq !== reqSeq.current) return;
       setEntries(res.entries || []);
       setPath(res.path);
       setEditPath(res.path);
     } catch (e: any) {
+      if (seq !== reqSeq.current) return;
       setErr(e?.message || '读取目录失败');
       setEntries([]);
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
   }, [assetId, hasCred]);
 

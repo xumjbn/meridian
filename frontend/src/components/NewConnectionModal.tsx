@@ -44,7 +44,14 @@ export const NewConnectionModal: React.FC<Props> = ({ open, onClose, onConnect }
   };
 
   const submit = async () => {
-    const v = await form.validateFields();
+    // validateFields 校验不通过时抛的是 { errorFields }，放在 try 外会变成
+    // 未捕获的 promise 异常；表单本身已经在字段下方标红，这里静默返回即可。
+    let v: FormVals;
+    try {
+      v = await form.validateFields();
+    } catch {
+      return;
+    }
     setSubmitting(true);
     try {
       const ip = v.ip.trim();
