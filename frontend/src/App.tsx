@@ -48,7 +48,7 @@ const PageFallback: React.FC = () => (
 
 // 桌面端启动屏：等本机服务起来并拿到 token。首次安装要建库+迁移，可能十几秒，
 // 所以超过 6s 补一句说明，免得看着像卡死。
-const BootScreen: React.FC = () => {
+const BootScreen: React.FC<{ onSkip: () => void }> = ({ onSkip }) => {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setSlow(true), 6000);
@@ -62,9 +62,18 @@ const BootScreen: React.FC = () => {
       <Spin size="large" />
       <div style={{ color: palette.chromeTextStrong, fontSize: 14 }}>正在启动本机服务…</div>
       {slow && (
-        <div style={{ color: palette.chromeTextMute, fontSize: 12, maxWidth: 320, textAlign: 'center', lineHeight: 1.7 }}>
-          首次安装需要初始化数据库，请稍候
-        </div>
+        <>
+          <div style={{ color: palette.chromeTextMute, fontSize: 12, maxWidth: 340, textAlign: 'center', lineHeight: 1.7 }}>
+            首次安装需要初始化数据库，请稍候。<br />
+            若长时间停在这里，可能是本机服务端口被占用。
+          </div>
+          <a
+            onClick={onSkip}
+            style={{ fontSize: 12, color: palette.primary, cursor: 'pointer' }}
+          >
+            跳过，直接进入登录页
+          </a>
+        </>
       )}
     </div>
   );
@@ -417,11 +426,19 @@ export const App: React.FC = () => {
   // 桌面端首次安装：sidecar 冷启动 + 建库 + 迁移期间还没有 token，此时若直接渲染
   // 主界面，各页面会抢在登录完成前发请求并弹 401 报错。先卡在启动屏，拿到 token 再进。
   const [tokenReady, setTokenReady] = useState(!!localStorage.getItem('lynx-token'));
+  const [bootTimedOut, setBootTimedOut] = useState(false);
   useEffect(() => {
     if (tokenReady) return;
     const onReady = () => setTokenReady(true);
     window.addEventListener('lynx-auth-ready', onReady);
-    return () => window.removeEventListener('lynx-auth-ready', onReady);
+    // 兜底：静默登录内部会重试 40 轮（最长约 6 分钟）才落到登录页。若把渲染
+    // 一直卡在启动屏，sidecar 起不来时用户看到的就是永远转圈。25s 拿不到
+    // token 就放行渲染——页面自己会报错，至少界面是活的、能退出登录换账号。
+    const t = setTimeout(() => setBootTimedOut(true), 25000);
+    return () => {
+      window.removeEventListener('lynx-auth-ready', onReady);
+      clearTimeout(t);
+    };
   }, [tokenReady]);
 
   useEffect(() => {
@@ -501,10 +518,10 @@ export const App: React.FC = () => {
   }
 
   // 桌面端启动屏：token 未就绪前不渲染主界面，避免首屏一片「获取数据失败」
-  if (desktopAuto && !tokenReady) {
+  if (desktopAuto && !tokenReady && !bootTimedOut) {
     return (
       <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
-        <BootScreen />
+        <BootScreen onSkip={() => setBootTimedOut(true)} />
       </ConfigProvider>
     );
   }
