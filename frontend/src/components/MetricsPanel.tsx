@@ -159,6 +159,7 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
   });
   const retryRef = useRef(0);
   const timerRef = useRef<number | undefined>(undefined);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     if (assetId < 0) return;
@@ -168,11 +169,20 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
     const connect = () => {
       if (closed) return;
       const ws = new WebSocket(getMetricsWsUrl(assetId));
+      wsRef.current = ws;
       ws.onmessage = (ev) => {
         try {
           const d = JSON.parse(ev.data) as LiveMetrics;
+          if (!d.ok) {
+            // 后端明确说了「采不了」（没绑凭据 / telnet / 系统不支持），
+            // 这是终局不是抖动：不能算作「已收到有效帧」，否则下面的重试上限
+            // 永远不生效，会变成每 30 秒无限重连。
+            setErr(d.message || '监控不可用');
+            closed = true;
+            try { ws.close(); } catch { /* 已经在关了 */ }
+            return;
+          }
           gotFrame = true;
-          if (!d.ok) { setErr(d.message || '监控不可用'); return; }
           setErr('');
           retryRef.current = 0;
           setM(d);
@@ -206,6 +216,17 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
     return () => {
       closed = true;
       if (timerRef.current) window.clearTimeout(timerRef.current);
+      // 必须真的把连接关掉。以前这里只置了标志位，ws 是 connect() 里的局部变量，
+      // 拿不到也没关——面板关了、终端标签关了，后端仍会在目标机上每 2 秒跑一次
+      // 采集脚本，直到 30 分钟的兜底超时。开关几次就是几条僵尸 SSH 在同时采样。
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        ws.onclose = null;   // 先摘掉重连回调，否则这次主动关闭又会触发一轮重连
+        ws.onerror = null;
+        ws.onmessage = null;
+        try { ws.close(); } catch { /* 已经关了 */ }
+      }
     };
   }, [assetId]);
 

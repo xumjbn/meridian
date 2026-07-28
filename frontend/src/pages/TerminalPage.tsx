@@ -1464,7 +1464,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   useEffect(() => { festivalApiRef.current = handleFestivalInput; }, [handleFestivalInput]);
 
   // 供 onData 在口令消费掉这一行后，通知补全侧清掉它自己的行缓冲
-  const resetCompletionRef = useRef<((clearGhost?: boolean) => void) | null>(null);
+  // 参数名跟着 resetCompletion 的真实语义走，叫 clearGhost 会让人以为不用传
+  const resetCompletionRef = useRef<((clearBuffer?: boolean) => void) | null>(null);
   useEffect(() => { resetCompletionRef.current = resetCompletion; }, [resetCompletion]);
 
   // 将最新开关与处理函数暴露给 onData，避免连接闭包内引用过期
@@ -1864,7 +1865,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         // 它的行缓冲不会被重置——敲几次口令之后缓冲里就攒着
         // 「wjw-bgwjw-bg1wjw-bg2…」，此后的幽灵补全和历史全是脏的。
         // 这里显式通知补全侧「这一行已经结束了」。
-        resetCompletionRef.current?.();
+        // 必须传 true：这个函数的 clearBuffer 默认是 false，不传只收幽灵和候选列表，
+        // 行缓冲原样留着——上一轮就是漏了这个参数，等于没修。
+        resetCompletionRef.current?.(true);
         return;
       }
       if (completionApiRef.current.enabled && completionApiRef.current.handle(data)) {

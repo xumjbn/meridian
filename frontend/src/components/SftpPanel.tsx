@@ -258,7 +258,9 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
 
   return (
     <div style={outer}>
-      {/* 把手放在贴着终端的那一边：贴右在左缘、贴下在上缘、贴左在右缘 */}
+      {/* 把手放在贴着终端的那一边：贴右在左缘、贴下在上缘、贴左在右缘。
+          贴左那一份在内容之后渲染（见本组件末尾），别忘了它——漏掉的话
+          停到左侧后宽度就锁死了，只能切回右侧才能调。 */}
       {dock !== 'left' && dragHandle}
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', ...innerBorder }}>
         {/* 标题行 */}
@@ -371,6 +373,8 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
           />
         )}
       </div>
+      {/* 贴左时把手在右缘（靠终端那一侧），所以排在内容之后 */}
+      {dock === 'left' && dragHandle}
     </div>
   );
 };

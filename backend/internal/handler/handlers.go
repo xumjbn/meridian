@@ -1276,27 +1276,34 @@ func autoCollectSysInfo(asset *model.Asset, client *ssh.Client) {
 
 	virtProbe := "( systemd-detect-virt 2>/dev/null || ( grep -qa hypervisor /proc/cpuinfo 2>/dev/null && cat /sys/class/dmi/id/product_name 2>/dev/null ) || echo none ) | head -n1"
 	out, err := session.CombinedOutput("uname -m; uname -sr; " + virtProbe)
-	if err != nil && len(out) == 0 {
+	// 命令失败一律放弃。目标机可能是 Windows OpenSSH 或交换机的 SSH CLI，
+	// 那里没有 uname——报错文本照样有输出，如果只判 len(out)==0 就会把
+	// 「'uname' 不是内部或外部命令」这种话当成架构写进资产，而且用户没点过任何按钮。
+	if err != nil {
 		return
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 {
+		return
+	}
 	arch, kernel, virtRaw := "", "", ""
-	if len(lines) > 0 {
-		arch = strings.TrimSpace(lines[0])
-	}
-	if len(lines) > 1 {
-		kernel = strings.TrimSpace(lines[1])
-	}
+	arch = strings.TrimSpace(lines[0])
+	kernel = strings.TrimSpace(lines[1])
 	if len(lines) > 2 {
 		virtRaw = strings.TrimSpace(lines[len(lines)-1])
+	}
+	// 再加一道形状校验：uname -m 出来的是 x86_64/aarch64/armv7l 这类短标识，
+	// 不会有空格、也不会很长。不像的一律不写库。
+	if arch == "" || len(arch) > 24 || strings.ContainsAny(arch, " \t'\"") {
+		return
 	}
 	virt := normalizeVirt(virtRaw)
 
 	updates := map[string]interface{}{}
-	if arch != "" && arch != asset.Arch {
+	if arch != asset.Arch {
 		updates["arch"] = arch
 	}
-	if kernel != "" && kernel != asset.OSVersion {
+	if kernel != "" && len(kernel) <= 120 && kernel != asset.OSVersion {
 		updates["os_version"] = kernel
 	}
 	if virt != "" && virt != asset.Virtualization {
