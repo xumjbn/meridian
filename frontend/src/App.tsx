@@ -48,6 +48,12 @@ const PageFallback: React.FC = () => (
 const EXPANDED = 236;
 const COLLAPSED = 64;
 
+// 终端模式：只留标签栏 + 终端，顶栏隐藏、侧栏改为左边缘悬浮唤出。
+// 偏好持久化，下次启动直接进入（仅在确有活动会话时才真正生效，
+// 否则会出现「没有顶栏也没有标签栏」的死界面）。
+const TERM_MODE_KEY = 'lynx-term-mode';
+const PEEK_ZONE_W = 8;   // 左边缘触发条宽度
+
 // 完整导航项（含仅管理员可见的「用户管理」），用于路由高亮与标题解析
 const navItems = [
   { key: '/', icon: <DashboardOutlined style={{ fontSize: 15 }} />, label: '控制台' },
@@ -121,6 +127,33 @@ const AppLayout: React.FC = () => {
   const currentLabel = navItems.find((i) => i.key === selectedKey)?.label ?? '工作台';
   const siderWidth = collapsed ? COLLAPSED : EXPANDED;
 
+  // ── 终端模式 ─────────────────────────────────────────────────
+  const [termModePref, setTermModePref] = useState(() => localStorage.getItem(TERM_MODE_KEY) === '1');
+  const [siderPeek, setSiderPeek] = useState(false);
+  // 没有活动会话时不生效：那种情况下隐藏顶栏会让人无路可走
+  const termMode = termModePref && activeId !== null;
+  const toggleTermMode = () => {
+    setTermModePref((v) => {
+      const next = !v;
+      localStorage.setItem(TERM_MODE_KEY, next ? '1' : '0');
+      if (!next) setSiderPeek(false);
+      return next;
+    });
+  };
+
+  // Ctrl/⌘ + Shift + Enter 切换。用捕获阶段监听，抢在 xterm 把按键吃掉之前处理。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTermMode();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+
   // 跳转页面并退出终端视图（否则常驻终端会挡住页面）
   const go = (path: string) => { navigate(path); setActive(null); };
 
@@ -133,15 +166,17 @@ const AppLayout: React.FC = () => {
       }}
     >
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: palette.bg, overflow: 'hidden' }}>
-        {/* 全局顶栏 */}
-        <AppHeader
-          items={headerItems}
-          activeKey={selectedKey}
-          onNavigate={go}
-          onHelp={() => setHelpOpen(true)}
-          siderWidth={siderWidth}
-          siderCollapsed={collapsed}
-        />
+        {/* 全局顶栏（终端模式下隐藏） */}
+        {!termMode && (
+          <AppHeader
+            items={headerItems}
+            activeKey={selectedKey}
+            onNavigate={go}
+            onHelp={() => setHelpOpen(true)}
+            siderWidth={siderWidth}
+            siderCollapsed={collapsed}
+          />
+        )}
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
           {/* 左侧栏（深色，与顶栏同色）：快速连接主机树 + 管理导航 */}
@@ -179,6 +214,22 @@ const AppLayout: React.FC = () => {
               },
             }}
           >
+          {/* 终端模式：侧栏脱离文档流，缩到屏幕左外侧；鼠标碰左边缘再滑出。
+              非终端模式下这层是透明的 flex 子项，布局与之前完全一致。 */}
+          <div
+            onMouseEnter={() => termMode && setSiderPeek(true)}
+            onMouseLeave={() => termMode && setSiderPeek(false)}
+            style={
+              termMode
+                ? {
+                    position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100, display: 'flex',
+                    transform: siderPeek ? 'translateX(0)' : `translateX(calc(-100% + ${PEEK_ZONE_W}px))`,
+                    transition: 'transform 0.18s cubic-bezier(0.4,0,0.2,1)',
+                    boxShadow: siderPeek ? '4px 0 18px rgba(0,0,0,0.45)' : 'none',
+                  }
+                : { display: 'flex', flexShrink: 0 }
+            }
+          >
           <div
             className="lynx-sider"
             style={{
@@ -213,9 +264,11 @@ const AppLayout: React.FC = () => {
               </div>
             )}
           </div>
+          </div>
           </ConfigProvider>
 
-          {/* 侧栏右缘的展开/收起把手 */}
+          {/* 侧栏右缘的展开/收起把手（终端模式下侧栏是悬浮的，把手无意义） */}
+          {!termMode && (
           <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
             <div
               onClick={() => setCollapsed((c) => !c)}
@@ -243,6 +296,7 @@ const AppLayout: React.FC = () => {
               {collapsed ? <RightOutlined style={{ fontSize: 10 }} /> : <LeftOutlined style={{ fontSize: 10 }} />}
             </div>
           </Tooltip>
+          )}
 
           {/* 右侧主区 */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -258,6 +312,8 @@ const AppLayout: React.FC = () => {
                 activityIds={activityIds}
                 onRename={renameSession}
                 onRecolor={recolorSession}
+                termMode={termMode}
+                onToggleTermMode={toggleTermMode}
               />
             )}
 

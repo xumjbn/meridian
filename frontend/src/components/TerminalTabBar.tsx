@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Dropdown, Input } from 'antd';
+import { Dropdown, Input, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
 import type { TermSession } from '../terminalSessions';
 
@@ -19,6 +19,9 @@ interface Props {
   /** 重命名 / 设置标签颜色 */
   onRename?: (id: number, name: string) => void;
   onRecolor?: (id: number, color: string) => void;
+  /** 终端模式：只留本标签栏与终端，顶栏隐藏、侧栏改悬浮 */
+  termMode?: boolean;
+  onToggleTermMode?: () => void;
 }
 
 const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899'];
@@ -40,6 +43,8 @@ export const TerminalTabBar: React.FC<Props> = ({
   activityIds = [],
   onRename,
   onRecolor,
+  termMode = false,
+  onToggleTermMode,
 }) => {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
@@ -277,6 +282,23 @@ export const TerminalTabBar: React.FC<Props> = ({
       {/* 单分屏时，活动会话的状态/操作从窗格头部搬到这里（见 TERM_TAB_SLOT_ID），
           省掉一整条 32px 横条，也不再把会话名写第二遍。 */}
       <div id={TERM_TAB_SLOT_ID} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', flexShrink: 0 }} />
+
+      {/* 终端模式开关（Ctrl/⌘+Shift+Enter 同效） */}
+      {onToggleTermMode && (
+        <Tooltip title={termMode ? '退出终端模式 (Ctrl/⌘+Shift+Enter)' : '终端模式：只留标签栏与终端 (Ctrl/⌘+Shift+Enter)'} placement="bottomRight">
+          <div
+            onClick={onToggleTermMode}
+            style={{
+              flexShrink: 0, marginLeft: 6, width: 26, height: 24, borderRadius: 4, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: termMode ? palette.siderTextActive : palette.chromeTextMute,
+              background: termMode ? palette.siderActive : 'transparent',
+            }}
+          >
+            {termMode ? <CompressOutlined style={{ fontSize: 13 }} /> : <ExpandOutlined style={{ fontSize: 13 }} />}
+          </div>
+        </Tooltip>
+      )}
     </div>
   );
 };
