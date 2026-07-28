@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Tooltip } from 'antd';
+import { Popover, Tooltip } from 'antd';
 import { getMetricsWsUrl, type LiveMetrics } from '../services/api';
 import { palette } from '../theme';
 
@@ -26,13 +26,17 @@ const barColor = (p: number) => (p >= 90 ? palette.danger : p >= 70 ? palette.wa
 export const LiveMetricsBar: React.FC<Props> = ({ assetId, active }) => {
   const [m, setM] = useState<LiveMetrics | null>(null);
   const [err, setErr] = useState('');
+  // 面板是否展开；只有展开时才连 WebSocket，收起即断
+  const [open, setOpen] = useState(false);
   const [hist, setHist] = useState<number[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
   const timerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    if (!active || assetId < 0) return;
+    // 只有展开面板时才建监控连接：后端每 2 秒要在目标机上跑一次采样脚本，
+    // 常驻着白白吃两边的 CPU。收起即断开。
+    if (!open || !active || assetId < 0) return;
     let closed = false;
     // 是否收到过数据帧。没收到就断，说明是连不上/被拒，不能一直显示「连接中」
     let gotFrame = false;
@@ -81,9 +85,30 @@ export const LiveMetricsBar: React.FC<Props> = ({ assetId, active }) => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
       wsRef.current?.close();
     };
-  }, [assetId, active]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId, active, open]);
 
   if (!active || assetId < 0) return null;
+
+  // 收起态：只是一个入口，不连 WebSocket
+  if (!open) {
+    return (
+      <Popover
+        content={<div style={{ width: 240, fontSize: 12, color: palette.chromeTextMute }}>正在建立监控连接…</div>}
+        trigger="click"
+        placement="bottomRight"
+        open={false}
+      >
+        <span
+          onClick={() => setOpen(true)}
+          title="查看实时资源（打开才开始采样）"
+          style={{ fontSize: 11, color: palette.chromeTextMute, cursor: 'pointer', whiteSpace: 'nowrap', padding: '0 4px' }}
+        >
+          资源
+        </span>
+      </Popover>
+    );
+  }
   if (err) {
     return (
       <Tooltip title={err}>
@@ -105,39 +130,75 @@ export const LiveMetricsBar: React.FC<Props> = ({ assetId, active }) => {
   const mem = pct(m.mem_used_kb, m.mem_total_kb);
   const disk = pct(m.disk_used_kb, m.disk_total_kb);
 
-  const item = (label: string, p: number, tip: string) => (
-    <Tooltip title={tip}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ fontSize: 10, color: palette.chromeTextMute }}>{label}</span>
-        <span style={{ width: 42, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
-          <span style={{ display: 'block', width: `${Math.min(100, p)}%`, height: '100%', background: barColor(p) }} />
-        </span>
-        <span style={{ fontSize: 11, color: palette.chromeText, fontVariantNumeric: 'tabular-nums', width: 30 }}>{p}%</span>
+  // 面板里的一行：标签 + 进度条 + 百分比 + 右侧明细
+  const row = (label: string, p: number, detail: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <span style={{ fontSize: 12, color: palette.chromeTextMute, width: 30 }}>{label}</span>
+      <span style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+        <span style={{ display: 'block', width: `${Math.min(100, p)}%`, height: '100%', background: barColor(p), transition: 'width .3s' }} />
       </span>
-    </Tooltip>
+      <span style={{ fontSize: 13, color: palette.chromeTextStrong, fontVariantNumeric: 'tabular-nums', width: 40, textAlign: 'right' }}>
+        {p}%
+      </span>
+      <span style={{ fontSize: 11, color: palette.chromeTextMute, width: 92, textAlign: 'right' }}>{detail}</span>
+    </div>
   );
 
-  // CPU 迷你走势：把最近的采样画成一条折线，看得出毛刺
-  const spark = () => {
+  // CPU 走势折线；带填充，趋势比裸线更容易读
+  const spark = (w: number, h: number) => {
     if (hist.length < 2) return null;
-    const w = 60, h = 14;
     const step = w / (HISTORY - 1);
-    const d = hist
-      .map((v, i) => `${i === 0 ? 'M' : 'L'}${(i + (HISTORY - hist.length)) * step},${h - (v / 100) * h}`)
-      .join(' ');
+    const pt = (v: number, i: number) => `${(i + (HISTORY - hist.length)) * step},${h - (v / 100) * h}`;
+    const line = hist.map((v, i) => `${i === 0 ? 'M' : 'L'}${pt(v, i)}`).join(' ');
+    const area = `${line} L${w},${h} L${(HISTORY - hist.length) * step},${h} Z`;
     return (
       <svg width={w} height={h} style={{ display: 'block' }}>
-        <path d={d} fill="none" stroke={barColor(cpu)} strokeWidth="1.2" strokeLinejoin="round" />
+        <path d={area} fill={barColor(cpu)} opacity="0.15" />
+        <path d={line} fill="none" stroke={barColor(cpu)} strokeWidth="1.4" strokeLinejoin="round" />
       </svg>
     );
   };
 
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      {item('CPU', cpu, `${m.os || ''} CPU ${cpu}%`)}
-      {spark()}
-      {item('内存', mem, `${fmtGB(m.mem_used_kb)} / ${fmtGB(m.mem_total_kb)} GB`)}
-      {!!m.disk_total_kb && item('磁盘', disk, `${fmtGB(m.disk_used_kb)} / ${fmtGB(m.disk_total_kb)} GB`)}
+  // 展开面板：对标 FinalShell/xterminal——标签栏只放最精炼的数字，
+  // 详细的进度条、走势与容量明细收进悬浮面板，不再挤在 34px 的横条里。
+  const panel = (
+    <div style={{ width: 300, padding: '4px 2px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: palette.chromeTextMute }}>{m.os || '实时资源'}</span>
+        <span style={{ fontSize: 11, color: palette.chromeTextMute }}>每 2 秒采样</span>
+      </div>
+      <div style={{ marginBottom: 10 }}>{spark(300, 46)}</div>
+      {row('CPU', cpu, '')}
+      {row('内存', mem, `${fmtGB(m.mem_used_kb)}/${fmtGB(m.mem_total_kb)} GB`)}
+      {!!m.disk_total_kb && row('磁盘', disk, `${fmtGB(m.disk_used_kb)}/${fmtGB(m.disk_total_kb)} GB`)}
+    </div>
+  );
+
+  // 收起态：只有两个带色号的数字，占位极小
+  const num = (label: string, p: number) => (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3 }}>
+      <span style={{ fontSize: 10, color: palette.chromeTextMute }}>{label}</span>
+      <span style={{ fontSize: 12, color: barColor(p), fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{p}%</span>
     </span>
+  );
+
+  return (
+    <Popover
+      content={panel}
+      trigger="click"
+      placement="bottomRight"
+      open={open}
+      onOpenChange={setOpen}          // 关闭面板即断开监控连接
+      overlayInnerStyle={{ background: '#111827' }}
+    >
+      <span
+        title="点击收起（收起后停止采样）"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '0 2px' }}
+      >
+        {num('CPU', cpu)}
+        {spark(36, 12)}
+        {num('内存', mem)}
+      </span>
+    </Popover>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Dropdown, Input, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined, ExpandOutlined, CompressOutlined, PlusOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined, ExpandOutlined, CompressOutlined, PlusOutlined, CopyOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
 import type { TermSession } from '../terminalSessions';
 
@@ -24,6 +24,8 @@ interface Props {
   onToggleTermMode?: () => void;
   /** 「+」新建连接：弹 SSH 登录框 */
   onNewConnection?: () => void;
+  /** 复制终端：对同一主机再开一个会话 */
+  onDuplicate?: (id: number) => void;
 }
 
 const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899'];
@@ -48,6 +50,7 @@ export const TerminalTabBar: React.FC<Props> = ({
   termMode = false,
   onToggleTermMode,
   onNewConnection,
+  onDuplicate,
 }) => {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
@@ -138,6 +141,8 @@ export const TerminalTabBar: React.FC<Props> = ({
 
   const tabMenu = (s: TermSession): MenuProps['items'] => [
     { key: 'rename', icon: <EditOutlined />, label: '重命名', onClick: () => startEdit(s) },
+    // 打开资产是「聚焦已有终端」，要开第二个同主机终端走这里
+    { key: 'dup', icon: <CopyOutlined />, label: '复制终端（同一主机再开一个）', onClick: () => onDuplicate?.(s.id) },
     { key: 'moveLeft', icon: <LeftOutlined />, label: '← 左移一位', disabled: sessions.findIndex((x) => x.id === s.id) <= 0, onClick: () => moveTab(s, -1) },
     { key: 'moveRight', icon: <RightOutlined />, label: '右移一位 →', disabled: sessions.findIndex((x) => x.id === s.id) >= sessions.length - 1, onClick: () => moveTab(s, 1) },
     {

@@ -38,8 +38,10 @@ export interface GlobalWSHandler {
 interface TerminalCtx {
   sessions: TermSession[];
   activeId: number | null;
-  /** 新开一个终端会话；同一台主机可以开多个（会话 ID 由内部生成） */
+  /** 打开资产终端：已有该主机的会话则聚焦，否则新建 */
   open: (s: NewSession) => void;
+  /** 复制一个终端：对同一主机再开一个独立会话 */
+  duplicate: (id: number) => void;
   /** 关闭一个会话 */
   close: (id: number) => void;
   /** 切换当前激活的会话；传 null 表示回到普通页面 */
@@ -93,14 +95,36 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (id != null) clearActivity(id);
   }, []);
 
-  // 每次调用都新开一个会话；同一台主机可以开任意多个终端。
-  // 标签的重命名/配色仍按资产维度记忆（同主机的多个标签共用同一份）。
+  // 打开资产终端：已有该主机的会话就聚焦过去，没有才新建。
+  // 本意是「打开这台资产」，不该每点一次就多出一个标签；要开第二个同主机
+  // 终端走标签右键的「复制终端」（duplicate）。
   const open = useCallback((s: NewSession) => {
-    const sid = nextSessionId();
-    const meta = loadTabMeta()[s.assetId];
-    setSessions((prev) => [...prev, { ...s, id: sid, customName: meta?.name, color: meta?.color }]);
-    setActiveRaw(sid);
-    clearActivity(sid);
+    setSessions((prev) => {
+      const existing = prev.find((x) => x.assetId === s.assetId);
+      if (existing) {
+        setActiveRaw(existing.id);
+        clearActivity(existing.id);
+        return prev;
+      }
+      const sid = nextSessionId();
+      const meta = loadTabMeta()[s.assetId];
+      setActiveRaw(sid);
+      clearActivity(sid);
+      return [...prev, { ...s, id: sid, customName: meta?.name, color: meta?.color }];
+    });
+  }, []);
+
+  // 复制终端：对同一台主机再开一个独立会话（标签右键触发）
+  const duplicate = useCallback((id: number) => {
+    setSessions((prev) => {
+      const src = prev.find((x) => x.id === id);
+      if (!src) return prev;
+      const sid = nextSessionId();
+      setActiveRaw(sid);
+      const idx = prev.findIndex((x) => x.id === id);
+      const copy = { ...src, id: sid };
+      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)];
+    });
   }, []);
 
   // 持久化按资产维度存（会话 ID 每次都变，存了也对不上）
@@ -196,6 +220,7 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       sessions,
       activeId,
       open,
+      duplicate,
       close,
       setActive,
       reorder,

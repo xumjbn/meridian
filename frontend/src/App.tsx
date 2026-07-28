@@ -127,7 +127,7 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const { sessions, activeId, open: openSession, close, setActive, reorder, activityIds, renameSession, recolorSession } = useTerminals();
+  const { sessions, activeId, open: openSession, duplicate: duplicateSession, close, setActive, reorder, activityIds, renameSession, recolorSession } = useTerminals();
 
   // 侧栏主机右键菜单触发的全局动作：打开 SFTP / 跳转页面
   const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
@@ -363,6 +363,7 @@ const AppLayout: React.FC = () => {
                 termMode={termMode}
                 onToggleTermMode={toggleTermMode}
                 onNewConnection={() => setNewConnOpen(true)}
+                onDuplicate={duplicateSession}
               />
             )}
 
