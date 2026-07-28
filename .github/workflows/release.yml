@@ -1,0 +1,116 @@
+name: Release
+
+# 打 v* 标签即触发；也可在 Actions 页面手动运行。
+# Tauri 无法跨平台交叉编译，三个平台各用自己的 runner 构建后汇总到同一个 Release。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的标签名（如 v0.92.0）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            sidecar: lynx-backend-aarch64-apple-darwin
+            goos: darwin
+            goarch: arm64
+          - os: macos-13            # Intel Mac
+            target: x86_64-apple-darwin
+            sidecar: lynx-backend-x86_64-apple-darwin
+            goos: darwin
+            goarch: amd64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            sidecar: lynx-backend-x86_64-unknown-linux-gnu
+            goos: linux
+            goarch: amd64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            sidecar: lynx-backend-x86_64-pc-windows-msvc.exe
+            goos: windows
+            goarch: amd64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux 上 Tauri 需要 WebKitGTK 等系统依赖
+      - name: Install Linux deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf build-essential curl wget file libssl-dev
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri -> target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Go 后端按平台编译成 sidecar，文件名必须带 Tauri 的 target triple 后缀
+      - name: Build Go sidecar
+        shell: bash
+        working-directory: backend
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p ../frontend/src-tauri/binaries
+          go build -trimpath -ldflags "-s -w" \
+            -o "../frontend/src-tauri/binaries/${{ matrix.sidecar }}" ./cmd/server
+          chmod +x "../frontend/src-tauri/binaries/${{ matrix.sidecar }}" || true
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc -b
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: frontend
+          args: --target ${{ matrix.target }}
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: wjw ${{ github.event.inputs.tag || github.ref_name }}
+          releaseBody: |
+            桌面端安装包。按平台选择：
+
+            - **Windows**：`.exe`（NSIS 安装包）
+            - **macOS Apple Silicon**：`aarch64.dmg`
+            - **macOS Intel**：`x64.dmg`
+            - **Linux**：`.AppImage` 或 `.deb`
+
+            后端以 sidecar 形式随包分发，首次启动会初始化本地数据库。
+          releaseDraft: true
+          prerelease: false
