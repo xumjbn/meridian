@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Tooltip, Popover, Modal, ConfigProvider, theme as antdTheme } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined } from '@ant-design/icons';
 import { LogoMark, LogoWordmark } from '../components/Logo';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { saveBlob } from '../saveFile';
@@ -17,6 +18,7 @@ import { loadSnippets, matchSnippets, recordSnippetUsage, recordHistory, matchHi
 import { copyText, pasteText } from '../clipboard';
 import { CommandPalette } from '../components/CommandPalette';
 import { ShortcutHelp } from '../components/ShortcutHelp';
+import { TERM_TAB_SLOT_ID } from '../components/TerminalTabBar';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -492,6 +494,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, embedded = 
                     onToggleMaximize={totalPanes > 1 ? () => setMaximizedPaneId((cur) => (cur === pane.id ? null : pane.id)) : undefined}
                     onSplit={() => addPane()}
                     onCloseTab={handleClose}
+                    // 单分屏且本会话就是当前标签时，窗格头部整条并入标签栏
+                    hoistBar={embedded && totalPanes === 1 && activeId === assetId}
                   />
                 </div>
               </React.Fragment>
@@ -808,6 +812,7 @@ interface TerminalItemProps {
   onToggleMaximize?: () => void;       // 切换最大化（多分屏时才有）
   onSplit?: () => void;                // 新建分屏（Ctrl/⌘+Shift+D）
   onCloseTab?: () => void;             // 关闭整个标签（仅一个分屏时的 Ctrl/⌘+Shift+W）
+  hoistBar?: boolean;                  // 窗格头部上提到标签栏（单分屏），本地不再占 32px
 }
 
 // 判断一段输入是否为可见字符（含粘贴文本）；控制字符 / 转义序列返回 false
@@ -820,7 +825,7 @@ const isPrintableInput = (s: string): boolean => {
   return true;
 };
 
-const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont, onActivity, isMaximized, onToggleMaximize, onSplit, onCloseTab }) => {
+const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, fontFamily, termTheme, termEncoding, assets, completionEnabled, canClose, onClose, onAssetChange, onZoomFont, onResetFont, onActivity, isMaximized, onToggleMaximize, onSplit, onCloseTab, hoistBar = false }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -1821,6 +1826,88 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     termRef.current?.focus();
   };
 
+  // ── 单分屏：窗格头部上提到标签栏 ───────────────────────────────
+  // 标签栏先于终端挂载，插槽通常一次就能取到；取不到时下一帧再试一次即可。
+  const [tabSlot, setTabSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!hoistBar) { setTabSlot(null); return; }
+    const pick = () => setTabSlot(document.getElementById(TERM_TAB_SLOT_ID));
+    pick();
+    const raf = requestAnimationFrame(pick);
+    return () => cancelAnimationFrame(raf);
+  }, [hoistBar]);
+
+  // 连接状态指示（圆点 + 延迟），两种形态共用
+  const statusChip = (
+    <>
+      {status === 'connecting' && <SyncOutlined spin style={{ color: '#6366f1', fontSize: 11 }} />}
+      {status === 'connected' && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />}
+      {(status === 'disconnected' || status === 'error') && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />}
+      {status === 'connected' && latency != null && (
+        <span
+          title="连接延迟（ping 往返）"
+          style={{ fontSize: 10, fontFamily: 'monospace', color: latency < 100 ? '#34d399' : latency < 300 ? '#fbbf24' : '#f87171' }}
+        >
+          {latency}ms
+        </span>
+      )}
+    </>
+  );
+
+  // 右侧操作区（导出 / 最大化 / 实时指标 / 文件 / 重连 / 关闭窗格），两种形态共用
+  const paneActions = (
+    <Space size={2} style={{ flexShrink: 0 }}>
+      {status === 'connected' && (
+        <Button
+          size="small"
+          type="text"
+          icon={<DownloadOutlined />}
+          onClick={exportLog}
+          title="导出本终端回滚日志为 .log"
+          style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+        />
+      )}
+      {onToggleMaximize && (
+        <Button
+          size="small"
+          type="text"
+          icon={isMaximized ? <ShrinkOutlined /> : <ExpandAltOutlined />}
+          onClick={onToggleMaximize}
+          title={isMaximized ? '还原分屏' : '最大化此分屏'}
+          style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+        />
+      )}
+      {!isLocal && status === 'connected' && (
+        <LiveMetricsBar assetId={assetId} active={status === 'connected'} />
+      )}
+      {!isLocal && status === 'connected' && (
+        <Button
+          size="small"
+          type="text"
+          icon={<FolderOpenOutlined />}
+          onClick={openFilesHere}
+          title="文件管理（直接进入终端当前所在目录）"
+          style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+        />
+      )}
+      {status !== 'idle' && (
+        <Button size="small" type="link" onClick={manualReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
+          重新连接
+        </Button>
+      )}
+      {canClose && (
+        <Button
+          size="small"
+          type="text"
+          icon={<CloseOutlined />}
+          onClick={onClose}
+          title="关闭此分屏"
+          style={{ padding: '0 4px', fontSize: 11, color: '#f87171', display: 'flex', alignItems: 'center' }}
+        />
+      )}
+    </Space>
+  );
+
   return (
     <div
       style={{
@@ -1909,7 +1996,48 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </span>
         </div>
       )}
-      {/* 分屏窗口头部小状态栏 */}
+      {/* 单分屏：整条上提到标签栏，这里不占高度；会话名也不再写第二遍 */}
+      {hoistBar && tabSlot && createPortal(
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 12 }}>
+          {statusChip}
+          {/* 单屏时会话名已由标签给出，这里不再放资产下拉；改成一个「切换主机」按钮，
+              点开才出选择器，避免把同一个名字在同一行写两遍。 */}
+          <Popover
+            trigger="click"
+            placement="bottomRight"
+            content={
+              <Select
+                showSearch
+                size="small"
+                autoFocus
+                defaultOpen
+                placeholder="切换到其它主机..."
+                value={assetId > 0 || isLocal ? assetId : undefined}
+                onChange={(val) => onAssetChange(val)}
+                filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+                options={[
+                  { label: '💻 本地终端 · 本机', value: isLocal ? assetId : LOCAL_ASSET_ID },
+                  ...assets.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id })),
+                ]}
+                style={{ width: 260 }}
+                dropdownStyle={{ zIndex: 3000 }}
+              />
+            }
+          >
+            <Button
+              size="small"
+              type="text"
+              icon={<SwapOutlined />}
+              title="切换本终端连接的主机"
+              style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+            />
+          </Popover>
+          {paneActions}
+        </div>,
+        tabSlot,
+      )}
+      {/* 分屏窗口头部小状态栏（多分屏时每个窗格各有一条） */}
+      {!hoistBar && (
       <div style={{
         height: '32px',
         background: '#1e293b',
@@ -1951,17 +2079,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             dropdownStyle={{ zIndex: 3000 }}
             popupMatchSelectWidth={280}
           />
-          {status === 'connecting' && <SyncOutlined spin style={{ color: '#6366f1', fontSize: 11 }} />}
-          {status === 'connected' && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />}
-          {(status === 'disconnected' || status === 'error') && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />}
-          {status === 'connected' && latency != null && (
-            <span
-              title="连接延迟（ping 往返）"
-              style={{ fontSize: 10, fontFamily: 'monospace', color: latency < 100 ? '#34d399' : latency < 300 ? '#fbbf24' : '#f87171' }}
-            >
-              {latency}ms
-            </span>
-          )}
+          {statusChip}
 
           {/* 带呼吸灯动画的同步中标志 */}
           {isSynced && status === 'connected' && (
@@ -1982,58 +2100,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             </span>
           )}
         </Space>
-        
-        <Space size={2} style={{ flexShrink: 0 }}>
-          {status === 'connected' && (
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={exportLog}
-              title="导出本终端回滚日志为 .log"
-              style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
-            />
-          )}
-          {onToggleMaximize && (
-            <Button
-              size="small"
-              type="text"
-              icon={isMaximized ? <ShrinkOutlined /> : <ExpandAltOutlined />}
-              onClick={onToggleMaximize}
-              title={isMaximized ? '还原分屏' : '最大化此分屏'}
-              style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
-            />
-          )}
-          {!isLocal && status === 'connected' && (
-            <LiveMetricsBar assetId={assetId} active={status === 'connected'} />
-          )}
-          {!isLocal && status === 'connected' && (
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={openFilesHere}
-              title="文件管理（直接进入终端当前所在目录）"
-              style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
-            />
-          )}
-          {status !== 'idle' && (
-            <Button size="small" type="link" onClick={manualReconnect} style={{ padding: '0 4px', fontSize: 11, color: '#38bdf8' }}>
-              重新连接
-            </Button>
-          )}
-          {canClose && (
-            <Button
-              size="small"
-              type="text"
-              icon={<CloseOutlined />}
-              onClick={onClose}
-              title="关闭此分屏"
-              style={{ padding: '0 4px', fontSize: 11, color: '#f87171', display: 'flex', alignItems: 'center' }}
-            />
-          )}
-        </Space>
+
+        {paneActions}
       </div>
+      )}
 
       <div style={{ flexGrow: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {/* Placeholder: 空白未连接状态卡片 */}

@@ -25,6 +25,9 @@ const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5
 
 const TAB_BAR_HEIGHT = 42;
 
+/** 标签栏右侧插槽的 DOM id：单分屏时终端窗格把自己的状态条 portal 进来 */
+export const TERM_TAB_SLOT_ID = 'lynx-term-tab-slot';
+
 // 项目内部的会话标签栏：左侧是「当前页面」，右侧是已打开的终端会话标签（可拖拽调序）
 export const TerminalTabBar: React.FC<Props> = ({
   sessions,
@@ -270,6 +273,10 @@ export const TerminalTabBar: React.FC<Props> = ({
           </Dropdown>
         );
       })}
+
+      {/* 单分屏时，活动会话的状态/操作从窗格头部搬到这里（见 TERM_TAB_SLOT_ID），
+          省掉一整条 32px 横条，也不再把会话名写第二遍。 */}
+      <div id={TERM_TAB_SLOT_ID} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', flexShrink: 0 }} />
     </div>
   );
 };

@@ -7,6 +7,11 @@
 // 不支持的环境（Safari / macOS WKWebView）自动回落到原来的直接下载。
 // ─────────────────────────────────────────────────────────────
 
+// 注意：不从 services/api 引入 isTauri —— api.ts 反过来要 import saveBlob，
+// 会形成循环依赖。这里就地判断，和 api.ts 里的判据保持一致。
+const isTauri = typeof window !== 'undefined' &&
+  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
 interface SavePickerOptions {
   suggestedName?: string;
   types?: { description: string; accept: Record<string, string[]> }[];
@@ -17,7 +22,28 @@ type SavePicker = (opts: SavePickerOptions) => Promise<{
 
 /** 当前环境是否支持「选择保存位置」 */
 export const canPickSaveLocation = (): boolean =>
-  typeof window !== 'undefined' && typeof (window as { showSaveFilePicker?: SavePicker }).showSaveFilePicker === 'function';
+  isTauri ||
+  (typeof window !== 'undefined' && typeof (window as { showSaveFilePicker?: SavePicker }).showSaveFilePicker === 'function');
+
+/** 桌面端（Tauri）：调系统原生保存对话框 + 写文件。WebView2 里没有 showSaveFilePicker，必须走这条。 */
+const saveViaTauri = async (blob: Blob, filename: string): Promise<boolean | null> => {
+  try {
+    const [dialog, fs] = await Promise.all([
+      import('@tauri-apps/plugin-dialog'),
+      import('@tauri-apps/plugin-fs'),
+    ]);
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    const path = await dialog.save({
+      defaultPath: filename,
+      filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined,
+    });
+    if (!path) return false;                       // 用户取消
+    await fs.writeFile(path, new Uint8Array(await blob.arrayBuffer()));
+    return true;
+  } catch {
+    return null;                                   // 插件不可用 → 交给后续兜底
+  }
+};
 
 /** 按扩展名给出保存对话框的文件类型过滤 */
 const typesFor = (filename: string): SavePickerOptions['types'] => {
@@ -38,6 +64,10 @@ const typesFor = (filename: string): SavePickerOptions['types'] => {
  * @returns true 表示已写入；false 表示用户取消
  */
 export const saveBlob = async (blob: Blob, filename: string): Promise<boolean> => {
+  if (isTauri) {
+    const r = await saveViaTauri(blob, filename);
+    if (r !== null) return r;                      // 成功或用户取消，都不再兜底下载
+  }
   const picker = (window as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
   if (picker) {
     try {
