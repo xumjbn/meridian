@@ -464,6 +464,9 @@ func UpdateAsset(c *gin.Context) {
 	asset.Type = req.Type
 	asset.Description = req.Description
 	asset.Tags = req.Tags
+	// 开放端口以前漏在这份拷贝之外：前端表单明明提交了 ports，这里不赋值，
+	// 于是「改完保存」接口返回 200 但值原样丢弃，看着像成功其实没存。
+	asset.Ports = req.Ports
 	asset.CredentialID = req.CredentialID
 	if req.Status != "" {
 		asset.Status = req.Status
@@ -488,6 +491,7 @@ func UpdateAsset(c *gin.Context) {
 	recordAssetChange(db, asset.ID, "状态", old.Status, asset.Status)
 	recordAssetChange(db, asset.ID, "描述", old.Description, asset.Description)
 	recordAssetChange(db, asset.ID, "标签", old.Tags, asset.Tags)
+	recordAssetChange(db, asset.ID, "开放端口", old.Ports, asset.Ports)
 	recordAssetChange(db, asset.ID, "凭据", credIDStr(old.CredentialID), credIDStr(asset.CredentialID))
 
 	db.Create(&model.ActivityLog{
@@ -1242,6 +1246,71 @@ func CollectAsset(c *gin.Context) {
 	logActivity(db, "asset_updated", fmt.Sprintf("资产 %s 采集成功 (%s / %s)", asset.Name, arch, virtLabel(virt)), asset.ID)
 	SendSuccess(c, gin.H{"ok": true, "arch": arch, "os": kernel, "virtualization": virt,
 		"message": fmt.Sprintf("采集成功: %s / %s / %s", arch, kernel, virtLabel(virt))})
+}
+
+// init 把自动探测挂到终端 SSH 连接建立的钩子上。
+// 这样只要开过一次远程终端，资产的架构 / 内核 / 虚拟化就自动补齐，
+// 不再需要用户去资产列表手点「采集」。
+func init() {
+	sshproxy.OnSSHConnected = autoCollectSysInfo
+}
+
+// autoCollectSysInfo 在已经建好的 SSH 连接上顺手取一次系统信息（架构 / 内核 / 虚拟化）。
+//
+// 以前这事儿要用户去资产列表点「采集」按钮——既然开终端时 SSH 都已经连上了，
+// 再让人手点一次没有道理。这里复用同一条连接开一个 exec 会话，代价极小。
+// 失败一律静默：这只是顺带做的事，不能影响终端本身能不能用。
+func autoCollectSysInfo(asset *model.Asset, client *ssh.Client) {
+	if client == nil || asset == nil || asset.ID == 0 {
+		return
+	}
+	// 已经采过且三项都齐了就不再打扰目标机
+	if asset.Arch != "" && asset.OSVersion != "" && asset.Virtualization != "" {
+		return
+	}
+	session, err := client.NewSession()
+	if err != nil {
+		return
+	}
+	defer session.Close()
+
+	virtProbe := "( systemd-detect-virt 2>/dev/null || ( grep -qa hypervisor /proc/cpuinfo 2>/dev/null && cat /sys/class/dmi/id/product_name 2>/dev/null ) || echo none ) | head -n1"
+	out, err := session.CombinedOutput("uname -m; uname -sr; " + virtProbe)
+	if err != nil && len(out) == 0 {
+		return
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	arch, kernel, virtRaw := "", "", ""
+	if len(lines) > 0 {
+		arch = strings.TrimSpace(lines[0])
+	}
+	if len(lines) > 1 {
+		kernel = strings.TrimSpace(lines[1])
+	}
+	if len(lines) > 2 {
+		virtRaw = strings.TrimSpace(lines[len(lines)-1])
+	}
+	virt := normalizeVirt(virtRaw)
+
+	updates := map[string]interface{}{}
+	if arch != "" && arch != asset.Arch {
+		updates["arch"] = arch
+	}
+	if kernel != "" && kernel != asset.OSVersion {
+		updates["os_version"] = kernel
+	}
+	if virt != "" && virt != asset.Virtualization {
+		updates["virtualization"] = virt
+	}
+	if len(updates) == 0 {
+		return
+	}
+	db := store.GlobalDB
+	if err := db.Model(&model.Asset{}).Where("id = ?", asset.ID).Updates(updates).Error; err != nil {
+		return
+	}
+	logActivity(db, "asset_updated",
+		fmt.Sprintf("资产 %s 自动探测到系统信息 (%s / %s)", asset.Name, arch, virtLabel(virt)), asset.ID)
 }
 
 // normalizeVirt 把 systemd-detect-virt / DMI product_name 的原始输出归一化为内部标识

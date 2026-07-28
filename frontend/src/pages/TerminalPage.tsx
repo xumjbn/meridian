@@ -11,7 +11,7 @@ import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../compone
 import { WEDDING_EGG_RE, fireWeddingEgg } from '../components/WeddingEgg';
 import {
   TerminalWallpaper, useWallpaper, setWallpaper, wallpaperIdFromCmd,
-  WALLPAPER_SHOW_RE, WALLPAPER_HIDE_RE, WALLPAPER_OPTIONS,
+  WALLPAPER_SHOW_RE, WALLPAPER_HIDE_RE, WALLPAPER_OPTIONS, WALLPAPER_LABELS,
   useWallpaperOpacity, setWallpaperOpacity, MIN_OPACITY, MAX_OPACITY,
   readImageAsWallpaper, setCustomWallpaper, clearCustomWallpaper, customWallpaperImage,
   type WallpaperId,
@@ -28,7 +28,7 @@ import { CommandPalette } from '../components/CommandPalette';
 import { ShortcutHelp } from '../components/ShortcutHelp';
 import { TERM_TAB_SLOT_ID, TERM_TOOLBAR_SLOT_ID } from '../components/TerminalTabBar';
 import { takePendingAuth, clearPendingAuth } from '../pendingAuth';
-import { SftpPanel } from '../components/SftpPanel';
+import { SftpPanel, useSftpDock } from '../components/SftpPanel';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -1396,6 +1396,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const [metricsOpen, setMetricsOpen] = useState(false);
   const toggleMetrics = useCallback(() => setMetricsOpen((v) => !v), []);
 
+  // 文件面板停靠位置（右 / 左 / 下），决定它排在容器的哪一格
+  const sftpDock = useSftpDock();
+
   // ── 节日特效口令识别 ─────────────────────────────────────
   // 单独维护一小段行缓冲：原先这段逻辑写在补全处理函数里，
   // 用户一旦关掉「命令补全」开关，口令就再也触发不了。
@@ -1422,11 +1425,24 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         fireWeddingEgg();
         return true;
       }
-      // 终端背景开关：先判 -hide，否则 wjw-bg 的正则会先把它吃掉
-      if (WALLPAPER_HIDE_RE.test(line)) { eraseLine(); setWallpaper(''); return true; }
+      // 终端背景开关：先判 -hide，否则 wjw-bg 的正则会先把它吃掉。
+      // 每次都给一条明确回执：口令是被吞掉不回显的，没有提示的话
+      // 用户分不清「命令没被识别」和「切了但没看出区别」。
+      if (WALLPAPER_HIDE_RE.test(line)) {
+        eraseLine();
+        setWallpaper('');
+        message.success('已隐藏终端背景');
+        return true;
+      }
       {
         const m = WALLPAPER_SHOW_RE.exec(line);
-        if (m) { eraseLine(); setWallpaper(wallpaperIdFromCmd(m[1])); return true; }
+        if (m) {
+          eraseLine();
+          const id = wallpaperIdFromCmd(m[1]);
+          setWallpaper(id);
+          message.success(`已切换终端背景：${WALLPAPER_LABELS[id] || id}`);
+          return true;
+        }
       }
       return false;
     }
@@ -1446,6 +1462,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
   const festivalApiRef = useRef(handleFestivalInput);
   useEffect(() => { festivalApiRef.current = handleFestivalInput; }, [handleFestivalInput]);
+
+  // 供 onData 在口令消费掉这一行后，通知补全侧清掉它自己的行缓冲
+  const resetCompletionRef = useRef<((clearGhost?: boolean) => void) | null>(null);
+  useEffect(() => { resetCompletionRef.current = resetCompletion; }, [resetCompletion]);
 
   // 将最新开关与处理函数暴露给 onData，避免连接闭包内引用过期
   const completionApiRef = useRef<{ enabled: boolean; handle: (d: string) => boolean }>({
@@ -1840,6 +1860,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       // 命令补全优先拦截：Tab 接受 / ↑↓ 选择 / Esc 关闭等被消费的输入不下发
       // 口令识别优先，且不受「命令补全」开关影响
       if (festivalApiRef.current(data)) {
+        // 口令吞掉回车后，补全那边的 Enter 分支就再也跑不到，
+        // 它的行缓冲不会被重置——敲几次口令之后缓冲里就攒着
+        // 「wjw-bgwjw-bg1wjw-bg2…」，此后的幽灵补全和历史全是脏的。
+        // 这里显式通知补全侧「这一行已经结束了」。
+        resetCompletionRef.current?.();
         return;
       }
       if (completionApiRef.current.enabled && completionApiRef.current.handle(data)) {
@@ -2363,10 +2388,17 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       </div>
       )}
 
-      <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-      {/* 常驻资源监控：贴终端左侧（文件面板在右侧，两边各占一条） */}
+      {/* 外层按列排：文件面板停靠「下方」时占最后一行；停靠左右时这一层只有一行。
+          容器方向必须跟着停靠位置变，否则贴下的面板会被当成一列挤在右边。 */}
+      <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+      {/* 常驻资源监控：贴终端左侧 */}
       {metricsOpen && !isLocal && (
         <MetricsPanel assetId={assetId} onClose={() => setMetricsOpen(false)} />
+      )}
+      {/* 文件面板停靠左侧时排在终端之前 */}
+      {filesOpen && !isLocal && sftpDock === 'left' && (
+        <SftpPanel assetId={assetId} cwd={cwd} hasCred={!!asset?.credential_id} onClose={() => setFilesOpen(false)} />
       )}
       {/* 壁纸开着时 xterm 与容器都是透明的，底色改由这层兜住 */}
       <div style={{ flexGrow: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden', background: termTheme.background }}>
@@ -2572,8 +2604,19 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         )}
       </div>
 
-      {/* 常驻文件面板：贴终端右侧，默认跟随 shell 的当前目录 */}
-      {filesOpen && !isLocal && (
+      {/* 常驻文件面板：停靠右侧时排在终端之后 */}
+      {filesOpen && !isLocal && sftpDock === 'right' && (
+        <SftpPanel
+          assetId={assetId}
+          cwd={cwd}
+          hasCred={!!asset?.credential_id}
+          onClose={() => setFilesOpen(false)}
+        />
+      )}
+      </div>
+
+      {/* 停靠下方：作为外层列布局的最后一行 */}
+      {filesOpen && !isLocal && sftpDock === 'bottom' && (
         <SftpPanel
           assetId={assetId}
           cwd={cwd}

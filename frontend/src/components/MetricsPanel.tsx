@@ -25,14 +25,18 @@ const MAX_W = 460;
 const DEFAULT_W = 268;
 const WIDTH_KEY = 'term_metrics_w';
 
+// 面板配色。原来的灰阶在 #111827 上对比度不够：次要文字 #64748b 只有 3.73，
+// 「采样中…」用的 #475569 更是只有 2.34（WCAG 小字要求 ≥4.5）——实际就是看不清。
+// 这里整体提亮一档，全部拉到 5 以上；底色仍跟终端一路，避免深色终端旁边杵一块白板。
 const C = {
   bg: '#111827',
   head: '#1e293b',
   line: '#1f2937',
   headLine: '#334155',
-  label: '#94a3b8',
-  mute: '#64748b',
-  text: '#cbd5e1',
+  label: '#b8c4d4',  // 10.04
+  mute: '#9fb0c4',   // 7.95
+  text: '#e2e8f0',   // 14.39
+  faint: '#8a9ab0',  // 5.98：最次要的说明文字，仍要看得清
   cpu: '#4ade80',
   mem: '#38bdf8',
   rx: '#22d3ee',
@@ -88,7 +92,7 @@ const Section: React.FC<{ title: string; extra?: React.ReactNode }> = ({ title, 
 /** 单序列走势图（带填充） */
 const Spark: React.FC<{ data: number[]; w: number; h: number; c: string; max?: number }> = ({ data, w, h, c, max }) => {
   if (data.length < 2) {
-    return <div style={{ height: h, display: 'flex', alignItems: 'center', fontSize: 10, color: '#475569' }}>采样中…</div>;
+    return <div style={{ height: h, display: 'flex', alignItems: 'center', fontSize: 10, color: C.faint }}>采样中…</div>;
   }
   // 百分比类固定 0-100；速率类用窗口内峰值做自适应缩放，否则小流量永远贴底看不出变化
   const top = max ?? Math.max(1, ...data);
@@ -108,7 +112,7 @@ const Spark: React.FC<{ data: number[]; w: number; h: number; c: string; max?: n
 /** 双序列走势图：网络上下行 / 磁盘读写共用，两条线共享同一纵向刻度才好比较 */
 const DualSpark: React.FC<{ a: number[]; b: number[]; w: number; h: number; ca: string; cb: string }> = ({ a, b, w, h, ca, cb }) => {
   if (a.length < 2) {
-    return <div style={{ height: h, display: 'flex', alignItems: 'center', fontSize: 10, color: '#475569' }}>采样中…</div>;
+    return <div style={{ height: h, display: 'flex', alignItems: 'center', fontSize: 10, color: C.faint }}>采样中…</div>;
   }
   const top = Math.max(1, ...a, ...b);
   const step = w / (HISTORY - 1);
@@ -342,7 +346,7 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
                 </>
               )}
 
-              <div style={{ fontSize: 10, color: '#475569', marginTop: 12, textAlign: 'center' }}>每 2 秒采样</div>
+              <div style={{ fontSize: 10, color: C.faint, marginTop: 12, textAlign: 'center' }}>每 2 秒采样</div>
             </>
           )}
         </div>

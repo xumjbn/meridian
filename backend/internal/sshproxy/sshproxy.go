@@ -13,6 +13,13 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// OnSSHConnected 在终端的 SSH 连接建好之后被调用一次（异步）。
+// 上层（handler）用它顺手做系统信息自动探测——连接都在手上了，
+// 没道理再让用户去资产列表点一次「采集」。
+// 这里用回调而不是让本包直接调 handler：handler 已经 import 了本包，反向依赖会成环。
+// 由 handler 在初始化时赋值；为空表示不做任何事。
+var OnSSHConnected func(asset *model.Asset, client *ssh.Client)
+
 // wsReadIdleTimeout 是 WebSocket 读空闲超时。前端每 15s 发一次心跳 ping，
 // 超过该时长仍无任何帧到达即判定为半开连接（客户端休眠/掉线/被 kill），
 // 由 ReadMessage 报错触发 closeAll，释放 SSH 会话、PTY 与协程，避免半开连接长期泄漏。
@@ -149,6 +156,13 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 		return
 	}
 	defer sshClient.Close()
+
+	// 连接已建立：顺手让上层在这条连接上做一次系统信息探测。
+	// 用回调而不是直接调 handler，是因为 handler 已经依赖本包，反向 import 会成环。
+	// 放 goroutine 里跑，探测慢或失败都不能拖住终端开屏。
+	if hook := OnSSHConnected; hook != nil {
+		go hook(asset, sshClient)
+	}
 
 	// 4. 创建 SSH 会话
 	sshSession, err := sshClient.NewSession()

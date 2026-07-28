@@ -16,8 +16,10 @@ import { heartPoints, textPoints } from './EasterEgg';
 
 export const WEDDING_EGG_EVENT = 'lynx-wedding-egg';
 
-/** 终端里触发：wedding */
-export const WEDDING_EGG_RE = /^\s*wedding\s*$/i;
+/** 终端里触发：wedding / 260222 / 20260222 / 结婚快乐 / 纪念日快乐。
+ *  日期口令沿用生日那套的 YYMMDD 写法（生日是 921129），
+ *  同时收下 YYYYMMDD 的写法，免得记成哪种都得试一遍。 */
+export const WEDDING_EGG_RE = /^\s*(wedding|260222|20260222|结婚快乐|纪念日快乐)\s*$/i;
 
 export const fireWeddingEgg = () => window.dispatchEvent(new Event(WEDDING_EGG_EVENT));
 

@@ -60,6 +60,14 @@ export const WALLPAPER_OPTIONS: { value: WallpaperId; label: string }[] = [
   { value: 'custom', label: '自定义图片' },
 ];
 
+/** 口令回执用的短名，写清楚每套长什么样，免得切了还不知道切成了啥 */
+export const WALLPAPER_LABELS: Record<string, string> = {
+  love: '爱意 · jwwu6 你是最棒的',
+  dense: '满屏情话 · 老婆爱你',
+  calm: '安心 · 慢慢来',
+  custom: '自定义图片',
+};
+
 /**
  * 读当前选择。
  * 早先这个键存的是 '1' / '0'（只有一套背景），升级后要认得，

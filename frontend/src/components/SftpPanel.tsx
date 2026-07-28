@@ -12,6 +12,7 @@ import {
   PushpinOutlined,
   PushpinFilled,
   CloseOutlined,
+  BorderOuterOutlined,
   DownloadOutlined,
 } from '@ant-design/icons';
 import { sftpList, sftpUpload, sftpDownload, sftpMkdir, sftpRemove, sftpRename, type SftpEntry } from '../services/api';
@@ -36,6 +37,40 @@ const MAX_W = 560;
 const DEFAULT_W = 280;
 const WIDTH_KEY = 'term_files_w';
 
+// 停靠位置：贴右 / 贴左 / 贴下。
+// 竖着放适合看目录树，横着放（贴下）适合文件名很长或者想同时看多列的场景，
+// 所以高度和宽度分开记——从右切到下再切回来，两边的尺寸都还是上次调好的。
+export type SftpDock = 'right' | 'left' | 'bottom';
+const DOCK_KEY = 'term_files_dock';
+const HEIGHT_KEY = 'term_files_h';
+const MIN_H = 140;
+const MAX_H = 560;
+const DEFAULT_H = 240;
+
+export const SFTP_DOCK_OPTIONS: { value: SftpDock; label: string }[] = [
+  { value: 'right', label: '停靠右侧' },
+  { value: 'left', label: '停靠左侧' },
+  { value: 'bottom', label: '停靠下方' },
+];
+
+export const currentSftpDock = (): SftpDock => {
+  const v = localStorage.getItem(DOCK_KEY);
+  return v === 'left' || v === 'bottom' ? v : 'right';
+};
+export const setSftpDock = (d: SftpDock) => {
+  localStorage.setItem(DOCK_KEY, d);
+  window.dispatchEvent(new CustomEvent<SftpDock>('lynx-sftp-dock', { detail: d }));
+};
+export const useSftpDock = (): SftpDock => {
+  const [d, setD] = useState<SftpDock>(currentSftpDock);
+  useEffect(() => {
+    const h = (e: Event) => setD((e as CustomEvent<SftpDock>).detail);
+    window.addEventListener('lynx-sftp-dock', h);
+    return () => window.removeEventListener('lynx-sftp-dock', h);
+  }, []);
+  return d;
+};
+
 const fmtSize = (n: number, isDir: boolean): string => {
   if (isDir) return '';
   if (n < 1024) return `${n}B`;
@@ -57,9 +92,14 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [follow, setFollow] = useState(true);
+  const dock = useSftpDock();
   const [width, setWidth] = useState(() => {
     const v = parseInt(localStorage.getItem(WIDTH_KEY) || '', 10);
     return Number.isFinite(v) && v >= MIN_W && v <= MAX_W ? v : DEFAULT_W;
+  });
+  const [height, setHeight] = useState(() => {
+    const v = parseInt(localStorage.getItem(HEIGHT_KEY) || '', 10);
+    return Number.isFinite(v) && v >= MIN_H && v <= MAX_H ? v : DEFAULT_H;
   });
   const [renaming, setRenaming] = useState<SftpEntry | null>(null);
   const [renameVal, setRenameVal] = useState('');
@@ -99,14 +139,20 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd, follow]);
 
-  // ── 拖拽调宽 ──────────────────────────────────────────────
-  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  // ── 拖拽调尺寸 ────────────────────────────────────────────
+  // 三种停靠共用一套拖拽：贴右时把手在左缘（左移变宽），贴左时在右缘（右移变宽），
+  // 贴下时在上缘（上移变高）。方向靠 sign 统一处理，不为每种停靠各写一份。
+  const dragRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!dragRef.current) return;
-      // 把手在面板左缘：指针左移(dx<0) 应加宽，故取负
-      const next = Math.min(MAX_W, Math.max(MIN_W, dragRef.current.startW - (e.clientX - dragRef.current.startX)));
-      setWidth(next);
+      const d = dragRef.current;
+      if (!d) return;
+      if (dock === 'bottom') {
+        setHeight(Math.min(MAX_H, Math.max(MIN_H, d.h - (e.clientY - d.y))));
+      } else {
+        const sign = dock === 'right' ? -1 : 1;
+        setWidth(Math.min(MAX_W, Math.max(MIN_W, d.w + sign * (e.clientX - d.x))));
+      }
     };
     const onUp = () => {
       if (!dragRef.current) return;
@@ -119,8 +165,14 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, []);
+  }, [dock]);
   useEffect(() => { localStorage.setItem(WIDTH_KEY, String(width)); }, [width]);
+  useEffect(() => { localStorage.setItem(HEIGHT_KEY, String(height)); }, [height]);
+
+  const beginDrag = (e: React.MouseEvent) => {
+    dragRef.current = { x: e.clientX, y: e.clientY, w: width, h: height };
+    document.body.style.cursor = dock === 'bottom' ? 'row-resize' : 'col-resize';
+  };
 
   // sftpDownload 内部已走统一保存入口（桌面端弹系统对话框选目录）
   const download = async (r: SftpEntry) => {
@@ -190,20 +242,42 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
     borderRadius: 4, cursor: 'pointer', color: '#94a3b8', flexShrink: 0,
   };
 
+  const isBottom = dock === 'bottom';
+  // 外层容器：贴左右时是一列（横向排把手 + 内容），贴下时改成一行（把手在上）
+  const outer: React.CSSProperties = isBottom
+    ? { height, width: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#111827' }
+    : { width, flexShrink: 0, display: 'flex', height: '100%', background: '#111827' };
+  // 把手永远在「靠终端的那一侧」
+  const handle: React.CSSProperties = isBottom
+    ? { height: 4, flexShrink: 0, cursor: 'row-resize', background: 'transparent' }
+    : { width: 4, flexShrink: 0, cursor: 'col-resize', background: 'transparent' };
+  const innerBorder = isBottom ? { borderTop: '1px solid #1f2937' } : dock === 'right'
+    ? { borderLeft: '1px solid #1f2937' } : { borderRight: '1px solid #1f2937' };
+
+  const dragHandle = <div onMouseDown={beginDrag} style={handle} />;
+
   return (
-    <div style={{ width, flexShrink: 0, display: 'flex', height: '100%', background: '#111827' }}>
-      {/* 拖拽调宽把手在左缘：面板贴在终端右侧，向左拖才是加宽 */}
-      <div
-        onMouseDown={(e) => { dragRef.current = { startX: e.clientX, startW: width }; document.body.style.cursor = 'col-resize'; }}
-        style={{ width: 4, flexShrink: 0, cursor: 'col-resize', background: 'transparent' }}
-      />
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', borderLeft: '1px solid #1f2937' }}>
+    <div style={outer}>
+      {/* 把手放在贴着终端的那一边：贴右在左缘、贴下在上缘、贴左在右缘 */}
+      {dock !== 'left' && dragHandle}
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', ...innerBorder }}>
         {/* 标题行 */}
         <div style={{
           height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2,
           padding: '0 4px 0 8px', background: '#1e293b', borderBottom: '1px solid #334155',
         }}>
           <span style={{ fontSize: 13, color: '#cbd5e1', flex: 1, minWidth: 0 }}>文件</span>
+          <Tooltip title="切换停靠位置（右 / 左 / 下）">
+            <span
+              style={iconBtn}
+              onClick={() => {
+                const order: SftpDock[] = ['right', 'bottom', 'left'];
+                setSftpDock(order[(order.indexOf(dock) + 1) % order.length]);
+              }}
+            >
+              <BorderOuterOutlined style={{ fontSize: 12 }} />
+            </span>
+          </Tooltip>
           <Tooltip title={follow ? '已跟随终端当前目录，点击固定' : '已固定，点击恢复跟随'}>
             <span style={{ ...iconBtn, color: follow ? '#38bdf8' : '#64748b' }} onClick={() => setFollow((f) => !f)}>
               {follow ? <PushpinOutlined style={{ fontSize: 12 }} /> : <PushpinFilled style={{ fontSize: 12 }} />}
