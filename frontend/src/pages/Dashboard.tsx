@@ -32,7 +32,18 @@ const activityConfig: Record<string, { color: string; icon: React.ReactNode; lab
   scan_started: { color: 'blue', icon: <PlayCircleOutlined />, label: '扫描启动' },
   scan_completed: { color: 'green', icon: <CheckCircleOutlined />, label: '扫描完成' },
   scan_failed: { color: 'red', icon: <CloseCircleOutlined />, label: '扫描失败' },
+  // 后端还会写这些类型，早先没登记，界面上直接漏出 user_registered 这种原始 key
+  asset_imported: { color: 'green', icon: <PlusCircleOutlined />, label: '资产导入' },
+  user_registered: { color: 'gold', icon: <PlusCircleOutlined />, label: '用户注册' },
+  user_created: { color: 'green', icon: <PlusCircleOutlined />, label: '用户创建' },
+  user_updated: { color: 'blue', icon: <EditOutlined />, label: '用户更新' },
+  user_deleted: { color: 'red', icon: <DeleteOutlined />, label: '用户删除' },
+  user_password_changed: { color: 'blue', icon: <EditOutlined />, label: '修改密码' },
 };
+
+// 兜底：未登记的类型不要把 snake_case 的 key 直接甩给用户
+const activityLabel = (type: string): string =>
+  activityConfig[type]?.label ?? type.replace(/_/g, ' ');
 
 function formatRelativeTime(iso: string): string {
   const ts = new Date(iso).getTime();
@@ -282,7 +293,7 @@ export const Dashboard: React.FC = () => {
                 <div style={{ maxHeight: 240, overflowY: 'auto', paddingRight: 6 }}>
                   <Timeline
                     items={activity.slice(0, 12).map((item) => {
-                      const cfg = activityConfig[item.type] ?? { color: 'gray', icon: null, label: item.type };
+                      const cfg = activityConfig[item.type] ?? { color: 'gray', icon: null, label: activityLabel(item.type) };
                       return {
                         color: cfg.color,
                         children: (

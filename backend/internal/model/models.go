@@ -265,3 +265,23 @@ type K8sCluster struct {
 	HasToken    bool   `gorm:"-" json:"has_token"`  // 是否已配置 kube API Token
 }
 
+// BeforeSave 落库前加密 API Token。
+// 这个 token 通常绑着一个能读全集群的 ServiceAccount，和 SSH 密码是同一量级的秘密，
+// 之前却是明文落库——Credential 走了加密钩子，这里漏了。
+func (c *K8sCluster) BeforeSave(tx *gorm.DB) error {
+	enc, err := crypto.EncryptSecret(c.APIToken)
+	if err != nil {
+		return err
+	}
+	c.APIToken = enc
+	return nil
+}
+
+// AfterFind 读出后解密。历史明文数据没有密文前缀，MustDecrypt 原样返回，
+// 升级后旧集群的 token 照常能用，不需要用户重填。
+func (c *K8sCluster) AfterFind(tx *gorm.DB) error {
+	c.APIToken = crypto.MustDecrypt(c.APIToken)
+	c.HasToken = c.APIToken != ""
+	return nil
+}
+

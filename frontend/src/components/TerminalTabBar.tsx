@@ -142,7 +142,7 @@ export const TerminalTabBar: React.FC<Props> = ({
   const tabMenu = (s: TermSession): MenuProps['items'] => [
     { key: 'rename', icon: <EditOutlined />, label: '重命名', onClick: () => startEdit(s) },
     // 打开资产是「聚焦已有终端」，要开第二个同主机终端走这里
-    { key: 'dup', icon: <CopyOutlined />, label: '复制终端（同一主机再开一个）', onClick: () => onDuplicate?.(s.id) },
+    { key: 'dup', icon: <CopyOutlined />, label: '复制终端', onClick: () => onDuplicate?.(s.id) },
     { key: 'moveLeft', icon: <LeftOutlined />, label: '← 左移一位', disabled: sessions.findIndex((x) => x.id === s.id) <= 0, onClick: () => moveTab(s, -1) },
     { key: 'moveRight', icon: <RightOutlined />, label: '右移一位 →', disabled: sessions.findIndex((x) => x.id === s.id) >= sessions.length - 1, onClick: () => moveTab(s, 1) },
     {

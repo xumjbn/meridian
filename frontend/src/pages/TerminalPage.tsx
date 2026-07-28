@@ -4,11 +4,12 @@ import { Form, Input, Button, Space, message, Spin, Select, Radio, Checkbox, Too
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
-import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined } from '@ant-design/icons';
+import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined, DashboardOutlined } from '@ant-design/icons';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { saveBlob } from '../saveFile';
-import { LiveMetricsBar } from '../components/LiveMetricsBar';
+import { MetricsPanel } from '../components/MetricsPanel';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
 import { SnippetManager } from '../components/SnippetManager';
@@ -1281,6 +1282,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const [filesOpen, setFilesOpen] = useState(false);
   const toggleFiles = useCallback(() => setFilesOpen((v) => !v), []);
 
+  // 资源监控面板：贴终端左侧，和文件面板同样是按需常驻。
+  // 同样不持久化——挂上就要在目标机每 2 秒跑一次采样脚本，
+  // 开个终端不该顺带把对面的 CPU 也吃上。
+  const [metricsOpen, setMetricsOpen] = useState(false);
+  const toggleMetrics = useCallback(() => setMetricsOpen((v) => !v), []);
+
   // ── 节日特效口令识别 ─────────────────────────────────────
   // 单独维护一小段行缓冲：原先这段逻辑写在补全处理函数里，
   // 用户一旦关掉「命令补全」开关，口令就再也触发不了。
@@ -1487,6 +1494,24 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
 
     if (terminalRef.current) {
       term.open(terminalRef.current);
+
+      // GPU 渲染。xterm 默认走 DomRenderer——每个字符单元一个 DOM 节点，刷屏时
+      // 全靠浏览器重排重绘。Windows 的 WebView2 在这条路径上比 macOS 的 WebKit
+      // 慢得多，表现就是「Windows 版很卡」。挂上 WebGL 渲染器改走 GPU 纹理绘制。
+      //
+      // 必须能退回 DOM：远程桌面、虚拟机、显卡驱动被禁用等场景下拿不到 WebGL2
+      // 上下文，或者运行中上下文丢失（驱动重启、浏览器回收）。这时候宁可慢，
+      // 也不能让终端变成黑屏——所以 addon 只是加分项，失败一律吞掉继续用 DOM。
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          console.warn('[term] WebGL 上下文丢失，退回 DOM 渲染');
+          webgl.dispose();
+        });
+        term.loadAddon(webgl);
+      } catch (e) {
+        console.warn('[term] WebGL 渲染不可用，使用 DOM 渲染', e);
+      }
 
       // 终端内 URL 可点击（http/https）→ 系统浏览器打开
       term.registerLinkProvider({
@@ -1958,7 +1983,19 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         />
       )}
       {!isLocal && status === 'connected' && (
-        <LiveMetricsBar assetId={assetId} active={status === 'connected'} />
+        <Button
+          size="small"
+          type="text"
+          icon={<DashboardOutlined />}
+          onClick={toggleMetrics}
+          title="资源监控（贴终端左侧常驻，CPU/内存/磁盘 + 走势）；打开时才开始采样"
+          style={{
+            padding: '0 6px', fontSize: 11, display: 'flex', alignItems: 'center',
+            color: metricsOpen ? '#38bdf8' : '#94a3b8',
+          }}
+        >
+          监控
+        </Button>
       )}
       {!isLocal && status === 'connected' && (
         <Button
@@ -2196,6 +2233,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       )}
 
       <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+      {/* 常驻资源监控：贴终端左侧（文件面板在右侧，两边各占一条） */}
+      {metricsOpen && !isLocal && (
+        <MetricsPanel assetId={assetId} onClose={() => setMetricsOpen(false)} />
+      )}
       <div style={{ flexGrow: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {/* Placeholder: 空白未连接状态卡片 */}
         {status === 'idle' && (
