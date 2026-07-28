@@ -34,8 +34,10 @@ var allowedShells = map[string][]string{
 }
 
 // defaultShellCandidates 未指定 Shell（或指定了非法值）时的回退顺序。
+// Windows 默认走 cmd：它启动快、没有 PowerShell 的执行策略与配置文件加载开销，
+// 也不会在首屏刷一段版本横幅。要 PowerShell 的话在侧栏「本地终端」右边选。
 func defaultShellCandidates() []string {
-	c := []string{"powershell.exe", "cmd.exe"}
+	c := []string{"cmd.exe", "powershell.exe"}
 	if cs := os.Getenv("COMSPEC"); cs != "" {
 		c = append(c, cs)
 	}

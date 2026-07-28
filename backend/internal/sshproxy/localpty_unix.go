@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -74,7 +75,19 @@ func resolveShell(name string) string {
 }
 
 // defaultShell 未指定 Shell（或指定了本机没有的 Shell）时用的默认值。
+//
+// macOS 上固定优先 bash：系统默认是 zsh，但 zsh 在很多人的机器上挂着
+// oh-my-zsh / powerlevel10k 之类的重型配置，开终端要等一两秒还会刷一屏彩色提示符，
+// 在这个工具里当「随手开一个 shell」用体验很差。要 zsh 的话在侧栏那里选。
+// 其它 Unix 仍尊重 $SHELL。
 func defaultShell() string {
+	if runtime.GOOS == "darwin" {
+		for _, s := range []string{"/bin/bash", "/opt/homebrew/bin/bash", "/usr/local/bin/bash"} {
+			if _, err := os.Stat(s); err == nil {
+				return s
+			}
+		}
+	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		for _, s := range []string{"/bin/bash", "/bin/zsh", "/bin/sh"} {
