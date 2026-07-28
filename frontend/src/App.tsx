@@ -550,6 +550,12 @@ export const App: React.FC = () => {
             onSuccess={() => {
               localStorage.removeItem('lynx-logged-out'); // 恢复桌面端自动登录
               setMustChange(localStorage.getItem('lynx-must-change') === '1');
+              // 这三个状态必须一起清掉：只置 authed 的话，上面那个
+              // (desktopAuto && !tokenReady && bootTimedOut) 分支仍然成立，
+              // 登录成功也会被重新渲染回登录页，表现就是「点了没反应」。
+              setTokenReady(true);
+              setBootTimedOut(false);
+              setBootMsg('');
               setAuthed(true);
             }}
           />

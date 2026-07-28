@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"backend/internal/handler"
 	"backend/internal/monitor"
@@ -10,6 +11,26 @@ import (
 	"backend/internal/store"
 	"github.com/gin-gonic/gin"
 )
+
+// resetAdminFlag 解析 -reset-admin[=新密码]。不用 flag 包，避免与既有的
+// 环境变量式配置混在一起，也不影响正常启动时的参数处理。
+func resetAdminFlag() (string, bool) {
+	for _, a := range os.Args[1:] {
+		if a == "-reset-admin" || a == "--reset-admin" {
+			return "admin", true
+		}
+		for _, p := range []string{"-reset-admin=", "--reset-admin="} {
+			if strings.HasPrefix(a, p) {
+				pw := strings.TrimPrefix(a, p)
+				if pw == "" {
+					pw = "admin"
+				}
+				return pw, true
+			}
+		}
+	}
+	return "", false
+}
 
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -38,6 +59,18 @@ func main() {
 	sqlDB, err := db.DB()
 	if err == nil {
 		defer sqlDB.Close()
+	}
+
+	// 管理员密码找回：默认账号 admin/admin 首次登录会强制改密，改完忘了就
+	// 再也进不去，此前没有任何找回路径。带 -reset-admin 启动即重置后退出。
+	//   lynx-server -reset-admin            重置为 admin/admin（下次登录仍强制改密）
+	//   lynx-server -reset-admin=<新密码>   重置为指定密码
+	if pw, ok := resetAdminFlag(); ok {
+		if err := store.ResetAdminPassword(db, pw); err != nil {
+			log.Fatalf("重置管理员密码失败: %v", err)
+		}
+		log.Printf("已重置管理员密码，请用新密码登录后立即修改")
+		return
 	}
 
 	// 启动定时扫描调度器

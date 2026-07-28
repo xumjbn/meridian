@@ -115,6 +115,24 @@ func seedDefaultSettings(db *gorm.DB) {
 	}
 }
 
+// ResetAdminPassword 把首个管理员账号的密码重置为 pw，并要求下次登录改密。
+// 默认 admin/admin 首次登录强制改密，改完忘了此前没有任何找回路径。
+func ResetAdminPassword(db *gorm.DB, pw string) error {
+	var admin model.User
+	if err := db.Where("role = ?", "admin").Order("id asc").First(&admin).Error; err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return db.Model(&admin).Updates(map[string]any{
+		"password":             string(hash),
+		"must_change_password": true,
+		"status":               "active",
+	}).Error
+}
+
 // seedDefaultUser 首次启动且 users 表为空时，依据旧版单账号配置
 // （auth_username / auth_password，默认 admin/admin）创建首位管理员，
 // 保证升级到多用户体系后历史账号仍可登录。
