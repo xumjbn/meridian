@@ -20,7 +20,7 @@ import { EasterEgg } from './components/EasterEgg';
 import { AppHeader, type HeaderNavItem } from './components/AppHeader';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { TerminalProvider, useTerminals } from './terminalSessions';
-import { login, isTauri, type Asset } from './services/api';
+import { login, isTauri, DESKTOP_BACKEND, type Asset, type ApiError } from './services/api';
 import { SftpDrawer } from './components/SftpDrawer';
 import { NewConnectionModal } from './components/NewConnectionModal';
 import { brand, palette, antdLightToken, antdComponents } from './theme';
@@ -48,7 +48,7 @@ const PageFallback: React.FC = () => (
 
 // 桌面端启动屏：等本机服务起来并拿到 token。首次安装要建库+迁移，可能十几秒，
 // 所以超过 6s 补一句说明，免得看着像卡死。
-const BootScreen: React.FC<{ onSkip: () => void }> = ({ onSkip }) => {
+const BootScreen: React.FC<{ onSkip: () => void; detail?: string }> = ({ onSkip, detail }) => {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setSlow(true), 6000);
@@ -61,16 +61,22 @@ const BootScreen: React.FC<{ onSkip: () => void }> = ({ onSkip }) => {
     }}>
       <Spin size="large" />
       <div style={{ color: palette.chromeTextStrong, fontSize: 14 }}>正在启动本机服务…</div>
+      {/* 卡住时必须把真实原因摆出来，否则用户和排查的人都只能靠猜 */}
+      {detail && (
+        <div style={{
+          fontSize: 11, color: '#f0a35e', fontFamily: 'monospace', maxWidth: 460,
+          textAlign: 'center', wordBreak: 'break-all', lineHeight: 1.6,
+        }}>
+          {detail}
+        </div>
+      )}
       {slow && (
         <>
-          <div style={{ color: palette.chromeTextMute, fontSize: 12, maxWidth: 340, textAlign: 'center', lineHeight: 1.7 }}>
-            首次安装需要初始化数据库，请稍候。<br />
-            若长时间停在这里，可能是本机服务端口被占用。
+          <div style={{ color: palette.chromeTextMute, fontSize: 12, maxWidth: 360, textAlign: 'center', lineHeight: 1.7 }}>
+            后端地址 <code>{DESKTOP_BACKEND}</code><br />
+            连不上通常是端口被上一个未退出的实例占用，或本平台的 sidecar 未随包构建。
           </div>
-          <a
-            onClick={onSkip}
-            style={{ fontSize: 12, color: palette.primary, cursor: 'pointer' }}
-          >
+          <a onClick={onSkip} style={{ fontSize: 12, color: palette.primary, cursor: 'pointer' }}>
             跳过，直接进入登录页
           </a>
         </>
@@ -427,6 +433,7 @@ export const App: React.FC = () => {
   // 主界面，各页面会抢在登录完成前发请求并弹 401 报错。先卡在启动屏，拿到 token 再进。
   const [tokenReady, setTokenReady] = useState(!!localStorage.getItem('lynx-token'));
   const [bootTimedOut, setBootTimedOut] = useState(false);
+  const [bootMsg, setBootMsg] = useState('');
   useEffect(() => {
     if (tokenReady) return;
     const onReady = () => setTokenReady(true);
@@ -447,15 +454,17 @@ export const App: React.FC = () => {
     if (!localStorage.getItem('lynx-role')) localStorage.setItem('lynx-role', 'admin');
     let cancelled = false;
     const creds: Array<[string, string]> = [['admin', 'admin'], ['admin', '123456']];
-    const isCredErr = (e: any) => /密码|password|用户|账户|account|credential|invalid/i.test(String(e?.message || ''));
     // 单次登录最多等 8s，避免连接挂死导致永远不返回
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
-      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('连接本机服务超时')), ms))]);
     (async () => {
-      // 后台持续重试（后端 sidecar 晚起也能恢复）；默认密码全部不对则落登录页让用户手动输
-      for (let i = 0; i < 40 && !cancelled; i++) {
-        let networkErr = false;
-        let credErr = false;
+      // 只有「压根没连上后端」才值得重试（sidecar 晚起）。后端明确拒绝（密码不对、
+      // 需要改密等）重试多少次都一样，直接落登录页让用户手动处理。
+      // 早先按错误文案猜是不是密码错，遇到没见过的文案就一律当网络问题，
+      // 于是在后端已应答的情况下也空转 40 轮，界面一直停在启动屏。
+      const MAX_ROUNDS = 20;
+      for (let i = 0; i < MAX_ROUNDS && !cancelled; i++) {
+        let lastErr: ApiError | null = null;
         for (const [u, p] of creds) {
           if (cancelled) return;
           try {
@@ -467,16 +476,23 @@ export const App: React.FC = () => {
             localStorage.removeItem('lynx-must-change');
             window.dispatchEvent(new CustomEvent('lynx-auth-ready'));
             return;
-          } catch (e: any) {
-            if (isCredErr(e)) credErr = true;
-            else { networkErr = true; break; } // 后端未就绪/超时 → 等待后重试整轮
+          } catch (e) {
+            lastErr = e as ApiError;
+            if (lastErr?.serverResponded) continue;  // 换下一组默认口令再试
+            break;                                    // 连不上，整轮重来
           }
         }
-        if (networkErr) { await new Promise((res) => setTimeout(res, 1000)); continue; }
-        // 没有网络错误、也没成功 → 默认账户密码不可用 → 弹登录页让用户手动登录
-        if (credErr && !cancelled) { setAuthed(false); return; }
+        if (cancelled) return;
+        if (lastErr?.serverResponded) {
+          // 后端答复了但不接受默认口令 → 交给登录页
+          setBootMsg(lastErr.message || '默认口令不可用');
+          setAuthed(false);
+          return;
+        }
+        setBootMsg(`${lastErr?.message || '无法连接本机服务'}（第 ${i + 1}/${MAX_ROUNDS} 次重试）`);
+        await new Promise((res) => setTimeout(res, 1000));
       }
-      // 重试次数耗尽仍未拿到 token（后端持续超时/异常）→ 落登录页，避免卡死在空白/转圈
+      // 重试耗尽仍连不上后端 → 落登录页，别卡在转圈
       if (!cancelled && !localStorage.getItem('lynx-token')) setAuthed(false);
     })();
     return () => { cancelled = true; };
@@ -521,7 +537,7 @@ export const App: React.FC = () => {
   if (desktopAuto && !tokenReady && !bootTimedOut) {
     return (
       <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
-        <BootScreen onSkip={() => setBootTimedOut(true)} />
+        <BootScreen onSkip={() => setBootTimedOut(true)} detail={bootMsg} />
       </ConfigProvider>
     );
   }

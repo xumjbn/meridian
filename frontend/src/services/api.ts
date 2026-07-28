@@ -68,12 +68,28 @@ api.interceptors.response.use(
         window.location.reload();
       }
     }
-    return Promise.reject(new Error(res.message || 'Error'));
+    // 标记「服务器确实应答了，只是业务失败」。调用方（如桌面端静默登录）
+    // 要靠它区分"后端还没起来，值得重试"和"后端明确拒绝了，重试多少次都没用"，
+    // 光靠匹配错误文案判断会把没见过的文案一律当成网络问题然后无限重试。
+    const err = new Error(res.message || 'Error') as ApiError;
+    err.serverResponded = true;
+    err.code = res.code;
+    return Promise.reject(err);
   },
   (error) => {
-    return Promise.reject(error);
+    const err = error as ApiError;
+    // 有 response 说明连上了服务器；没有则是连不通/超时
+    err.serverResponded = !!error?.response;
+    err.code = error?.response?.status;
+    return Promise.reject(err);
   }
 );
+
+/** 带来源标记的接口错误：serverResponded=false 表示压根没连上后端 */
+export interface ApiError extends Error {
+  serverResponded?: boolean;
+  code?: number;
+}
 
 export interface Stats {
   total_assets: number;
