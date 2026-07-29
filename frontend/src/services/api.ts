@@ -101,6 +101,15 @@ export interface ApiError extends Error {
   code?: number;
 }
 
+export const errorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === 'string' ? message : '';
+  }
+  return '';
+};
+
 export interface Stats {
   total_assets: number;
   servers: number;

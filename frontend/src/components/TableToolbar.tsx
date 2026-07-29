@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, Tooltip } from 'antd';
 import { ReloadOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
+import { useI18n } from '../i18n';
 
 interface Props {
   /** 页标题：并入工具栏同一行，省掉独立的页标题横条（顶部本已有全局导航栏） */
@@ -37,7 +38,9 @@ export const TableToolbar: React.FC<Props> = ({
   loading,
   selectedCount = 0,
   onClearSelection,
-}) => (
+}) => {
+  const { text } = useI18n();
+  return (
   <div
     style={{
       display: 'flex',
@@ -65,10 +68,10 @@ export const TableToolbar: React.FC<Props> = ({
 
     {selectedCount > 0 && (
       <span style={{ fontSize: 13, color: palette.textSub, marginLeft: 4 }}>
-        已选 <b style={{ color: palette.primary }}>{selectedCount}</b> 项
+        {text('common.itemsSelected', { count: selectedCount })}
         {onClearSelection && (
           <a onClick={onClearSelection} style={{ marginLeft: 8, fontSize: 12 }}>
-            清空
+            {text('common.clear')}
           </a>
         )}
       </span>
@@ -77,13 +80,14 @@ export const TableToolbar: React.FC<Props> = ({
     <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
       {right}
       {onRefresh && (
-        <Tooltip title="刷新">
+        <Tooltip title={text('common.refresh')}>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={onRefresh} />
         </Tooltip>
       )}
     </div>
   </div>
-);
+  );
+};
 
 /** 表格外层卡片：与工具栏共用一张白卡，表格自身不再重复描边 */
 export const tablePanelStyle: React.CSSProperties = {

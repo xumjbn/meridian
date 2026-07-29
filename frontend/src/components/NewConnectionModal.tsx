@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Form, Input, InputNumber, Select, message, Divider } from 'antd';
 import { DesktopOutlined } from '@ant-design/icons';
-import { getAssets, createAsset, type Asset } from '../services/api';
+import { getAssets, createAsset, errorMessage, type Asset } from '../services/api';
+import { useI18n } from '../i18n';
 
 import { setPendingAuth } from '../pendingAuth';
 
@@ -27,6 +28,7 @@ interface FormVals {
 // 密码只在内存里中转给本次会话（见 pendingAuth），不入库、不落盘。
 // ─────────────────────────────────────────────────────────────
 export const NewConnectionModal: React.FC<Props> = ({ open, onClose, onConnect }) => {
+  const { text } = useI18n();
   const [form] = Form.useForm<FormVals>();
   const [submitting, setSubmitting] = useState(false);
   const [known, setKnown] = useState<Asset[]>([]);
@@ -64,14 +66,14 @@ export const NewConnectionModal: React.FC<Props> = ({ open, onClose, onConnect }
           ssh_port: v.port,
         });
       }
-      if (target.id == null) throw new Error('资产创建失败：未返回 ID');
+      if (target.id == null) throw new Error(text('newConnection.assetCreateMissingId'));
       if (v.password) {
         setPendingAuth(target.id, { username: v.username.trim(), password: v.password });
       }
       onConnect({ id: target.id, name: target.name || ip, ip });
       onClose();
-    } catch (e: any) {
-      message.error(e?.message || '连接失败');
+    } catch (e: unknown) {
+      message.error(errorMessage(e) || text('newConnection.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -82,21 +84,21 @@ export const NewConnectionModal: React.FC<Props> = ({ open, onClose, onConnect }
       open={open}
       onCancel={onClose}
       onOk={submit}
-      okText="连接"
-      cancelText="取消"
+      okText={text('common.connect')}
+      cancelText={text('common.cancel')}
       confirmLoading={submitting}
-      title={<span><DesktopOutlined style={{ marginRight: 8 }} />新建连接</span>}
+      title={<span><DesktopOutlined style={{ marginRight: 8 }} />{text('newConnection.title')}</span>}
       width={420}
       destroyOnClose
     >
       <Form form={form} layout="vertical" initialValues={{ port: 22, username: 'root' }} onFinish={submit}>
         {known.length > 0 && (
           <>
-            <Form.Item label="从已有主机选（可跳过）" style={{ marginBottom: 8 }}>
+            <Form.Item label={text('newConnection.pickKnown')} style={{ marginBottom: 8 }}>
               <Select
                 showSearch
                 allowClear
-                placeholder="搜索已纳管的主机…"
+                placeholder={text('newConnection.searchKnown')}
                 onChange={(id) => id && pickKnown(id as number)}
                 filterOption={(input, opt) => (opt?.label ?? '').toLowerCase().includes(input.toLowerCase())}
                 options={known.map((a) => ({ label: `${a.name} (${a.ip})`, value: a.id }))}
@@ -107,33 +109,33 @@ export const NewConnectionModal: React.FC<Props> = ({ open, onClose, onConnect }
         )}
 
         <Form.Item
-          label="主机 IP"
+          label={text('newConnection.hostIp')}
           name="ip"
-          rules={[{ required: true, message: '请输入主机 IP' }]}
+          rules={[{ required: true, message: text('newConnection.hostIp.required') }]}
           style={{ marginBottom: 12 }}
         >
           <Input placeholder="192.168.1.10" autoFocus />
         </Form.Item>
 
-        <Form.Item label="端口" name="port" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
+        <Form.Item label={text('newConnection.port')} name="port" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
           <InputNumber min={1} max={65535} style={{ width: '100%' }} />
         </Form.Item>
 
-        <Form.Item label="用户名" name="username" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
+        <Form.Item label={text('newConnection.username')} name="username" rules={[{ required: true }]} style={{ marginBottom: 12 }}>
           <Input placeholder="root" />
         </Form.Item>
 
         <Form.Item
-          label="密码"
+          label={text('newConnection.password')}
           name="password"
-          extra="仅用于本次会话，不会保存到数据库；留空则使用该资产已绑定的凭据"
+          extra={text('newConnection.password.extra')}
           style={{ marginBottom: 12 }}
         >
-          <Input.Password placeholder="留空表示用已绑定凭据" onPressEnter={submit} />
+          <Input.Password placeholder={text('newConnection.password.placeholder')} onPressEnter={submit} />
         </Form.Item>
 
-        <Form.Item label="备注名（可选）" name="name" style={{ marginBottom: 0 }}>
-          <Input placeholder="不填则用 IP 作为名称" />
+        <Form.Item label={text('newConnection.name')} name="name" style={{ marginBottom: 0 }}>
+          <Input placeholder={text('newConnection.name.placeholder')} />
         </Form.Item>
       </Form>
     </Modal>

@@ -217,20 +217,26 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
   const wallpaperAlpha = useWallpaperOpacity();
   const bgFileRef = useRef<HTMLInputElement>(null);
 
-  // 展开把手要 portal 到标签栏右侧。标签栏先于本页挂载，通常一次就能取到插槽，
-  // 取不到时下一帧再试一次。
-  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    if (!toolbarCollapsed) { setToolbarSlot(null); return; }
-    const pick = () => setToolbarSlot(document.getElementById(TERM_TOOLBAR_SLOT_ID));
-    pick();
-    const raf = requestAnimationFrame(pick);
-    return () => cancelAnimationFrame(raf);
-  }, [toolbarCollapsed]);
   const [assets, setAssets] = useState<Asset[]>([]);
 
   // 挂载全局终端会话的广播控制
   const { globalSyncedIds, connectedIds, syncAllConnected, activeId, markActivity } = useTerminals();
+
+  // 展开把手要 portal 到标签栏右侧。标签栏先于本页挂载，通常一次就能取到插槽，
+  // 取不到时下一帧再试一次。
+  //
+  // 关键：必须只有「当前激活的会话」才往插槽里塞。本组件是按会话渲染的
+  // （App 里 sessions.map 一个会话一份），不加这道判断的话开 N 个终端
+  // 就会有 N 个一模一样的把手挤在标签栏里——实测开 3 个就出现 3 个。
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  const isActiveSession = activeId === sid;
+  useEffect(() => {
+    if (!toolbarCollapsed || !isActiveSession) { setToolbarSlot(null); return; }
+    const pick = () => setToolbarSlot(document.getElementById(TERM_TOOLBAR_SLOT_ID));
+    pick();
+    const raf = requestAnimationFrame(pick);
+    return () => cancelAnimationFrame(raf);
+  }, [toolbarCollapsed, isActiveSession]);
 
   // 本会话非激活时有新输出 → 标记活动（标签提示点）。用 ref 取最新激活态，避免闭包过期。
   const sessionActiveRef = useRef(activeId === sid);
@@ -951,9 +957,19 @@ interface TerminalItemProps {
 // 重新判断，放不下就少排一行。
 const clampRowsToActualHeight = (container: HTMLElement | null, term: Terminal): boolean => {
   if (!container) return false;
+  // 量「一行实际占多少 CSS 像素」。
+  // 不能只认 .xterm-rows > div：那是 DOM 渲染器才有的结构，换成 WebGL 渲染后
+  // 行内容全在 canvas 上、一个 div 都没有，这里直接 return false 等于保护失效，
+  // 最后一行又会被切掉（Claude 这类 TUI 的底部状态栏正好在那一行）。
+  // .xterm-screen 的高度恒等于 行数 × 行高，两种渲染器都成立，用它兜底。
+  let rowH = 0;
   const rowEl = container.querySelector('.xterm-rows > div') as HTMLElement | null;
-  if (!rowEl) return false;
-  const rowH = rowEl.getBoundingClientRect().height;
+  if (rowEl) rowH = rowEl.getBoundingClientRect().height;
+  if (!rowH) {
+    const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
+    const h = screen?.getBoundingClientRect().height || 0;
+    if (h && term.rows > 0) rowH = h / term.rows;
+  }
   if (!rowH) return false;
   const cs = getComputedStyle(container);
   // clientHeight 含 padding，需减掉才是内容区

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal } from 'antd';
+import { useI18n } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -9,51 +10,53 @@ interface Props {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = isMac ? '⌘' : 'Ctrl';
 
-const groups: { title: string; items: [string, string][] }[] = [
-  {
-    title: '窗口 / 标签',
-    items: [
-      [`${MOD}+Shift+D`, '新建分屏'],
-      [`${MOD}+Shift+W`, '关闭当前分屏（仅一个时关闭标签）'],
-      [`${MOD}+1 ~ 9`, '切换到第 N 个终端标签'],
-      ['鼠标中键点标签', '关闭该标签'],
-      ['拖拽标签', '调整标签顺序'],
-    ],
-  },
-  {
-    title: '命令 / 补全',
-    items: [
-      [`${MOD}+Shift+P`, '命令面板（模糊搜命令库并插入）'],
-      ['→ / Tab', '接受光标后的灰色补全提示（优先该主机历史命令）'],
-      ['Tab', '无灰字提示时交给 Shell 原生补全'],
-      ['Ctrl+空格', '弹出候选命令列表'],
-      ['↑ ↓ + Enter', '在候选列表中选择并接受'],
-      ['Esc', '关闭候选列表'],
-    ],
-  },
-  {
-    title: '编辑 / 剪贴板',
-    items: [
-      ['选中文本', '自动复制'],
-      [`${MOD}+Shift+C / V`, '复制 / 粘贴'],
-      ['右键', '有选区则复制，否则粘贴'],
-    ],
-  },
-  {
-    title: '视图',
-    items: [
-      [`${MOD}+滚轮`, '缩放字号'],
-      [`${MOD}+ + / -`, '放大 / 缩小字号'],
-      [`${MOD}+0`, '字号复位'],
-      ['Ctrl+F', '终端内搜索'],
-      [`${MOD}+Shift+/`, '打开本速查表'],
-      ['↑↑↓↓←→←→BA', '？'],
-    ],
-  },
-];
+export const ShortcutHelp: React.FC<Props> = ({ open, onClose }) => {
+  const { text } = useI18n();
+  const groups: { title: string; items: [string, string][] }[] = [
+    {
+      title: text('shortcut.group.window'),
+      items: [
+        [`${MOD}+Shift+D`, text('shortcut.newSplit')],
+        [`${MOD}+Shift+W`, text('shortcut.closePane')],
+        [`${MOD}+1 ~ 9`, text('shortcut.switchTab')],
+        ['Middle click tab', text('shortcut.middleClose')],
+        ['Drag tab', text('shortcut.dragTab')],
+      ],
+    },
+    {
+      title: text('shortcut.group.command'),
+      items: [
+        [`${MOD}+Shift+P`, text('shortcut.commandPalette')],
+        ['→ / Tab', text('shortcut.acceptCompletion')],
+        ['Tab', text('shortcut.nativeCompletion')],
+        ['Ctrl+Space', text('shortcut.showCandidates')],
+        ['↑ ↓ + Enter', text('shortcut.pickCandidate')],
+        ['Esc', text('shortcut.closeCandidates')],
+      ],
+    },
+    {
+      title: text('shortcut.group.edit'),
+      items: [
+        ['Select text', text('shortcut.autoCopy')],
+        [`${MOD}+Shift+C / V`, text('shortcut.copyPaste')],
+        ['Right click', text('shortcut.contextMenu')],
+      ],
+    },
+    {
+      title: text('shortcut.group.view'),
+      items: [
+        [`${MOD}+Wheel`, text('shortcut.zoomWheel')],
+        [`${MOD}+ + / -`, text('shortcut.zoomInOut')],
+        [`${MOD}+0`, text('shortcut.zoomReset')],
+        ['Ctrl+F', text('shortcut.searchTerminal')],
+        [`${MOD}+Shift+/`, text('shortcut.openHelp')],
+        ['↑↑↓↓←→←→BA', '?'],
+      ],
+    },
+  ];
 
-export const ShortcutHelp: React.FC<Props> = ({ open, onClose }) => (
-  <Modal open={open} onCancel={onClose} footer={null} title="键盘快捷键" width={560} centered>
+  return (
+  <Modal open={open} onCancel={onClose} footer={null} title={text('shortcut.title')} width={560} centered>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       {groups.map((g) => (
         <div key={g.title}>
@@ -75,4 +78,5 @@ export const ShortcutHelp: React.FC<Props> = ({ open, onClose }) => (
       ))}
     </div>
   </Modal>
-);
+  );
+};

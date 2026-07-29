@@ -4,6 +4,7 @@ import type { MenuProps } from 'antd';
 import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined, ExpandOutlined, CompressOutlined, PlusOutlined, CopyOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
 import type { TermSession } from '../terminalSessions';
+import { useI18n } from '../i18n';
 
 interface Props {
   sessions: TermSession[];
@@ -56,6 +57,7 @@ export const TerminalTabBar: React.FC<Props> = ({
   onNewConnection,
   onDuplicate,
 }) => {
+  const { text } = useI18n();
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -144,15 +146,15 @@ export const TerminalTabBar: React.FC<Props> = ({
   const commitEdit = (id: number) => { onRename?.(id, editVal); setEditingId(null); };
 
   const tabMenu = (s: TermSession): MenuProps['items'] => [
-    { key: 'rename', icon: <EditOutlined />, label: '重命名', onClick: () => startEdit(s) },
+    { key: 'rename', icon: <EditOutlined />, label: text('terminalTab.rename'), onClick: () => startEdit(s) },
     // 打开资产是「聚焦已有终端」，要开第二个同主机终端走这里
-    { key: 'dup', icon: <CopyOutlined />, label: '复制终端', onClick: () => onDuplicate?.(s.id) },
-    { key: 'moveLeft', icon: <LeftOutlined />, label: '← 左移一位', disabled: sessions.findIndex((x) => x.id === s.id) <= 0, onClick: () => moveTab(s, -1) },
-    { key: 'moveRight', icon: <RightOutlined />, label: '右移一位 →', disabled: sessions.findIndex((x) => x.id === s.id) >= sessions.length - 1, onClick: () => moveTab(s, 1) },
+    { key: 'dup', icon: <CopyOutlined />, label: text('terminalTab.duplicate'), onClick: () => onDuplicate?.(s.id) },
+    { key: 'moveLeft', icon: <LeftOutlined />, label: text('terminalTab.moveLeft'), disabled: sessions.findIndex((x) => x.id === s.id) <= 0, onClick: () => moveTab(s, -1) },
+    { key: 'moveRight', icon: <RightOutlined />, label: text('terminalTab.moveRight'), disabled: sessions.findIndex((x) => x.id === s.id) >= sessions.length - 1, onClick: () => moveTab(s, 1) },
     {
       key: 'color',
       icon: <BgColorsOutlined />,
-      label: '标签颜色',
+      label: text('terminalTab.color'),
       children: [
         ...TAB_COLORS.map((c) => ({
           key: c,
@@ -164,11 +166,11 @@ export const TerminalTabBar: React.FC<Props> = ({
           onClick: () => onRecolor?.(s.id, c),
         })),
         { type: 'divider' as const },
-        { key: 'clear', label: '清除颜色', onClick: () => onRecolor?.(s.id, '') },
+        { key: 'clear', label: text('terminalTab.clearColor'), onClick: () => onRecolor?.(s.id, '') },
       ],
     },
     { type: 'divider' as const },
-    { key: 'close', icon: <CloseOutlined />, danger: true, label: '关闭标签', onClick: () => onClose(s.id) },
+    { key: 'close', icon: <CloseOutlined />, danger: true, label: text('terminalTab.close'), onClick: () => onClose(s.id) },
   ];
 
   const tabBase: React.CSSProperties = {
@@ -255,7 +257,7 @@ export const TerminalTabBar: React.FC<Props> = ({
                 onClose(s.id); // 中键关闭标签
               }
             }}
-            title={isLocal ? '本地终端（双击重命名 · 右键改色）' : `${s.name} (${s.ip})　双击重命名 · 右键改色`}
+            title={isLocal ? text('terminalTab.localTitle') : text('terminalTab.remoteTitle', { name: s.name, ip: s.ip })}
           >
             {isLocal ? (
               <DesktopOutlined style={{ fontSize: 14, color: iconColor }} />
@@ -279,7 +281,7 @@ export const TerminalTabBar: React.FC<Props> = ({
             )}
             {!active && activityIds.includes(s.id) && (
               <span
-                title="有新输出"
+                title={text('terminalTab.newOutput')}
                 style={{ width: 7, height: 7, borderRadius: '50%', background: palette.accent, flexShrink: 0, animation: 'pulse 2s infinite' }}
               />
             )}
@@ -300,7 +302,7 @@ export const TerminalTabBar: React.FC<Props> = ({
 
       {/* 「+」新建连接：直接弹 SSH 登录框，不用先去资产页录入 */}
       {onNewConnection && (
-        <Tooltip title="新建连接 (Ctrl/⌘+Shift+N)" placement="bottom">
+        <Tooltip title={text('terminalTab.newConnection')} placement="bottom">
           <div
             onClick={onNewConnection}
             style={{
@@ -324,7 +326,7 @@ export const TerminalTabBar: React.FC<Props> = ({
 
       {/* 终端模式开关（Ctrl/⌘+Shift+Enter 同效） */}
       {onToggleTermMode && (
-        <Tooltip title={termMode ? '退出终端模式 (Ctrl/⌘+Shift+Enter)' : '终端模式：只留标签栏与终端 (Ctrl/⌘+Shift+Enter)'} placement="bottomRight">
+        <Tooltip title={termMode ? text('terminalTab.exitTermMode') : text('terminalTab.enterTermMode')} placement="bottomRight">
           <div
             onClick={onToggleTermMode}
             style={{

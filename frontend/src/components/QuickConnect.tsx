@@ -25,8 +25,8 @@ import {
 } from '../services/api';
 import { useTerminals } from '../terminalSessions';
 import { palette } from '../theme';
+import { useI18n } from '../i18n';
 
-const UNGROUPED = '未分组';
 const RECENT_KEY = 'lynx-recent-hosts';
 // 「平台默认 Shell」在菜单里的占位 key（真实值是空串，不能直接当 antd 的 key 用）
 const DEFAULT_SHELL_KEY = '__default__';
@@ -66,6 +66,7 @@ interface Props {
 // 左侧栏「快速连接」：按标签分组的主机树 + 本地终端，点击即开终端标签并连接；
 // 支持「最近连接」置顶、右键菜单（新分屏/SFTP/资产）、拖拽主机到分屏直接连。
 export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
+  const { text } = useI18n();
   const { open, sessions, activeId } = useTerminals();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,11 +122,15 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     const localIds = sessions.filter((s) => s.assetId < 0).map((s) => s.assetId);
     const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
     const n = localIds.length + 1;
-    open({ assetId: nextId, name: n > 1 ? `本地终端 ${n}` : '本地终端', ip: '本机' });
+    open({
+      assetId: nextId,
+      name: n > 1 ? text('quickConnect.localTerminalN', { count: n }) : text('quickConnect.localTerminal'),
+      ip: text('quickConnect.localHost'),
+    });
   };
 
   // Shell 选择菜单。antd 的 key 不能是空串（选中态匹配不上），故默认项用 DEFAULT_SHELL_KEY 占位。
-  const shellLabel = LOCAL_SHELL_OPTIONS.find((o) => o.value === shellKind)?.label ?? LOCAL_SHELL_OPTIONS[0].label;
+  const shellLabel = shellKind || text('common.default');
   const shellMenu: MenuProps = {
     selectable: true,
     selectedKeys: [shellKind || DEFAULT_SHELL_KEY],
@@ -150,15 +155,16 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     }
   };
   const hostMenu = (a: Asset): MenuProps['items'] => [
-    { key: 'connect', icon: <CodeOutlined />, label: '连接（新标签）', onClick: () => connect(a) },
-    { key: 'split', icon: <BlockOutlined />, label: '在新分屏打开', onClick: () => openInSplit(a) },
-    { key: 'sftp', icon: <FolderOpenOutlined />, label: '文件传输 (SFTP)', onClick: () => window.dispatchEvent(new CustomEvent('lynx-open-sftp', { detail: a })) },
+    { key: 'connect', icon: <CodeOutlined />, label: text('quickConnect.menu.connect'), onClick: () => connect(a) },
+    { key: 'split', icon: <BlockOutlined />, label: text('quickConnect.menu.split'), onClick: () => openInSplit(a) },
+    { key: 'sftp', icon: <FolderOpenOutlined />, label: text('quickConnect.menu.sftp'), onClick: () => window.dispatchEvent(new CustomEvent('lynx-open-sftp', { detail: a })) },
     { type: 'divider' },
-    { key: 'assets', icon: <EditOutlined />, label: '在资产清单查看', onClick: () => window.dispatchEvent(new CustomEvent('lynx-navigate', { detail: '/assets' })) },
+    { key: 'assets', icon: <EditOutlined />, label: text('quickConnect.menu.assets'), onClick: () => window.dispatchEvent(new CustomEvent('lynx-navigate', { detail: '/assets' })) },
   ];
 
   // 过滤 + 按标签分组（一台主机可出现在多个标签下；无标签归「未分组」）
   const groups = useMemo(() => {
+    const ungrouped = text('quickConnect.ungrouped');
     const kw = q.trim().toLowerCase();
     const match = (a: Asset) => {
       if (!kw) return true;
@@ -173,19 +179,19 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     for (const a of assets) {
       if (!match(a)) continue;
       const tags = parseTags(a.tags);
-      const keys = tags.length ? tags : [UNGROUPED];
+      const keys = tags.length ? tags : [ungrouped];
       for (const k of keys) {
         if (!map.has(k)) map.set(k, []);
         map.get(k)!.push(a);
       }
     }
     const keys = Array.from(map.keys()).sort((a, b) => {
-      if (a === UNGROUPED) return 1;
-      if (b === UNGROUPED) return -1;
+      if (a === ungrouped) return 1;
+      if (b === ungrouped) return -1;
       return a.localeCompare(b, 'zh');
     });
     return keys.map((k) => ({ tag: k, hosts: map.get(k)!.sort(byOnlineThenName) }));
-  }, [assets, q]);
+  }, [assets, q, text]);
 
   const recentHosts = useMemo(() => {
     return recentIds
@@ -221,7 +227,11 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
           draggable
           onDragStart={(e) => startHostDrag(e, a)}
           onClick={() => connect(a)}
-          title={`${a.name} · ${a.ip}${tags.length ? ` · ${tags.join(' / ')}` : ''}\n单击连接 · 右键更多 · 可拖到分屏`}
+          title={text('quickConnect.hostTitle', {
+            name: a.name,
+            ip: a.ip,
+            tags: tags.length ? ` · ${tags.join(' / ')}` : '',
+          })}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -275,7 +285,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         {localShell && (
           // 窄栏放不下 Shell 下拉，改挂到右键菜单上
           <Dropdown menu={shellMenu} trigger={['contextMenu']} placement="bottomLeft">
-            <Tooltip title={`新建本地终端（${shellLabel}）· 右键换 Shell`} placement="right">
+            <Tooltip title={text('quickConnect.localTooltip', { shell: shellLabel })} placement="right">
               <div onClick={connectLocal} style={iconBtn(localActive, true)}>
                 <DesktopOutlined style={{ color: palette.accent, fontSize: 16 }} />
               </div>
@@ -315,9 +325,9 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
       {/* 标题 + 刷新 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 6px 8px' }}>
         <span style={{ ...labelStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <ThunderboltOutlined style={{ color: palette.accent }} /> 快速连接
+          <ThunderboltOutlined style={{ color: palette.accent }} /> {text('quickConnect.title')}
         </span>
-        <Tooltip title="刷新主机" placement="right">
+        <Tooltip title={text('quickConnect.refreshHosts')} placement="right">
           <ReloadOutlined spin={loading} onClick={load} style={{ color: palette.textMute, cursor: 'pointer', fontSize: 12 }} />
         </Tooltip>
       </div>
@@ -326,7 +336,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
       <Input
         size="small"
         allowClear
-        placeholder="搜索主机 / IP / 标签"
+        placeholder={text('quickConnect.searchPlaceholder')}
         value={q}
         onChange={(e) => setQ(e.target.value)}
         prefix={<TagsOutlined style={{ color: palette.textMute }} />}
@@ -337,7 +347,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
       {localShell && (
         <div
           onClick={connectLocal}
-          title={`新建本地终端（连接运行本程序的这台机器，可同时开多个）\n当前 Shell：${shellLabel}`}
+          title={text('quickConnect.localTitle', { shell: shellLabel })}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', marginBottom: 6,
             borderRadius: 8, cursor: 'pointer', fontSize: 13,
@@ -347,19 +357,19 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
           }}
         >
           <DesktopOutlined style={{ color: palette.accent }} />
-          <span style={{ flex: 1 }}>本地终端</span>
+          <span style={{ flex: 1 }}>{text('quickConnect.localTerminal')}</span>
           <Dropdown menu={shellMenu} trigger={['click']} placement="bottomRight">
             <span
               // 选 Shell 的点击不能冒泡到整行，否则顺手多开一个终端
               onClick={(e) => e.stopPropagation()}
-              title={`选择 Shell（当前：${shellLabel}）`}
+              title={text('quickConnect.pickShell', { shell: shellLabel })}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0,
                 padding: '1px 5px', borderRadius: 5, fontSize: 11, lineHeight: '16px',
                 color: palette.textMute, background: 'rgba(127,127,127,0.14)',
               }}
             >
-              {shellKind || '默认'}
+              {shellKind || text('common.default')}
               <CaretDownOutlined style={{ fontSize: 9 }} />
             </span>
           </Dropdown>
@@ -376,7 +386,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         ) : groups.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<span style={{ color: palette.textMute, fontSize: 12 }}>{q ? '无匹配主机' : '暂无主机'}</span>}
+            description={<span style={{ color: palette.textMute, fontSize: 12 }}>{q ? text('quickConnect.noMatchedHosts') : text('quickConnect.noHosts')}</span>}
             style={{ marginTop: 24 }}
           />
         ) : (
@@ -386,7 +396,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
               <div style={{ marginBottom: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', color: '#7c8aa5', fontSize: 12, fontWeight: 600 }}>
                   <HistoryOutlined style={{ fontSize: 11 }} />
-                  <span style={{ flex: 1 }}>最近</span>
+                  <span style={{ flex: 1 }}>{text('quickConnect.recent')}</span>
                 </div>
                 {recentHosts.map((a) => hostRow(a, 'recent'))}
                 <div style={{ height: 1, background: palette.siderBorder, margin: '6px 6px 2px' }} />

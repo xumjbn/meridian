@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Form, Input, Button, Tabs, message } from 'antd';
 import { UserOutlined, LockOutlined, SafetyCertificateOutlined, ThunderboltOutlined, ClusterOutlined } from '@ant-design/icons';
 import { LogoMark, LogoWordmark } from '../components/Logo';
+import { LanguageSwitch } from '../components/LanguageSwitch';
 import { brand, palette } from '../theme';
-import { login, registerUser } from '../services/api';
+import { errorMessage, login, registerUser } from '../services/api';
+import { useI18n } from '../i18n';
 
 interface LoginProps {
   onSuccess: () => void;
@@ -15,24 +17,24 @@ interface LoginValues {
   confirm?: string;
 }
 
-// 左侧品牌区的能力点（控制台登录页惯例：产品价值三连）
-const HIGHLIGHTS = [
-  { icon: <ThunderboltOutlined />, title: '一键连接', desc: '主机树直达 SSH / SFTP，会话常驻不掉线' },
-  { icon: <ClusterOutlined />, title: '集群纳管', desc: '自动识别 K8s 节点与控制台，归类即可跳转' },
-  { icon: <SafetyCertificateOutlined />, title: '凭据集中', desc: '账号密钥统一保管，操作全程审计留痕' },
-];
-
 export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
+  const { text } = useI18n();
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [form] = Form.useForm<LoginValues>();
+  // 左侧品牌区的能力点（控制台登录页惯例：产品价值三连）
+  const highlights = [
+    { icon: <ThunderboltOutlined />, title: text('login.highlight.connect.title'), desc: text('login.highlight.connect.desc') },
+    { icon: <ClusterOutlined />, title: text('login.highlight.cluster.title'), desc: text('login.highlight.cluster.desc') },
+    { icon: <SafetyCertificateOutlined />, title: text('login.highlight.credential.title'), desc: text('login.highlight.credential.desc') },
+  ];
 
   const handleFinish = async (values: LoginValues) => {
     setLoading(true);
     try {
       if (mode === 'register') {
         await registerUser(values.username, values.password);
-        message.success({ content: '注册成功，请等待管理员审批后再登录', duration: 5 });
+        message.success({ content: text('login.registerSuccess'), duration: 5 });
         setMode('login');
         form.setFieldsValue({ username: 'admin', password: '', confirm: '' });
         return;
@@ -48,8 +50,8 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
         localStorage.removeItem('lynx-must-change');
       }
       onSuccess();
-    } catch (e: any) {
-      message.error(e?.message || (mode === 'register' ? '注册失败' : '用户名或密码错误'));
+    } catch (e: unknown) {
+      message.error(errorMessage(e) || (mode === 'register' ? text('login.registerFailed') : text('login.loginFailed')));
     } finally {
       setLoading(false);
     }
@@ -76,7 +78,10 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
       >
         <LogoMark size={26} />
         <LogoWordmark height={17} color={palette.primary} />
-        <span style={{ fontSize: 12.5, color: palette.textMute }}>控制台</span>
+        <span style={{ fontSize: 12.5, color: palette.textMute }}>{text('brand.console')}</span>
+        <div style={{ marginLeft: 'auto' }}>
+          <LanguageSwitch />
+        </div>
       </div>
 
       {/* 主体：左品牌 + 右登录卡 */}
@@ -95,13 +100,13 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
         {/* 左：品牌与能力点（窄屏自动折行到上方） */}
         <div style={{ maxWidth: 420, minWidth: 300 }}>
           <h1 style={{ margin: 0, fontSize: 30, fontWeight: 600, color: palette.text, letterSpacing: '-0.5px' }}>
-            {brand.tagline}
+            {text('brand.tagline')}
           </h1>
           <p style={{ margin: '12px 0 30px', fontSize: 14, color: palette.textSub, lineHeight: 1.7 }}>
-            发现资产 · 纳管集群 · 一键接入 —— 把分散的主机、集群与凭据收敛到同一个控制台。
+            {text('login.subtitle')}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            {HIGHLIGHTS.map((h) => (
+            {highlights.map((h) => (
               <div key={h.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                 <span
                   style={{
@@ -145,8 +150,8 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
             activeKey={mode}
             onChange={(k) => switchMode(k as 'login' | 'register')}
             items={[
-              { key: 'login', label: '账号登录' },
-              { key: 'register', label: '注册账号' },
+              { key: 'login', label: text('login.mode.login') },
+              { key: 'register', label: text('login.mode.register') },
             ]}
           />
 
@@ -158,27 +163,27 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
             onFinish={handleFinish}
           >
             <Form.Item
-              label="用户名"
+              label={text('login.username')}
               name="username"
               rules={[
-                { required: true, message: '请输入用户名' },
-                ...(mode === 'register' ? [{ min: 3, max: 32, message: '用户名长度需为 3–32 个字符' }] : []),
+                { required: true, message: text('login.username.required') },
+                ...(mode === 'register' ? [{ min: 3, max: 32, message: text('login.username.length') }] : []),
               ]}
             >
-              <Input prefix={<UserOutlined style={{ color: palette.textMute }} />} placeholder="用户名" size="large" autoComplete="username" />
+              <Input prefix={<UserOutlined style={{ color: palette.textMute }} />} placeholder={text('login.username.placeholder')} size="large" autoComplete="username" />
             </Form.Item>
 
             <Form.Item
-              label="密码"
+              label={text('login.password')}
               name="password"
               rules={[
-                { required: true, message: '请输入密码' },
-                ...(mode === 'register' ? [{ min: 6, max: 64, message: '密码长度需为 6–64 个字符' }] : []),
+                { required: true, message: text('login.password.required') },
+                ...(mode === 'register' ? [{ min: 6, max: 64, message: text('login.password.length') }] : []),
               ]}
             >
               <Input.Password
                 prefix={<LockOutlined style={{ color: palette.textMute }} />}
-                placeholder="密码"
+                placeholder={text('login.password.placeholder')}
                 size="large"
                 autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
               />
@@ -186,22 +191,22 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
 
             {mode === 'register' && (
               <Form.Item
-                label="确认密码"
+                label={text('login.confirmPassword')}
                 name="confirm"
                 dependencies={['password']}
                 rules={[
-                  { required: true, message: '请再次输入密码' },
+                  { required: true, message: text('login.confirmPassword.required') },
                   ({ getFieldValue }) => ({
                     validator(_, value) {
                       if (!value || getFieldValue('password') === value) return Promise.resolve();
-                      return Promise.reject(new Error('两次输入的密码不一致'));
+                      return Promise.reject(new Error(text('login.confirmPassword.mismatch')));
                     },
                   }),
                 ]}
               >
                 <Input.Password
                   prefix={<LockOutlined style={{ color: palette.textMute }} />}
-                  placeholder="确认密码"
+                  placeholder={text('login.confirmPassword.placeholder')}
                   size="large"
                   autoComplete="new-password"
                 />
@@ -210,13 +215,13 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
 
             <Form.Item style={{ marginBottom: 8, marginTop: 24 }}>
               <Button type="primary" htmlType="submit" size="large" block loading={loading}>
-                {mode === 'register' ? '注册' : '登录'}
+                {mode === 'register' ? text('login.submit.register') : text('login.submit.login')}
               </Button>
             </Form.Item>
           </Form>
 
           <div style={{ fontSize: 12, color: palette.textMute, textAlign: 'center' }}>
-            {mode === 'login' ? '注册账号需管理员审批后方可登录' : '注册后请联系管理员审批开通'}
+            {mode === 'login' ? text('login.loginHint') : text('login.registerHint')}
           </div>
         </div>
       </div>

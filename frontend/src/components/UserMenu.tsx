@@ -3,7 +3,8 @@ import { Dropdown, Avatar, Modal, Form, Input, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { UserOutlined, LogoutOutlined, KeyOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
-import { changePassword, logout } from '../services/api';
+import { changePassword, errorMessage, logout } from '../services/api';
+import { useI18n } from '../i18n';
 
 interface ChangePasswordValues {
   oldPassword: string;
@@ -18,6 +19,7 @@ interface UserMenuProps {
 
 // 当前用户菜单：显示登录用户名，提供修改密码、退出登录
 export const UserMenu: React.FC<UserMenuProps> = ({ tone = 'dark' }) => {
+  const { t, text } = useI18n();
   const user = localStorage.getItem('lynx-user') || 'admin';
   const onDark = tone === 'light';
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -43,11 +45,11 @@ export const UserMenu: React.FC<UserMenuProps> = ({ tone = 'dark' }) => {
     try {
       setSaving(true);
       await changePassword(user, values.oldPassword, values.newPassword);
-      message.success('密码修改成功');
+      message.success(text('password.changeSuccess'));
       setPwdOpen(false);
       form.resetFields();
-    } catch (e: any) {
-      message.error(e?.message || '修改失败');
+    } catch (e: unknown) {
+      message.error(errorMessage(e) || text('password.changeFailed'));
     } finally {
       setSaving(false);
     }
@@ -59,13 +61,13 @@ export const UserMenu: React.FC<UserMenuProps> = ({ tone = 'dark' }) => {
       disabled: true,
       label: (
         <span style={{ color: palette.textSub }}>
-          当前用户：<b style={{ color: palette.text }}>{user}</b>
+          {t('user.current', { user: <b style={{ color: palette.text }}>{user}</b> })}
         </span>
       ),
     },
     { type: 'divider' },
-    { key: 'change-password', icon: <KeyOutlined />, label: '修改密码' },
-    { key: 'logout', icon: <LogoutOutlined />, danger: true, label: '退出登录' },
+    { key: 'change-password', icon: <KeyOutlined />, label: text('user.changePassword') },
+    { key: 'logout', icon: <LogoutOutlined />, danger: true, label: text('user.logout') },
   ];
 
   const onClick: MenuProps['onClick'] = ({ key }) => {
@@ -94,48 +96,48 @@ export const UserMenu: React.FC<UserMenuProps> = ({ tone = 'dark' }) => {
       </Dropdown>
 
       <Modal
-        title={<span><KeyOutlined style={{ marginRight: 8, color: palette.primary }} />修改密码</span>}
+        title={<span><KeyOutlined style={{ marginRight: 8, color: palette.primary }} />{text('user.changePassword')}</span>}
         open={pwdOpen}
         onCancel={() => { setPwdOpen(false); form.resetFields(); }}
         onOk={() => form.submit()}
         confirmLoading={saving}
-        okText="确认修改"
-        cancelText="取消"
+        okText={text('password.confirmChange')}
+        cancelText={text('common.cancel')}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleChangePassword} style={{ marginTop: 12 }}>
           <Form.Item
-            label="原密码"
+            label={text('password.old')}
             name="oldPassword"
-            rules={[{ required: true, message: '请输入原密码' }]}
+            rules={[{ required: true, message: text('password.old.required') }]}
           >
-            <Input.Password placeholder="当前登录密码" autoComplete="current-password" />
+            <Input.Password placeholder={text('password.old.placeholder')} autoComplete="current-password" />
           </Form.Item>
           <Form.Item
-            label="新密码"
+            label={text('password.new')}
             name="newPassword"
             rules={[
-              { required: true, message: '请输入新密码' },
-              { min: 6, max: 64, message: '密码长度需为 6–64 个字符' },
+              { required: true, message: text('password.new.required') },
+              { min: 6, max: 64, message: text('login.password.length') },
             ]}
           >
-            <Input.Password placeholder="6–64 位新密码" autoComplete="new-password" />
+            <Input.Password placeholder={text('password.new.placeholder')} autoComplete="new-password" />
           </Form.Item>
           <Form.Item
-            label="确认新密码"
+            label={text('password.confirmNew')}
             name="confirm"
             dependencies={['newPassword']}
             rules={[
-              { required: true, message: '请再次输入新密码' },
+              { required: true, message: text('password.confirmNew.required') },
               ({ getFieldValue }) => ({
                 validator(_, value) {
                   if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
-                  return Promise.reject(new Error('两次输入的密码不一致'));
+                  return Promise.reject(new Error(text('login.confirmPassword.mismatch')));
                 },
               }),
             ]}
           >
-            <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
+            <Input.Password placeholder={text('password.confirmNew.placeholder')} autoComplete="new-password" />
           </Form.Item>
         </Form>
       </Modal>

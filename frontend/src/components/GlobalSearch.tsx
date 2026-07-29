@@ -13,21 +13,13 @@ import { useNavigate } from 'react-router-dom';
 import { palette } from '../theme';
 import { getAssets } from '../services/api';
 import type { Asset } from '../services/api';
+import { useI18n } from '../i18n';
 
 interface QuickLink {
   path: string;
   label: string;
   icon: React.ReactNode;
 }
-
-const QUICK_LINKS: QuickLink[] = [
-  { path: '/', label: '控制台', icon: <DashboardOutlined /> },
-  { path: '/assets', label: '资产清单', icon: <DatabaseOutlined /> },
-  { path: '/tasks', label: '自动发现', icon: <RadarChartOutlined /> },
-  { path: '/vulns', label: '漏洞发现', icon: <BugOutlined /> },
-  { path: '/credentials', label: '凭据保管箱', icon: <SafetyCertificateOutlined /> },
-  { path: '/settings', label: '系统设置', icon: <SettingOutlined /> },
-];
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: 11,
@@ -39,6 +31,7 @@ const sectionTitleStyle: React.CSSProperties = {
 };
 
 export const GlobalSearch: React.FC = () => {
+  const { text } = useI18n();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -101,9 +94,17 @@ export const GlobalSearch: React.FC = () => {
   );
 
   const q = query.trim().toLowerCase();
+  const quickLinks: QuickLink[] = [
+    { path: '/', label: text('nav.console'), icon: <DashboardOutlined /> },
+    { path: '/assets', label: text('nav.assets'), icon: <DatabaseOutlined /> },
+    { path: '/tasks', label: text('nav.discovery'), icon: <RadarChartOutlined /> },
+    { path: '/vulns', label: text('globalSearch.vulns'), icon: <BugOutlined /> },
+    { path: '/credentials', label: text('nav.credentials'), icon: <SafetyCertificateOutlined /> },
+    { path: '/settings', label: text('nav.settings'), icon: <SettingOutlined /> },
+  ];
   const filteredLinks = q
-    ? QUICK_LINKS.filter((l) => l.label.toLowerCase().includes(q) || l.path.includes(q))
-    : QUICK_LINKS;
+    ? quickLinks.filter((l) => l.label.toLowerCase().includes(q) || l.path.includes(q))
+    : quickLinks;
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',
@@ -142,7 +143,7 @@ export const GlobalSearch: React.FC = () => {
           variant="borderless"
           size="large"
           prefix={<SearchOutlined style={{ color: palette.textMute, fontSize: 16 }} />}
-          placeholder="搜索资产、跳转页面…"
+          placeholder={text('globalSearch.placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{ fontSize: 15 }}
@@ -153,7 +154,7 @@ export const GlobalSearch: React.FC = () => {
         {/* 快捷跳转 */}
         {filteredLinks.length > 0 && (
           <>
-            <div style={sectionTitleStyle}>快捷跳转</div>
+            <div style={sectionTitleStyle}>{text('globalSearch.quickJump')}</div>
             {filteredLinks.map((l) => (
               <div
                 key={l.path}
@@ -173,7 +174,7 @@ export const GlobalSearch: React.FC = () => {
         {/* 资产搜索结果 */}
         {hasAssetResults && (
           <>
-            <div style={sectionTitleStyle}>资产</div>
+            <div style={sectionTitleStyle}>{text('globalSearch.assets')}</div>
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
                 <Spin />
@@ -198,7 +199,7 @@ export const GlobalSearch: React.FC = () => {
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="未找到匹配的资产"
+                description={text('globalSearch.noAssets')}
                 style={{ padding: '12px 0', color: palette.textMute }}
               />
             )}
@@ -206,7 +207,7 @@ export const GlobalSearch: React.FC = () => {
         )}
 
         {filteredLinks.length === 0 && !hasAssetResults && (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无匹配项" style={{ padding: '20px 0' }} />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text('globalSearch.noMatches')} style={{ padding: '20px 0' }} />
         )}
       </div>
     </Modal>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy, useMemo } from 'react';
 import { ConfigProvider, theme, Tooltip, Spin } from 'antd';
 import {
   DashboardOutlined,
@@ -25,6 +25,7 @@ import { login, isTauri, DESKTOP_BACKEND, type Asset, type ApiError } from './se
 import { SftpDrawer } from './components/SftpDrawer';
 import { NewConnectionModal } from './components/NewConnectionModal';
 import { brand, palette, antdLightToken, antdComponents } from './theme';
+import { I18nProvider, useI18n } from './i18n';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
 const ForcePasswordChange = lazy(() => import('./pages/ForcePasswordChange').then((m) => ({ default: m.ForcePasswordChange })));
@@ -50,6 +51,7 @@ const PageFallback: React.FC = () => (
 // 桌面端启动屏：等本机服务起来并拿到 token。首次安装要建库+迁移，可能十几秒，
 // 所以超过 6s 补一句说明，免得看着像卡死。
 const BootScreen: React.FC<{ onSkip: () => void; detail?: string }> = ({ onSkip, detail }) => {
+  const { text } = useI18n();
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setSlow(true), 6000);
@@ -61,7 +63,7 @@ const BootScreen: React.FC<{ onSkip: () => void; detail?: string }> = ({ onSkip,
       alignItems: 'center', justifyContent: 'center', background: palette.chromeBg,
     }}>
       <Spin size="large" />
-      <div style={{ color: palette.chromeTextStrong, fontSize: 14 }}>正在启动本机服务…</div>
+      <div style={{ color: palette.chromeTextStrong, fontSize: 14 }}>{text('app.boot.starting')}</div>
       {/* 卡住时必须把真实原因摆出来，否则用户和排查的人都只能靠猜 */}
       {detail && (
         <div style={{
@@ -74,11 +76,11 @@ const BootScreen: React.FC<{ onSkip: () => void; detail?: string }> = ({ onSkip,
       {slow && (
         <>
           <div style={{ color: palette.chromeTextMute, fontSize: 12, maxWidth: 360, textAlign: 'center', lineHeight: 1.7 }}>
-            后端地址 <code>{DESKTOP_BACKEND}</code><br />
-            连不上通常是端口被上一个未退出的实例占用，或本平台的 sidecar 未随包构建。
+            {text('app.boot.backendAddress')} <code>{DESKTOP_BACKEND}</code><br />
+            {text('app.boot.slowHelp')}
           </div>
           <a onClick={onSkip} style={{ fontSize: 12, color: palette.primary, cursor: 'pointer' }}>
-            跳过，直接进入登录页
+            {text('app.boot.skipLogin')}
           </a>
         </>
       )}
@@ -96,15 +98,15 @@ const TERM_MODE_KEY = 'lynx-term-mode';
 const PEEK_ZONE_W = 8;   // 左边缘触发条宽度
 
 // 完整导航项（含仅管理员可见的「用户管理」），用于路由高亮与标题解析
-const navItems = [
-  { key: '/', icon: <DashboardOutlined style={{ fontSize: 15 }} />, label: '控制台' },
-  { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 15 }} />, label: '资产清单' },
-  { key: '/k8s', icon: <CloudServerOutlined style={{ fontSize: 15 }} />, label: 'K8s 集群' },
-  { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 15 }} />, label: '自动发现' },
-  { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 15 }} />, label: '凭据保管箱' },
-  { key: '/users', icon: <TeamOutlined style={{ fontSize: 15 }} />, label: '用户管理' },
-  { key: '/audit', icon: <FileSearchOutlined style={{ fontSize: 15 }} />, label: '审计日志' },
-  { key: '/settings', icon: <SettingOutlined style={{ fontSize: 15 }} />, label: '系统设置' },
+const buildNavItems = (text: (key: string) => string) => [
+  { key: '/', icon: <DashboardOutlined style={{ fontSize: 15 }} />, label: text('nav.console') },
+  { key: '/assets', icon: <DatabaseOutlined style={{ fontSize: 15 }} />, label: text('nav.assets') },
+  { key: '/k8s', icon: <CloudServerOutlined style={{ fontSize: 15 }} />, label: text('nav.k8s') },
+  { key: '/tasks', icon: <RadarChartOutlined style={{ fontSize: 15 }} />, label: text('nav.discovery') },
+  { key: '/credentials', icon: <SafetyCertificateOutlined style={{ fontSize: 15 }} />, label: text('nav.credentials') },
+  { key: '/users', icon: <TeamOutlined style={{ fontSize: 15 }} />, label: text('nav.users') },
+  { key: '/audit', icon: <FileSearchOutlined style={{ fontSize: 15 }} />, label: text('nav.audit') },
+  { key: '/settings', icon: <SettingOutlined style={{ fontSize: 15 }} />, label: text('nav.settings') },
 ];
 
 // 仅管理员可见的菜单项（自动发现涉及全网扫描；系统设置含平台级敏感配置）
@@ -112,18 +114,19 @@ const adminOnlyKeys = ['/tasks', '/users', '/audit', '/settings'];
 
 // 顶栏一级导航：总览 + 两个下拉分组；按角色裁剪管理员专属项。
 // 页面导航只在顶栏出现一次，侧栏留给「快速连接」主机树。
-const buildMenu = (isAdmin: boolean) => {
+const buildMenu = (isAdmin: boolean, navItems: ReturnType<typeof buildNavItems>, text: (key: string) => string) => {
   const flat = isAdmin ? navItems : navItems.filter((i) => !adminOnlyKeys.includes(i.key));
   const pick = (keys: string[]) => flat.filter((i) => keys.includes(i.key));
-  const headerItems: HeaderNavItem[] = [{ key: '/', label: '总览' }];
+  const headerItems: HeaderNavItem[] = [{ key: '/', label: text('nav.overview') }];
   const asset = pick(['/assets', '/k8s', '/tasks']);
-  if (asset.length) headerItems.push({ key: 'h-asset', label: '资产中心', children: asset.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
+  if (asset.length) headerItems.push({ key: 'h-asset', label: text('nav.assetCenter'), children: asset.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
   const sys = pick(['/credentials', '/users', '/audit', '/settings']);
-  if (sys.length) headerItems.push({ key: 'h-sys', label: '接入与系统', children: sys.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
+  if (sys.length) headerItems.push({ key: 'h-sys', label: text('nav.accessSystem'), children: sys.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) });
   return { headerItems };
 };
 
 const AppLayout: React.FC = () => {
+  const { antdLocale, text } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
@@ -156,7 +159,8 @@ const AppLayout: React.FC = () => {
   }, [navigate, setActive]);
 
   const isAdmin = (localStorage.getItem('lynx-role') || 'admin') === 'admin';
-  const { headerItems } = buildMenu(isAdmin);
+  const navItems = useMemo(() => buildNavItems(text), [text]);
+  const { headerItems } = useMemo(() => buildMenu(isAdmin, navItems, text), [isAdmin, navItems, text]);
 
   const selectedKey = (() => {
     const path = location.pathname;
@@ -165,7 +169,7 @@ const AppLayout: React.FC = () => {
     return found ? found.key : '/';
   })();
 
-  const currentLabel = navItems.find((i) => i.key === selectedKey)?.label ?? '工作台';
+  const currentLabel = navItems.find((i) => i.key === selectedKey)?.label ?? text('nav.workbench');
   const siderWidth = collapsed ? COLLAPSED : EXPANDED;
 
   // 「+」新建连接弹窗
@@ -208,6 +212,7 @@ const AppLayout: React.FC = () => {
 
   return (
     <ConfigProvider
+      locale={antdLocale}
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: antdLightToken,
@@ -318,7 +323,7 @@ const AppLayout: React.FC = () => {
 
           {/* 侧栏右缘的展开/收起把手（终端模式下侧栏是悬浮的，把手无意义） */}
           {!termMode && (
-          <Tooltip title={collapsed ? '展开侧栏' : '收起侧栏'} placement="right">
+          <Tooltip title={collapsed ? text('app.sidebar.expand') : text('app.sidebar.collapse')} placement="right">
             <div
               onClick={() => setCollapsed((c) => !c)}
               style={{
@@ -429,7 +434,8 @@ const AppLayout: React.FC = () => {
   );
 };
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { antdLocale, text } = useI18n();
   // 桌面端（Tauri）：本机单用户实例，免登录页——直接进入，token 后台静默获取。
   // 但「主动退出登录」(lynx-logged-out) 时不自动登录，落到登录页可切换账户。
   const desktopAuto = isTauri && localStorage.getItem('lynx-logged-out') !== '1';
@@ -450,7 +456,7 @@ export const App: React.FC = () => {
     if (isTauri) {
       import('@tauri-apps/api/event')
         .then((m) => m.listen<string>('lynx-backend-exit', (e) => {
-          setBootMsg(String(e.payload || '后端进程已退出'));
+          setBootMsg(String(e.payload || text('app.boot.backendExited')));
           setBootTimedOut(true);
         }))
         .then((fn) => { unlisten = fn; })
@@ -465,7 +471,7 @@ export const App: React.FC = () => {
       clearTimeout(t);
       unlisten?.();
     };
-  }, [tokenReady]);
+  }, [tokenReady, text]);
 
   // 桌面端 token 失效（后端重启导致会话丢失等）：清掉后重跑一次静默登录并刷新，
   // 不用再让用户手动登出重登。用 ref 防抖，避免一屏并发请求触发 N 次重登。
@@ -499,7 +505,7 @@ export const App: React.FC = () => {
     const creds: Array<[string, string]> = [['admin', 'admin'], ['admin', '123456']];
     // 单次登录最多等 8s，避免连接挂死导致永远不返回
     const withTimeout = <T,>(p: Promise<T>, ms: number) =>
-      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('连接本机服务超时')), ms))]);
+      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(text('app.boot.localTimeout'))), ms))]);
     (async () => {
       // 只有「压根没连上后端」才值得重试（sidecar 晚起）。后端明确拒绝（密码不对、
       // 需要改密等）重试多少次都一样，直接落登录页让用户手动处理。
@@ -528,11 +534,15 @@ export const App: React.FC = () => {
         if (cancelled) return;
         if (lastErr?.serverResponded) {
           // 后端答复了但不接受默认口令 → 交给登录页
-          setBootMsg(lastErr.message || '默认口令不可用');
+          setBootMsg(lastErr.message || text('app.boot.defaultPasswordUnavailable'));
           setAuthed(false);
           return;
         }
-        setBootMsg(`${lastErr?.message || '无法连接本机服务'}（第 ${i + 1}/${MAX_ROUNDS} 次重试）`);
+        setBootMsg(text('app.boot.retry', {
+          message: lastErr?.message || text('app.boot.cannotConnect'),
+          current: i + 1,
+          total: MAX_ROUNDS,
+        }));
         await new Promise((res) => setTimeout(res, 1000));
       }
       // 重试耗尽仍连不上后端 → 落登录页，别卡在转圈
@@ -548,7 +558,7 @@ export const App: React.FC = () => {
 
   if (isTerminalView && terminalAssetId) {
     return (
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
+      <ConfigProvider locale={antdLocale} theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         {/* TerminalPage/TerminalItem 依赖 useTerminals，必须置于 Provider 内，否则独立标签页打开会白屏 */}
         <TerminalProvider>
           <Suspense fallback={<PageFallback />}>
@@ -563,7 +573,7 @@ export const App: React.FC = () => {
   // 超时后不进主界面——没有 token 进去就是满屏「获取数据失败」。
   if (!authed || (desktopAuto && !tokenReady && bootTimedOut)) {
     return (
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
+      <ConfigProvider locale={antdLocale} theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         <Suspense fallback={<PageFallback />}>
           {/* 桌面端自动登录失败而落到这里时，把原因一并带上，
               否则用户只看到一个莫名其妙冒出来的登录框 */}
@@ -573,7 +583,7 @@ export const App: React.FC = () => {
               background: '#7c2d12', color: '#fed7aa', fontSize: 12,
               padding: '6px 14px', textAlign: 'center', fontFamily: 'monospace',
             }}>
-              本机服务未就绪：{bootMsg}
+              {text('app.boot.serviceNotReady', { message: bootMsg })}
             </div>
           )}
           <Login
@@ -597,7 +607,7 @@ export const App: React.FC = () => {
   // 桌面端启动屏：token 未就绪前不渲染主界面，避免首屏一片「获取数据失败」
   if (desktopAuto && !tokenReady && !bootTimedOut) {
     return (
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
+      <ConfigProvider locale={antdLocale} theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         <BootScreen onSkip={() => setBootTimedOut(true)} detail={bootMsg} />
       </ConfigProvider>
     );
@@ -606,7 +616,7 @@ export const App: React.FC = () => {
   // 首次登录强制改密：改密完成前无法进入系统（刷新也会拦截）
   if (mustChange) {
     return (
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
+      <ConfigProvider locale={antdLocale} theme={{ algorithm: theme.defaultAlgorithm, token: antdLightToken, components: antdComponents }}>
         <Suspense fallback={<PageFallback />}>
           <ForcePasswordChange onDone={() => setMustChange(false)} />
         </Suspense>
@@ -622,5 +632,11 @@ export const App: React.FC = () => {
     </BrowserRouter>
   );
 };
+
+export const App: React.FC = () => (
+  <I18nProvider>
+    <AppContent />
+  </I18nProvider>
+);
 
 export default App;

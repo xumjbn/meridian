@@ -4,8 +4,10 @@ import type { MenuProps } from 'antd';
 import { SearchOutlined, DownOutlined, QuestionCircleOutlined, GithubOutlined } from '@ant-design/icons';
 import { Logo } from './Logo';
 import { UserMenu } from './UserMenu';
+import { LanguageSwitch } from './LanguageSwitch';
 import { brand, palette, HEADER_H } from '../theme';
 import { fireEasterEgg } from './EasterEgg';
+import { useI18n } from '../i18n';
 
 export interface HeaderNavItem {
   key: string;
@@ -37,6 +39,7 @@ const BRAND_W_COLLAPSED = 152;
 // 深色底 + 白字，是全站唯一的深色区块，用来压住页面顶部。
 // ─────────────────────────────────────────────────────────────
 export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHelp, siderWidth, siderCollapsed }) => {
+  const { text } = useI18n();
   const isActive = (it: HeaderNavItem) =>
     it.children ? it.children.some((c) => c.key === activeKey) : it.key === activeKey;
 
@@ -143,16 +146,17 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
         }}
       >
         <SearchOutlined />
-        <span style={{ flex: 1 }}>搜索资产 / 页面</span>
+        <span style={{ flex: 1 }}>{text('header.search')}</span>
         <span style={{ fontSize: 11, opacity: 0.75, fontFamily: 'monospace' }}>Ctrl K</span>
       </div>
 
-      <Tooltip title="快捷键帮助">
+      <LanguageSwitch tone="light" />
+      <Tooltip title={text('header.help')}>
         <button type="button" className="lynx-topnav-item" style={{ padding: '0 10px' }} onClick={onHelp}>
           <QuestionCircleOutlined style={{ fontSize: 15 }} />
         </button>
       </Tooltip>
-      <Tooltip title="项目源码">
+      <Tooltip title={text('header.source')}>
         <a
           href={brand.repo}
           target="_blank"
