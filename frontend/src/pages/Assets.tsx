@@ -105,7 +105,7 @@ export const Assets: React.FC = () => {
   const [sftpAsset, setSftpAsset] = useState<Asset | null>(null);
   const [sftpOpen, setSftpOpen] = useState(false);
   // 管理员可分配资产归属用户
-  const isAdmin = (localStorage.getItem('lynx-role') || 'admin') === 'admin';
+  const isAdmin = (localStorage.getItem('wjw-role') || 'admin') === 'admin';
   const [users, setUsers] = useState<User[]>([]);
 
   // 常用功能：批量选择 / 分组
@@ -609,7 +609,7 @@ export const Assets: React.FC = () => {
       .join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const ok = await saveBlob(blob, `lynx-assets-${ts}.csv`);
+    const ok = await saveBlob(blob, `wjw-assets-${ts}.csv`);
     if (ok) message.success(`已导出 ${assets.length} 台资产`);
   };
 
@@ -880,7 +880,7 @@ export const Assets: React.FC = () => {
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
 
-      <div style={{ padding: pagePadding }} className="lynx-page-in">
+      <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={groupBy === 'none' ? tablePanelStyle : { ...tablePanelStyle, background: 'transparent', border: 'none' }}>
           {/* 工具栏：左=新建/批量操作，右=检索/过滤/分组 */}
           <TableToolbar
@@ -960,7 +960,7 @@ export const Assets: React.FC = () => {
           {/* 表格主体 / 分组视图 */}
           {groupBy === 'none' ? (
             <Table
-              className="lynx-table"
+              className="wjw-table"
               columns={columns}
               dataSource={assets}
               rowKey="id"

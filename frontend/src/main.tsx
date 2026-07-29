@@ -3,21 +3,30 @@ import '@xterm/xterm/css/xterm.css';
 import './index.css';
 import App from './App.tsx';
 
-// ── 旧版本本地状态迁移（Meridian → Lynx 更名）───────────────────────
-// 本地存储键由 mrd-* 改为 lynx-*。不迁移的话，老用户升级后会被登出、
-// 并丢掉「最近连接主机」「终端标签名/颜色」等本地设置。这里在渲染前一次性搬迁。
+// ── 旧版本本地状态迁移（mrd- → lynx- → wjw- 两次更名）─────────────────
+// 本地存储键前缀历经两次更名。不迁移的话，老用户升级后会被登出，
+// 并丢掉「最近连接主机」「终端标签名/颜色」「壁纸/字号/面板宽度」等全部本地设置。
+// 这里在渲染前按「从旧到新」逐级搬迁：mrd- 先并入 lynx-，再统一并入 wjw-，
+// 这样跨两个版本直接升级的用户也不会漏。
+//
+// 注意：下面这两个历史前缀是字面量，不要跟着全局改名一起替换掉——
+// 之前批量替换时就把它们改成了 wjw-，迁移变成「自己搬给自己」，等于没有。
 (() => {
-  try {
-    const LEGACY_PREFIX = 'mrd-';
-    const keys = Object.keys(localStorage).filter((k) => k.startsWith(LEGACY_PREFIX));
+  const migratePrefix = (from: string, to: string) => {
+    const keys = Object.keys(localStorage).filter((k) => k.startsWith(from));
     for (const oldKey of keys) {
-      const newKey = `lynx-${oldKey.slice(LEGACY_PREFIX.length)}`;
+      const newKey = `${to}${oldKey.slice(from.length)}`;
+      // 只在新键还没有值时搬：已经用过新版的人，其当前设置优先
       if (localStorage.getItem(newKey) === null) {
         const v = localStorage.getItem(oldKey);
         if (v !== null) localStorage.setItem(newKey, v);
       }
       localStorage.removeItem(oldKey);
     }
+  };
+  try {
+    migratePrefix('mrd-', 'lynx-');
+    migratePrefix('lynx-', 'wjw-');
   } catch {
     // localStorage 不可用（隐私模式等）时忽略：大不了重新登录一次
   }

@@ -20,7 +20,7 @@ import (
 //
 // SSH 密码与私钥此前明文入库，一旦库文件外泄（备份、误提交、被拖库）就是
 // 直接可用的凭据。这里改为 AES-256-GCM 加密后再落库：
-//   - 主密钥优先取环境变量 LYNX_SECRET_KEY（生产/容器部署应显式设置）
+//   - 主密钥优先取环境变量 WJW_SECRET_KEY（生产/容器部署应显式设置）
 //   - 未设置时在数据库同目录生成 .lynx_key（0600），保证桌面端开箱即用
 //   - 密文带 "enc:v1:" 前缀，便于与历史明文共存并逐步迁移
 //
@@ -44,7 +44,7 @@ var (
 
 // keyMaterial 返回 32 字节主密钥：环境变量优先，其次本地密钥文件（不存在则生成）
 func keyMaterial() ([]byte, error) {
-	if v := strings.TrimSpace(os.Getenv("LYNX_SECRET_KEY")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("WJW_SECRET_KEY")); v != "" {
 		// 任意长度口令统一派生成 32 字节
 		sum := sha256.Sum256([]byte(v))
 		return sum[:], nil
@@ -54,7 +54,18 @@ func keyMaterial() ([]byte, error) {
 	if dir == "" || dir == "." {
 		dir = "."
 	}
-	keyFile := filepath.Join(dir, ".lynx_key")
+	keyFile := filepath.Join(dir, ".wjw_key")
+
+	// 更名前的密钥文件叫 .lynx_key。这里必须回退读取旧文件：
+	// 主密钥一旦换掉，库里所有已加密的凭据密码和 K8s Token 立刻全部解不开，
+	// 而且是静默的——界面上只会表现为「连不上、密码不对」。
+	// 找到旧文件就原样沿用它（不改名、不重写），老库继续能解密。
+	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+		legacy := filepath.Join(dir, ".lynx_key")
+		if _, lerr := os.Stat(legacy); lerr == nil {
+			keyFile = legacy
+		}
+	}
 
 	if b, err := os.ReadFile(keyFile); err == nil {
 		raw, derr := base64.StdEncoding.DecodeString(strings.TrimSpace(string(b)))

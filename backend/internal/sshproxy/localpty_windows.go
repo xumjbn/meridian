@@ -59,6 +59,16 @@ func startLocalPty(cols, rows int, shell string) (localPty, string, error) {
 	if home, herr := os.UserHomeDir(); herr == nil && home != "" {
 		opts = append(opts, conpty.ConPtyWorkDir(home))
 	}
+	// 必须显式告诉子进程「这是个支持真彩的终端」。
+	//
+	// 之前这里一个环境变量都没传，实测在本地终端里跑
+	//   node -e "console.log(process.stdout.getColorDepth())"
+	// 得到 depth=1（单色）——于是 Claude Code 这类用 supports-color 探测能力的
+	// TUI 会整个降级成无格式白字，边框、配色、面板全没了。
+	// PowerShell 自己的输出有颜色是因为它直接吐 ANSI，不做能力探测，所以
+	// 光看 shell 提示符是发现不了这个问题的。
+	// ConPtyEnv 会整体替换环境，所以要从 os.Environ() 开始加。
+	opts = append(opts, conpty.ConPtyEnv(termEnv(os.Environ())))
 
 	var lastErr error
 	for _, exe := range candidates {

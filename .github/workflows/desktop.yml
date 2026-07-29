@@ -58,7 +58,7 @@ jobs:
           mkdir -p frontend/src-tauri/binaries
           cd backend
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -mod=mod -o "../frontend/src-tauri/binaries/lynx-backend-${{ matrix.triple }}${{ matrix.ext }}" ./cmd/server
+            go build -mod=mod -o "../frontend/src-tauri/binaries/wjw-backend-${{ matrix.triple }}${{ matrix.ext }}" ./cmd/server
 
       - name: 前端依赖
         working-directory: frontend
@@ -74,7 +74,7 @@ jobs:
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: lynx-desktop-${{ matrix.triple }}
+          name: wjw-desktop-${{ matrix.triple }}
           path: |
             frontend/src-tauri/target/release/bundle/**/*.dmg
             frontend/src-tauri/target/release/bundle/**/*.app

@@ -19,7 +19,7 @@ export const Users: React.FC = () => {
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [resetForm] = Form.useForm();
 
-  const currentUser = localStorage.getItem('lynx-user') || '';
+  const currentUser = localStorage.getItem('wjw-user') || '';
 
   const fetchUsers = async () => {
     try {
@@ -202,7 +202,7 @@ export const Users: React.FC = () => {
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
 
-      <div style={{ padding: pagePadding }} className="lynx-page-in">
+      <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
             title="用户管理"
@@ -217,7 +217,7 @@ export const Users: React.FC = () => {
             }
           />
           <Table
-            className="lynx-table"
+            className="wjw-table"
             columns={columns}
             dataSource={users}
             rowKey="id"

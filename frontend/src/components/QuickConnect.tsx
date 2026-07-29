@@ -27,7 +27,7 @@ import { useTerminals } from '../terminalSessions';
 import { palette } from '../theme';
 import { useI18n } from '../i18n';
 
-const RECENT_KEY = 'lynx-recent-hosts';
+const RECENT_KEY = 'wjw-recent-hosts';
 // 「平台默认 Shell」在菜单里的占位 key（真实值是空串，不能直接当 antd 的 key 用）
 const DEFAULT_SHELL_KEY = '__default__';
 
@@ -98,8 +98,8 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     };
     init();
     // 桌面端后台登录拿到 token 后会广播，此时再拉一次（首屏可能在拿到 token 前就挂载了）
-    window.addEventListener('lynx-auth-ready', init);
-    return () => window.removeEventListener('lynx-auth-ready', init);
+    window.addEventListener('wjw-auth-ready', init);
+    return () => window.removeEventListener('wjw-auth-ready', init);
   }, []);
 
   const openIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions]);
@@ -148,7 +148,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   // 右键菜单动作
   const openInSplit = (a: Asset) => {
     if (activeId !== null) {
-      window.dispatchEvent(new CustomEvent('lynx-open-in-split', { detail: a.id }));
+      window.dispatchEvent(new CustomEvent('wjw-open-in-split', { detail: a.id }));
       pushRecent(a.id);
     } else {
       connect(a); // 没有活动终端则退化为新标签连接
@@ -157,9 +157,9 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const hostMenu = (a: Asset): MenuProps['items'] => [
     { key: 'connect', icon: <CodeOutlined />, label: text('quickConnect.menu.connect'), onClick: () => connect(a) },
     { key: 'split', icon: <BlockOutlined />, label: text('quickConnect.menu.split'), onClick: () => openInSplit(a) },
-    { key: 'sftp', icon: <FolderOpenOutlined />, label: text('quickConnect.menu.sftp'), onClick: () => window.dispatchEvent(new CustomEvent('lynx-open-sftp', { detail: a })) },
+    { key: 'sftp', icon: <FolderOpenOutlined />, label: text('quickConnect.menu.sftp'), onClick: () => window.dispatchEvent(new CustomEvent('wjw-open-sftp', { detail: a })) },
     { type: 'divider' },
-    { key: 'assets', icon: <EditOutlined />, label: text('quickConnect.menu.assets'), onClick: () => window.dispatchEvent(new CustomEvent('lynx-navigate', { detail: '/assets' })) },
+    { key: 'assets', icon: <EditOutlined />, label: text('quickConnect.menu.assets'), onClick: () => window.dispatchEvent(new CustomEvent('wjw-navigate', { detail: '/assets' })) },
   ];
 
   // 过滤 + 按标签分组（一台主机可出现在多个标签下；无标签归「未分组」）
@@ -211,7 +211,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   const localActive = activeId !== null && activeId < 0;
 
   const startHostDrag = (e: React.DragEvent, a: Asset) => {
-    e.dataTransfer.setData('application/x-lynx-asset', String(a.id));
+    e.dataTransfer.setData('application/x-wjw-asset', String(a.id));
     e.dataTransfer.setData('text/plain', a.name);
     e.dataTransfer.effectAllowed = 'copy';
   };

@@ -17,7 +17,7 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 # 再拷源码编译
 COPY backend/ ./
-RUN go build -trimpath -ldflags="-s -w" -o /out/lynx ./cmd/server
+RUN go build -trimpath -ldflags="-s -w" -o /out/wjw ./cmd/server
 
 # ---------- 运行阶段 ----------
 FROM ${REGISTRY}/library/alpine:3.20
@@ -28,8 +28,8 @@ ENV TZ=Asia/Shanghai \
     LISTEN_ADDR=0.0.0.0:8080 \
     LYNX_DB=/data/assets.db
 WORKDIR /app
-COPY --from=builder /out/lynx /app/lynx
+COPY --from=builder /out/wjw /app/wjw
 # SQLite 数据落在挂载卷里，保证容器重建不丢数据
 VOLUME ["/data"]
 EXPOSE 8080
-ENTRYPOINT ["/app/lynx"]
+ENTRYPOINT ["/app/wjw"]

@@ -1,4 +1,4 @@
-# Lynx — 产品设计与实施说明
+# wjw — 产品设计与实施说明
 
 > **产品名称**: wjw
 > **定位**: 网络资产发现与统一接入平台（Network Asset Discovery & Unified Access Platform）
@@ -51,9 +51,9 @@
 - **Logo**：中心实心节点 + 外层轨道环 + 卫星节点，落地于 `frontend/public/favicon.svg` + `frontend/src/components/Logo.tsx`。
 - **启动横幅**：后端启动日志打印「wjw — 网络资产发现与统一接入平台」。
 - **保留的技术标识**（底层标识符，非品牌名，改动会破坏数据/兼容，**保持不变**）：
-  - Tauri identifier `cn.lynx.desktop`、sidecar 二进制 `lynx-backend`、服务端二进制 `lynx-server`；
-  - 默认库名 `lynx.db`、环境变量 `LYNX_DB` / `LYNX_LOCAL_SHELL`；
-  - 仓库地址 `git@github.com:xumjbn/lynx.git`（仓库名仍为 lynx）。
+  - Tauri identifier `cn.wjw.desktop`、sidecar 二进制 `wjw-backend`、服务端二进制 `wjw-server`；
+  - 默认库名 `wjw.db`、环境变量 `WJW_DB` / `WJW_LOCAL_SHELL`；
+  - 仓库地址 `git@github.com:xumjbn/wjw.git`（仓库名仍为 wjw）。
 
 ---
 
@@ -72,7 +72,7 @@
 | `siderBg` | `#0b1020` | 深空蓝侧边栏 |
 | `success/warning/danger` | `#10b981/#f59e0b/#ef4444` | 语义状态 |
 
-> 表面/文本/边框令牌以 CSS 变量（`var(--lynx-*)`）实现，为主题切换预留；Antd algorithm token 使用字面 hex。CSS 变量前缀 `--lynx-` 沿用历史命名，不影响品牌呈现。
+> 表面/文本/边框令牌以 CSS 变量（`var(--wjw-*)`）实现，为主题切换预留；Antd algorithm token 使用字面 hex。CSS 变量前缀 `--wjw-` 沿用历史命名，不影响品牌呈现。
 
 ### 1.2 复用组件（节选）
 
@@ -116,7 +116,7 @@
 |----|------|
 | 后端 | **Go 1.22** · **Gin 1.10** · **GORM 1.25** · **glebarez/sqlite（纯 Go SQLite，免 CGO）** · gorilla/websocket · `golang.org/x/crypto/ssh` + `pkg/sftp` · 本地 PTY（creack/pty for Unix/macOS、conpty for Windows ConPTY）· bcrypt + 内存会话令牌 |
 | 前端 | React **18** · TypeScript · **Ant Design 5** · `@xterm/xterm` v6（+ fit / search addon）· **Vite 8** · react-router-dom 7 · axios |
-| 桌面端 | **Tauri v2**（Rust）+ Go sidecar（外部二进制 `lynx-backend`）；Tauri 插件 shell / clipboard-manager |
+| 桌面端 | **Tauri v2**（Rust）+ Go sidecar（外部二进制 `wjw-backend`）；Tauri 插件 shell / clipboard-manager |
 | 扫描/调度/监控 | 自研并发 Worker Pool（有界端口探测池）· 自包含调度器（`@every 1h` / `daily:HH:MM`，无 cron 依赖）· 后台可用性监控 · nuclei（可选外部二进制）· 告警通知器 |
 
 ### 运行参数（与源码一致）
@@ -124,10 +124,10 @@
 | 项 | 值 |
 |----|-----|
 | 后端监听 | 默认 `127.0.0.1:8080`；`LISTEN_ADDR` 可覆盖（容器内设 `0.0.0.0:8080` 供 nginx 反代） |
-| 桌面 sidecar | Tauri 启动，监听 `127.0.0.1:8765`，注入 `LYNX_DB`（用户数据目录）/ `LYNX_LOCAL_SHELL=1` / `TZ` |
+| 桌面 sidecar | Tauri 启动，监听 `127.0.0.1:8765`，注入 `WJW_DB`（用户数据目录）/ `WJW_LOCAL_SHELL=1` / `TZ` |
 | 前端 dev server | `http://localhost:5173` |
-| 数据库路径 | `LYNX_DB` 指定，默认 `lynx.db`（见 `backend/internal/store/db.go`） |
-| 本地终端开关 | `LYNX_LOCAL_SHELL=1`（桌面 sidecar 默认开；普通服务端默认关，见 `GetCapabilities`） |
+| 数据库路径 | `WJW_DB` 指定，默认 `wjw.db`（见 `backend/internal/store/db.go`） |
+| 本地终端开关 | `WJW_LOCAL_SHELL=1`（桌面 sidecar 默认开；普通服务端默认关，见 `GetCapabilities`） |
 
 ---
 
@@ -343,7 +343,7 @@ cd frontend && npm run build
 ## 十、目录结构
 
 ```
-Lynx/（仓库 lynx）
+wjw/（仓库 wjw）
 ├── backend/
 │   ├── cmd/server/main.go                # 路由 + 中间件 + 调度器/监控启动
 │   └── internal/
@@ -373,6 +373,6 @@ Lynx/（仓库 lynx）
 │       ├── components/{Logo,PageHeader,UserMenu,GlobalSearch,TerminalTabBar,SftpDrawer,SnippetManager,TerminalAIPanel}.tsx
 │       ├── pages/{Dashboard,Assets,K8sClusters,ScanTasks,Vulns,Credentials,Users,Audit,Settings,Login,ForcePasswordChange,TerminalPage}.tsx
 │       └── services/api.ts
-├── src-tauri/                             # Tauri v2 桌面壳（sidecar = lynx-backend）
+├── src-tauri/                             # Tauri v2 桌面壳（sidecar = wjw-backend）
 └── docs/{architecture.md, api_spec.md, design_plan.md, plans/}
 ```

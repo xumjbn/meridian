@@ -119,7 +119,11 @@ func startLocalPty(cols, rows int, shell string) (localPty, string, error) {
 	}
 
 	cmd := exec.Command(shell, args...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8")
+	// 环境整理见 termEnv：剥掉 NO_COLOR 这类抑制颜色的变量，再补齐 TERM/COLORTERM。
+	// 只给 TERM 不给 COLORTERM 的话，supports-color 之类的库最多认到 256 色，
+	// Claude Code 这类 TUI 的配色会被削一档。
+	cmd.Env = append(termEnv(os.Environ()),
+		"LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8")
 	// 默认工作目录为用户家目录（~），而非后端进程的启动目录
 	if home, herr := os.UserHomeDir(); herr == nil && home != "" {
 		cmd.Dir = home

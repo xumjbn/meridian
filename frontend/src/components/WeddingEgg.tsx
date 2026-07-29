@@ -14,7 +14,7 @@ import { heartPoints, textPoints } from './EasterEgg';
 // 触发：终端里单独敲一行 wedding（在回车处拦截，不下发 shell）。
 // ─────────────────────────────────────────────────────────────
 
-export const WEDDING_EGG_EVENT = 'lynx-wedding-egg';
+export const WEDDING_EGG_EVENT = 'wjw-wedding-egg';
 
 /** 终端里触发：wedding / 260222 / 20260222 / 结婚快乐 / 纪念日快乐。
  *  日期口令沿用生日那套的 YYMMDD 写法（生日是 921129），

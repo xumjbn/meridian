@@ -94,7 +94,7 @@ const COLLAPSED = 64;
 // 终端模式：只留标签栏 + 终端，顶栏隐藏、侧栏改为左边缘悬浮唤出。
 // 偏好持久化，下次启动直接进入（仅在确有活动会话时才真正生效，
 // 否则会出现「没有顶栏也没有标签栏」的死界面）。
-const TERM_MODE_KEY = 'lynx-term-mode';
+const TERM_MODE_KEY = 'wjw-term-mode';
 const PEEK_ZONE_W = 8;   // 左边缘触发条宽度
 
 // 完整导航项（含仅管理员可见的「用户管理」），用于路由高亮与标题解析
@@ -150,15 +150,15 @@ const AppLayout: React.FC = () => {
       const p = (e as CustomEvent<string>).detail;
       if (p) { navigate(p); setActive(null); }
     };
-    window.addEventListener('lynx-open-sftp', onSftp);
-    window.addEventListener('lynx-navigate', onNav);
+    window.addEventListener('wjw-open-sftp', onSftp);
+    window.addEventListener('wjw-navigate', onNav);
     return () => {
-      window.removeEventListener('lynx-open-sftp', onSftp);
-      window.removeEventListener('lynx-navigate', onNav);
+      window.removeEventListener('wjw-open-sftp', onSftp);
+      window.removeEventListener('wjw-navigate', onNav);
     };
   }, [navigate, setActive]);
 
-  const isAdmin = (localStorage.getItem('lynx-role') || 'admin') === 'admin';
+  const isAdmin = (localStorage.getItem('wjw-role') || 'admin') === 'admin';
   const navItems = useMemo(() => buildNavItems(text), [text]);
   const { headerItems } = useMemo(() => buildMenu(isAdmin, navItems, text), [isAdmin, navItems, text]);
 
@@ -285,7 +285,7 @@ const AppLayout: React.FC = () => {
             }
           >
           <div
-            className="lynx-sider"
+            className="wjw-sider"
             style={{
               width: siderWidth,
               flexShrink: 0,
@@ -437,25 +437,25 @@ const AppLayout: React.FC = () => {
 const AppContent: React.FC = () => {
   const { antdLocale, text } = useI18n();
   // 桌面端（Tauri）：本机单用户实例，免登录页——直接进入，token 后台静默获取。
-  // 但「主动退出登录」(lynx-logged-out) 时不自动登录，落到登录页可切换账户。
-  const desktopAuto = isTauri && localStorage.getItem('lynx-logged-out') !== '1';
-  const [authed, setAuthed] = useState(localStorage.getItem('lynx-auth') === '1' || desktopAuto);
-  const [mustChange, setMustChange] = useState(!isTauri && localStorage.getItem('lynx-must-change') === '1');
+  // 但「主动退出登录」(wjw-logged-out) 时不自动登录，落到登录页可切换账户。
+  const desktopAuto = isTauri && localStorage.getItem('wjw-logged-out') !== '1';
+  const [authed, setAuthed] = useState(localStorage.getItem('wjw-auth') === '1' || desktopAuto);
+  const [mustChange, setMustChange] = useState(!isTauri && localStorage.getItem('wjw-must-change') === '1');
   // 桌面端首次安装：sidecar 冷启动 + 建库 + 迁移期间还没有 token，此时若直接渲染
   // 主界面，各页面会抢在登录完成前发请求并弹 401 报错。先卡在启动屏，拿到 token 再进。
-  const [tokenReady, setTokenReady] = useState(!!localStorage.getItem('lynx-token'));
+  const [tokenReady, setTokenReady] = useState(!!localStorage.getItem('wjw-token'));
   const [bootTimedOut, setBootTimedOut] = useState(false);
   const [bootMsg, setBootMsg] = useState('');
   useEffect(() => {
     if (tokenReady) return;
     // 静默登录成功：解除启动屏；若此前已因超时落到登录页，这里把用户接回来
     const onReady = () => { setTokenReady(true); setAuthed(true); };
-    window.addEventListener('lynx-auth-ready', onReady);
+    window.addEventListener('wjw-auth-ready', onReady);
     // sidecar 挂了就别再等了，直接把原因显示出来并去登录页
     let unlisten: (() => void) | undefined;
     if (isTauri) {
       import('@tauri-apps/api/event')
-        .then((m) => m.listen<string>('lynx-backend-exit', (e) => {
+        .then((m) => m.listen<string>('wjw-backend-exit', (e) => {
           setBootMsg(String(e.payload || text('app.boot.backendExited')));
           setBootTimedOut(true);
         }))
@@ -467,7 +467,7 @@ const AppContent: React.FC = () => {
     // 那还不如给个能手动登录的入口。
     const t = setTimeout(() => setBootTimedOut(true), 20000);
     return () => {
-      window.removeEventListener('lynx-auth-ready', onReady);
+      window.removeEventListener('wjw-auth-ready', onReady);
       clearTimeout(t);
       unlisten?.();
     };
@@ -483,9 +483,9 @@ const AppContent: React.FC = () => {
       relogRef.current = true;
       try {
         const r = await login('admin', 'admin');
-        localStorage.setItem('lynx-token', r.token || '');
-        localStorage.setItem('lynx-user', r.username || 'admin');
-        localStorage.setItem('lynx-role', r.role || 'admin');
+        localStorage.setItem('wjw-token', r.token || '');
+        localStorage.setItem('wjw-user', r.username || 'admin');
+        localStorage.setItem('wjw-role', r.role || 'admin');
         window.location.reload();
       } catch {
         setAuthed(false); // 默认口令也不行 → 交给登录页
@@ -493,14 +493,14 @@ const AppContent: React.FC = () => {
         relogRef.current = false;
       }
     };
-    window.addEventListener('lynx-token-invalid', onInvalid);
-    return () => window.removeEventListener('lynx-token-invalid', onInvalid);
+    window.addEventListener('wjw-token-invalid', onInvalid);
+    return () => window.removeEventListener('wjw-token-invalid', onInvalid);
   }, []);
 
   useEffect(() => {
-    if (!desktopAuto || localStorage.getItem('lynx-token')) return;
+    if (!desktopAuto || localStorage.getItem('wjw-token')) return;
     // 乐观角色：先按 admin 显示菜单，真实角色登录成功后覆盖
-    if (!localStorage.getItem('lynx-role')) localStorage.setItem('lynx-role', 'admin');
+    if (!localStorage.getItem('wjw-role')) localStorage.setItem('wjw-role', 'admin');
     let cancelled = false;
     const creds: Array<[string, string]> = [['admin', 'admin'], ['admin', '123456']];
     // 单次登录最多等 8s，避免连接挂死导致永远不返回
@@ -518,12 +518,12 @@ const AppContent: React.FC = () => {
           if (cancelled) return;
           try {
             const r = await withTimeout(login(u, p), 8000);
-            localStorage.setItem('lynx-auth', '1');
-            localStorage.setItem('lynx-token', r.token || '');
-            localStorage.setItem('lynx-user', r.username || u);
-            localStorage.setItem('lynx-role', r.role || 'admin');
-            localStorage.removeItem('lynx-must-change');
-            window.dispatchEvent(new CustomEvent('lynx-auth-ready'));
+            localStorage.setItem('wjw-auth', '1');
+            localStorage.setItem('wjw-token', r.token || '');
+            localStorage.setItem('wjw-user', r.username || u);
+            localStorage.setItem('wjw-role', r.role || 'admin');
+            localStorage.removeItem('wjw-must-change');
+            window.dispatchEvent(new CustomEvent('wjw-auth-ready'));
             return;
           } catch (e) {
             lastErr = e as ApiError;
@@ -546,7 +546,7 @@ const AppContent: React.FC = () => {
         await new Promise((res) => setTimeout(res, 1000));
       }
       // 重试耗尽仍连不上后端 → 落登录页，别卡在转圈
-      if (!cancelled && !localStorage.getItem('lynx-token')) setAuthed(false);
+      if (!cancelled && !localStorage.getItem('wjw-token')) setAuthed(false);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -588,8 +588,8 @@ const AppContent: React.FC = () => {
           )}
           <Login
             onSuccess={() => {
-              localStorage.removeItem('lynx-logged-out'); // 恢复桌面端自动登录
-              setMustChange(localStorage.getItem('lynx-must-change') === '1');
+              localStorage.removeItem('wjw-logged-out'); // 恢复桌面端自动登录
+              setMustChange(localStorage.getItem('wjw-must-change') === '1');
               // 这三个状态必须一起清掉：只置 authed 的话，上面那个
               // (desktopAuto && !tokenReady && bootTimedOut) 分支仍然成立，
               // 登录成功也会被重新渲染回登录页，表现就是「点了没反应」。

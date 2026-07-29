@@ -136,7 +136,7 @@ export const Audit: React.FC = () => {
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
 
-      <div style={{ padding: pagePadding }} className="lynx-page-in">
+      <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
             title="审计日志"
@@ -170,7 +170,7 @@ export const Audit: React.FC = () => {
             }
           />
           <Table
-            className="lynx-table"
+            className="wjw-table"
             columns={columns}
             dataSource={logs}
             rowKey="id"

@@ -19,14 +19,14 @@ interface Values {
 export const ForcePasswordChange: React.FC<Props> = ({ onDone }) => {
   const { t, text } = useI18n();
   const [loading, setLoading] = useState(false);
-  const user = localStorage.getItem('lynx-user') || 'admin';
+  const user = localStorage.getItem('wjw-user') || 'admin';
 
   const handleFinish = async (values: Values) => {
     setLoading(true);
     try {
       // 强制改密场景后端免校验原密码，这里传空字符串即可
       await changePassword(user, '', values.newPassword);
-      localStorage.removeItem('lynx-must-change');
+      localStorage.removeItem('wjw-must-change');
       message.success(text('password.changeSuccess'));
       onDone();
     } catch (e: unknown) {
@@ -49,7 +49,7 @@ export const ForcePasswordChange: React.FC<Props> = ({ onDone }) => {
       }}
     >
       <div
-        className="lynx-fade-up"
+        className="wjw-fade-up"
         style={{ ...cardStyle, background: '#fff', width: 400, maxWidth: '100%', padding: '36px 32px' }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20 }}>

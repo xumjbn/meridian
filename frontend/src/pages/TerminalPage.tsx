@@ -44,7 +44,7 @@ const fontFamilies = [
 // 终端配色主题（xterm theme + 容器底色），可在顶栏切换并持久化
 interface TermTheme { background: string; foreground: string; cursor: string; [k: string]: string }
 const termThemes: { label: string; value: string; theme: TermTheme }[] = [
-  { label: 'wjw 深空', value: 'lynx', theme: {
+  { label: 'wjw 深空', value: 'wjw', theme: {
     background: '#0B0F19', foreground: '#F3F4F6', cursor: '#1677ff', black: '#000000', red: '#EF4444',
     green: '#10B981', yellow: '#F59E0B', blue: '#3B82F6', magenta: '#8B5CF6', cyan: '#06B6D4', white: '#FFFFFF' } },
   { label: 'VS Code 暗', value: 'vscode', theme: {
@@ -198,8 +198,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
   const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
     const onHelp = () => setHelpOpen(true);
-    window.addEventListener('lynx-term-help', onHelp);
-    return () => window.removeEventListener('lynx-term-help', onHelp);
+    window.addEventListener('wjw-term-help', onHelp);
+    return () => window.removeEventListener('wjw-term-help', onHelp);
   }, []);
   // 顶部工具栏折叠：收起后扩大终端输出区域（持久化）。
   // 默认折叠——分屏/同步/外观这些是偶尔才用的开关，常驻会让终端上方堆到三层，
@@ -262,7 +262,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
   const resetFont = useCallback(() => setFontSize(14), []);
 
   // 终端配色主题
-  const [termThemeKey, setTermThemeKey] = useState<string>(() => localStorage.getItem('term_theme') || 'lynx');
+  const [termThemeKey, setTermThemeKey] = useState<string>(() => localStorage.getItem('term_theme') || 'wjw');
   const termTheme = getTermTheme(termThemeKey);
 
   // 终端字符编码（默认 UTF-8；连本地 Windows/GBK 主机中文乱码时切 GBK）
@@ -387,8 +387,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
       const id = (e as CustomEvent<number>).detail;
       if (typeof id === 'number') addPane(id);
     };
-    window.addEventListener('lynx-open-in-split', handler);
-    return () => window.removeEventListener('lynx-open-in-split', handler);
+    window.addEventListener('wjw-open-in-split', handler);
+    return () => window.removeEventListener('wjw-open-in-split', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [embedded, activeId, assetId]);
 
@@ -1631,7 +1631,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         return false;
       }
       if (mod && e.shiftKey && (e.key === '/' || e.key === '?')) {                             // 速查表
-        window.dispatchEvent(new Event('lynx-term-help'));
+        window.dispatchEvent(new Event('wjw-term-help'));
         return false;
       }
       if (mod && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {                          // 切第 N 个标签
@@ -2237,7 +2237,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       }}
       onDragOver={(e) => {
         const types = Array.from(e.dataTransfer.types);
-        if (types.includes('application/x-lynx-asset')) {
+        if (types.includes('application/x-wjw-asset')) {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'copy';
           if (!paneDragOver) setPaneDragOver(true);
@@ -2261,7 +2261,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           setUploadDir('.');
           return;
         }
-        const raw = e.dataTransfer.getData('application/x-lynx-asset') || e.dataTransfer.getData('text/plain');
+        const raw = e.dataTransfer.getData('application/x-wjw-asset') || e.dataTransfer.getData('text/plain');
         const id = parseInt(raw, 10);
         if (!Number.isNaN(id)) {
           e.preventDefault();

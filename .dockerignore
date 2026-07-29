@@ -6,7 +6,7 @@
 frontend/dist
 frontend/node_modules
 backend/server
-backend/lynx-server.exe
+backend/wjw-server.exe
 **/*.exe
 **/*.db
 **/*.db-shm

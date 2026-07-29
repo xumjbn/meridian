@@ -18,7 +18,7 @@ var GlobalDB *gorm.DB
 
 // dbPath 返回数据库文件路径（不含 pragma 参数），供密钥文件定位等复用
 func dbPath() string {
-	f := os.Getenv("LYNX_DB")
+	f := os.Getenv("WJW_DB")
 	if f == "" {
 		f = os.Getenv("MERIDIAN_DB")
 	}
@@ -29,9 +29,9 @@ func dbPath() string {
 }
 
 func InitDB() *gorm.DB {
-	// 数据库文件路径可由 LYNX_DB 覆盖（容器部署时指向挂载卷，如 /data/assets.db）
+	// 数据库文件路径可由 WJW_DB 覆盖（容器部署时指向挂载卷，如 /data/assets.db）
 	// 兼容旧名 MERIDIAN_DB：已在编排/服务里配置过旧变量的部署无需改动即可继续运行。
-	dbFile := os.Getenv("LYNX_DB")
+	dbFile := os.Getenv("WJW_DB")
 	if dbFile == "" {
 		dbFile = os.Getenv("MERIDIAN_DB")
 	}

@@ -34,11 +34,11 @@ const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5
 const TAB_BAR_HEIGHT = 34;
 
 /** 标签栏右侧插槽的 DOM id：单分屏时终端窗格把自己的状态条 portal 进来 */
-export const TERM_TAB_SLOT_ID = 'lynx-term-tab-slot';
+export const TERM_TAB_SLOT_ID = 'wjw-term-tab-slot';
 
 /** 多屏工具栏的「展开」把手插槽：原先是浮在终端顶部正中的一个小凸起，
  *  视觉上就是块刘海。挪到标签栏右侧和其它控件排在一行。 */
-export const TERM_TOOLBAR_SLOT_ID = 'lynx-term-toolbar-slot';
+export const TERM_TOOLBAR_SLOT_ID = 'wjw-term-toolbar-slot';
 
 // 项目内部的会话标签栏：左侧是「当前页面」，右侧是已打开的终端会话标签（可拖拽调序）
 export const TerminalTabBar: React.FC<Props> = ({

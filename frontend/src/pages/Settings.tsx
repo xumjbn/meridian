@@ -183,7 +183,7 @@ export const Settings: React.FC = () => {
         }
       />
 
-      <div style={{ padding: pagePadding }} className="lynx-page-in">
+      <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={{ maxWidth: 900 }}>
             {/* 扫描引擎 */}
             <SettingCard

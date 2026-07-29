@@ -1,6 +1,6 @@
 [package]
-name = "lynx-desktop"
-version = "1.0.1"
+name = "wjw-desktop"
+version = "1.0.2"
 description = "wjw — 桌面端（Tauri + Go sidecar）"
 edition = "2021"
 rust-version = "1.77"

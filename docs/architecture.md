@@ -1,16 +1,16 @@
-# Lynx 架构设计文档 (Architecture Design)
+# wjw 架构设计文档 (Architecture Design)
 
 > **产品**：wjw — 网络资产发现与统一接入平台
 > **文档版本**：v6.0（2026-06）· 对应应用版本 **v0.64**
 
-本文档描述 Lynx 的整体技术架构、模块职责，以及关键机制（资产发现、终端代理、SSE/WebSocket/SFTP 数据流、AI Agent、Kubernetes 管理、认证与多租户）的实现逻辑。所有内容以 `backend/`、`frontend/` 现有源码为准。
+本文档描述 wjw 的整体技术架构、模块职责，以及关键机制（资产发现、终端代理、SSE/WebSocket/SFTP 数据流、AI Agent、Kubernetes 管理、认证与多租户）的实现逻辑。所有内容以 `backend/`、`frontend/` 现有源码为准。
 
 > 关于历史命名：项目前身为 **Meridian / 子午**，现已**全面更名为 wjw**，代码、文档与技术标识中不再保留旧名。
 >
 > 更名涉及三处会影响既有数据的标识，均已做兼容迁移，老版本升级不会丢数据：
-> - **桌面端数据库**：Tauri identifier `cn.meridian.desktop` → `cn.lynx.desktop`（数据目录随之改变），库文件 `meridian.db` → `lynx.db`。启动时若新库不存在，会自动从「同目录旧文件名」或「旧标识符目录」拷贝老库（见 `src-tauri/src/main.rs`）。
-> - **环境变量**：`MERIDIAN_DB` / `MERIDIAN_LOCAL_SHELL` → `LYNX_DB` / `LYNX_LOCAL_SHELL`，读取时仍会回退到旧变量名，已有编排无需改动。
-> - **前端本地存储**：`mrd-*` → `lynx-*`，应用启动前一次性搬迁（见 `src/main.tsx`），登录态与终端本地设置不丢失。
+> - **桌面端数据库**：Tauri identifier `cn.meridian.desktop` → `cn.wjw.desktop`（数据目录随之改变），库文件 `meridian.db` → `wjw.db`。启动时若新库不存在，会自动从「同目录旧文件名」或「旧标识符目录」拷贝老库（见 `src-tauri/src/main.rs`）。
+> - **环境变量**：`MERIDIAN_DB` / `MERIDIAN_LOCAL_SHELL` → `WJW_DB` / `WJW_LOCAL_SHELL`，读取时仍会回退到旧变量名，已有编排无需改动。
+> - **前端本地存储**：`mrd-*` → `wjw-*`，应用启动前一次性搬迁（见 `src/main.tsx`），登录态与终端本地设置不丢失。
 
 ---
 
@@ -40,7 +40,7 @@ graph TD
         Store[store / GORM]
     end
 
-    Store <--> DB[(SQLite assets.db / lynx.db<br/>glebarez 纯 Go 驱动)]
+    Store <--> DB[(SQLite assets.db / wjw.db<br/>glebarez 纯 Go 驱动)]
     Scanner -->|TCP Dial / nuclei| TargetNet[目标网段 IP & 端口]
     SSHProxy <-->|SSH / Telnet| RemoteHost[远程服务器 / 交换机 / 路由器]
     SSHProxy <-->|ConPTY / creack-pty| LocalShell[运行后端的本机 Shell]
@@ -54,8 +54,8 @@ graph TD
 
 | 形态 | 入口 | 后端监听 | 数据库 | 本地终端 |
 |------|------|----------|--------|----------|
-| **Web 服务端** | nginx 反代 → 前端 dist | `LISTEN_ADDR`（容器设 `0.0.0.0:8080`） | `LYNX_DB`，默认 `assets.db` | 默认关闭（绑 `0.0.0.0` 时不暴露宿主 Shell） |
-| **桌面端 (Tauri v2)** | 原生窗口 + WebView | sidecar `127.0.0.1:8765` | 用户数据目录下 `lynx.db` | 默认开启（`LYNX_LOCAL_SHELL=1`） |
+| **Web 服务端** | nginx 反代 → 前端 dist | `LISTEN_ADDR`（容器设 `0.0.0.0:8080`） | `WJW_DB`，默认 `assets.db` | 默认关闭（绑 `0.0.0.0` 时不暴露宿主 Shell） |
+| **桌面端 (Tauri v2)** | 原生窗口 + WebView | sidecar `127.0.0.1:8765` | 用户数据目录下 `wjw.db` | 默认开启（`WJW_LOCAL_SHELL=1`） |
 | **前端 dev** | `http://localhost:5173`（Vite） | 代理 `/api` → `127.0.0.1:8080`（含 WS） | — | — |
 
 后端默认仅监听 `127.0.0.1:8080`，由环境变量 `LISTEN_ADDR` 覆盖。启动日志横幅：`wjw — 网络资产发现与统一接入平台`。
@@ -78,10 +78,10 @@ graph TD
 - 未启用 `StrictMode`（避免 xterm / WebSocket 双挂载导致的重连竞态）；页面按路由 `React.lazy` 懒加载，重型依赖 xterm.js 不进首屏主包。
 
 ### 2.3 桌面端
-- **Tauri v2（Rust）+ Go sidecar**：外部二进制 `binaries/lynx-backend` 由 Tauri 启动。
-- productName=`Lynx`，window title=`wjw`，identifier=`cn.lynx.desktop`，version=`0.64.0`，CSP=`null`。
+- **Tauri v2（Rust）+ Go sidecar**：外部二进制 `binaries/wjw-backend` 由 Tauri 启动。
+- productName=`wjw`，window title=`wjw`，identifier=`cn.wjw.desktop`，version=`0.64.0`，CSP=`null`。
 - Tauri 插件：`shell`（启动 sidecar、外链走系统浏览器）、`clipboard-manager`（系统剪贴板）。
-- sidecar 注入环境：`LISTEN_ADDR=127.0.0.1:8765`、`LYNX_DB`（应用数据目录下 `lynx.db`）、`LYNX_LOCAL_SHELL=1`、`TZ=Asia/Shanghai`；窗口销毁时 kill 子进程。
+- sidecar 注入环境：`LISTEN_ADDR=127.0.0.1:8765`、`WJW_DB`（应用数据目录下 `wjw.db`）、`WJW_LOCAL_SHELL=1`、`TZ=Asia/Shanghai`；窗口销毁时 kill 子进程。
 - **桌面端免登录**：前端后台自动用默认管理员凭据登录（依次尝试 `admin/admin`、`admin/123456`，每次 8s 超时、最多 40 轮重试），全部失败才落登录页。
 
 ---
@@ -93,9 +93,9 @@ graph TD
 #### 应用骨架 `App.tsx`
 - 左侧可折叠暗色侧边栏（224↔76px）：Logo、`QuickConnect`（按标签分组的主机树 + 本地终端）、导航菜单、GitHub/版本页脚。
 - **路由表**（管理员限定项标 [A]）：`/`→Dashboard、`/assets`→Assets、`/k8s`→K8sClusters、`/tasks`→ScanTasks [A]、`/vulns`→Vulns [A]（无侧栏入口，经全局搜索/跳转到达）、`/credentials`→Credentials、`/users`→Users [A]、`/audit`→Audit [A]、`/settings`→Settings [A]、`*`→重定向 `/`。
-- **鉴权门禁**：`lynx-auth==='1'`（或桌面自动登录）判定登录态，否则渲染 `Login`；`lynx-must-change==='1'` 渲染 `ForcePasswordChange` 并阻断全应用（Web 端首登/被重置）；管理员可见性由 `lynx-role==='admin'` 控制，对四个 [A] 路由与 `/vulns` 做条件渲染。
+- **鉴权门禁**：`wjw-auth==='1'`（或桌面自动登录）判定登录态，否则渲染 `Login`；`wjw-must-change==='1'` 渲染 `ForcePasswordChange` 并阻断全应用（Web 端首登/被重置）；管理员可见性由 `wjw-role==='admin'` 控制，对四个 [A] 路由与 `/vulns` 做条件渲染。
 - **独立终端视图**：URL 以 `/terminal/` 开头时渲染全屏 `TerminalPage`（独立 `TerminalProvider`）。
-- 终端会话**常驻挂载**（仅显示活动会话），切到终端时路由页 `display:none` 保活；监听 `lynx-open-sftp`/`lynx-navigate` 窗口事件。
+- 终端会话**常驻挂载**（仅显示活动会话），切到终端时路由页 `display:none` 保活；监听 `wjw-open-sftp`/`wjw-navigate` 窗口事件。
 
 #### 页面 `pages/*`
 - **Dashboard**：资产分类/在线率/类型分布/最近活动时间线，定时轮询（数据按当前用户归属隔离）。
@@ -114,7 +114,7 @@ graph TD
 
 #### 状态与服务
 - **`terminalSessions.tsx`**：终端会话 Context（`TerminalProvider`/`useTerminals`）。管理标签集合、活动标签、活动提示点、拖拽排序、标签名/颜色持久化（`localStorage`）；**命令同步广播**：维护已连接物理 WebSocket 句柄注册表，`broadcastGlobalData` 把输入广播到同步集合内的所有面板/标签（"一处键入、处处执行"）。
-- **`services/api.ts`**：`isTauri` 检测；axios `baseURL = ${BACKEND_ORIGIN}/api`（桌面=`http://127.0.0.1:8765`，Web=同源）；请求拦截注入 `Authorization: Bearer <lynx-token>`（桌面端首屏等待后台登录拿到 token 再发非登录请求）；响应拦截解包 `code===200`、`code===401` 时清会话并刷新（桌面端静默）；WS/SSE 无法设请求头，token 走 `?token=` 查询参数（`getTerminalWsUrl`/`getLocalTerminalWsUrl`，本地 Shell 用 `LOCAL_ASSET_ID=-1`）。
+- **`services/api.ts`**：`isTauri` 检测；axios `baseURL = ${BACKEND_ORIGIN}/api`（桌面=`http://127.0.0.1:8765`，Web=同源）；请求拦截注入 `Authorization: Bearer <wjw-token>`（桌面端首屏等待后台登录拿到 token 再发非登录请求）；响应拦截解包 `code===200`、`code===401` 时清会话并刷新（桌面端静默）；WS/SSE 无法设请求头，token 走 `?token=` 查询参数（`getTerminalWsUrl`/`getLocalTerminalWsUrl`，本地 Shell 用 `LOCAL_ASSET_ID=-1`）。
 - **`commandSnippets.ts`**：约 **260** 条内置运维命令片段库（文件/文本/进程/网络/systemd/Docker/K8s/Git/防火墙等），用法频率学习重排序，`localStorage` 持久化。
 - **`theme.ts`**（设计令牌：靛蓝→紫→青品牌渐变 + 深空暗色侧栏 + AntD ConfigProvider 令牌）、**`clipboard.ts`**（桌面走 Tauri 剪贴板、Web 走 execCommand+Clipboard API）、**`main.tsx`**（入口，吞掉 ResizeObserver 噪声错误，`createRoot` 渲染，无 StrictMode）。
 
@@ -166,7 +166,7 @@ graph TD
 集群是手动归类单元（VIP + 控制台端口/路径 + 绑定凭据 + 可选 API Token），节点复用 `Asset`（经 `Asset.K8sClusterID` 归属），`owner_id` 隔离 + 全程审计。`probeClusterOnline` TCP 探 VIP:console_port（1.5s）。**实时看板**（Phase 3）：`kubeGet` 在服务端用集群 ServiceAccount Bearer Token 认证 GET kube-apiserver（`InsecureSkipVerify`、8s 超时、4MB 上限，**token 不出后端**）——`/api/v1/nodes`、`/api/v1/pods`、概览（就绪/总节点、运行/总 Pod、版本）。`GetK8sConsole` 返回控制台 URL + 凭据（审计 `K8S_CONSOLE`，跨租户凭据守卫）。`AutoClassifyK8s` SSH 读节点 `/etc/hosts` 的 `cluster-vip` 标记，按 owner+VIP 归并到已有/新建集群。
 
 #### 数据持久化 `store/db.go`
-GORM + **glebarez/sqlite（纯 Go、免 cgo）**；库路径由 `LYNX_DB` 指定（默认 `assets.db`，目录自动创建，`busy_timeout=5000`）。启动 `AutoMigrate` 全部 14 个模型、播种默认设置与默认管理员（`admin/admin` + 首登强制改密）。
+GORM + **glebarez/sqlite（纯 Go、免 cgo）**；库路径由 `WJW_DB` 指定（默认 `assets.db`，目录自动创建，`busy_timeout=5000`）。启动 `AutoMigrate` 全部 14 个模型、播种默认设置与默认管理员（`admin/admin` + 首登强制改密）。
 
 ---
 
@@ -229,7 +229,7 @@ sequenceDiagram
     deactivate App
 ```
 
-> 本地终端走 `/api/ws/local-terminal`，由 `LocalShellEnabled()` 门控（`LYNX_LOCAL_SHELL=1` 或后端监听回环地址时开），后端经 ConPTY/creack-pty 桥接本机 Shell，协议与上图一致。命令补全、命令同步、AI 填入均为**前端能力**，后端终端代理保持透明。
+> 本地终端走 `/api/ws/local-terminal`，由 `LocalShellEnabled()` 门控（`WJW_LOCAL_SHELL=1` 或后端监听回环地址时开），后端经 ConPTY/creack-pty 桥接本机 Shell，协议与上图一致。命令补全、命令同步、AI 填入均为**前端能力**，后端终端代理保持透明。
 
 ---
 
@@ -245,7 +245,7 @@ sequenceDiagram
 约 260 条内置运维命令片段（`commandSnippets.ts`），按关键字/前缀/缩写/模糊子序列 + 用法频率/时近性评分，内联补全展示前 8 条（命令面板最多 50/60）；用户片段经 `SnippetManager` CRUD，`localStorage` 持久化。
 
 ### 5.4 多分屏终端
-`TerminalPage.tsx` 最多 **4 面板**（`MAX_PANES=4`），预设 `single` / `h-split`（左右双分）/ `quad`（田字四分），分隔条可拖拽缩放（每侧最小 12%），单面板可临时最大化。**7 套终端配色**（Lynx 深空/VS Code 暗/Dracula/Monokai/Solarized 暗/Solarized 亮/GitHub 亮），scrollback 5000 行。**重连回放缓冲 512KB**（FIFO 丢弃最旧块），重连后回放恢复输出，指数退避自动重连。另支持每面板 SFTP 拖拽上传、UTF-8/GBK 编码切换、字号缩放（Ctrl+滚轮/Ctrl±）、可点击链接、延迟 ping/pong 显示——状态均经 `localStorage`（`term_*`）持久化。
+`TerminalPage.tsx` 最多 **4 面板**（`MAX_PANES=4`），预设 `single` / `h-split`（左右双分）/ `quad`（田字四分），分隔条可拖拽缩放（每侧最小 12%），单面板可临时最大化。**7 套终端配色**（wjw 深空/VS Code 暗/Dracula/Monokai/Solarized 暗/Solarized 亮/GitHub 亮），scrollback 5000 行。**重连回放缓冲 512KB**（FIFO 丢弃最旧块），重连后回放恢复输出，指数退避自动重连。另支持每面板 SFTP 拖拽上传、UTF-8/GBK 编码切换、字号缩放（Ctrl+滚轮/Ctrl±）、可点击链接、延迟 ping/pong 显示——状态均经 `localStorage`（`term_*`）持久化。
 
 ---
 

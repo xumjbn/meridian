@@ -1,5 +1,5 @@
 # Compiled server binary (built locally, not source)
-lynx-server.exe
+wjw-server.exe
 *.exe
 *.exe~
 

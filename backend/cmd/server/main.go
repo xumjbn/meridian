@@ -70,8 +70,8 @@ func main() {
 
 	// 管理员密码找回：默认账号 admin/admin 首次登录会强制改密，改完忘了就
 	// 再也进不去，此前没有任何找回路径。带 -reset-admin 启动即重置后退出。
-	//   lynx-server -reset-admin            重置为 admin/admin（下次登录仍强制改密）
-	//   lynx-server -reset-admin=<新密码>   重置为指定密码
+	//   wjw-server -reset-admin            重置为 admin/admin（下次登录仍强制改密）
+	//   wjw-server -reset-admin=<新密码>   重置为指定密码
 	if pw, ok := resetAdminFlag(); ok {
 		if err := store.ResetAdminPassword(db, pw); err != nil {
 			log.Fatalf("重置管理员密码失败: %v", err)
@@ -245,7 +245,7 @@ func main() {
 		addr = "127.0.0.1:8080"
 	}
 	log.Println("wjw — 网络资产发现与统一接入平台")
-	log.Printf("Lynx backend is running on http://%s", addr)
+	log.Printf("wjw backend is running on http://%s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to run server: %v", err)
 	}

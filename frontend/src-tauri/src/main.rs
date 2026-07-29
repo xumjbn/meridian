@@ -31,28 +31,33 @@ fn main() {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
-            let db_path = data_dir.join("lynx.db");
+            let db_path = data_dir.join("wjw.db");
             if let Some(parent) = db_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
 
-            // ── 旧版本数据迁移（Meridian → Lynx 更名）──────────────────────
-            // 应用标识符由 cn.meridian.desktop 改为 cn.lynx.desktop，数据目录随之改变；
-            // 库文件名也由 meridian.db 改为 lynx.db。这里在新库不存在时，
-            // 依次尝试「同目录旧文件名」与「旧标识符目录」，把老库迁过来，避免升级后数据凭空消失。
+            // ── 旧版本数据迁移（meridian → lynx → wjw 两次更名）────────────
+            // 应用标识符依次为 cn.meridian.desktop → cn.lynx.desktop → cn.wjw.desktop，
+            // 数据目录随标识符变化；库文件名也依次是 meridian.db → lynx.db → wjw.db。
+            // 更名最怕的就是「升级后资产凭空消失」，所以这里把历史上所有可能的位置
+            // 按「从新到旧」全试一遍，第一个存在的就拷过来。
+            // 用 copy 而不是 move：万一新版有问题，用户回退旧版数据还在原处。
+            //
+            // 注意：下面这些历史名是字面量，不要跟着全局改名一起被替换——
+            // 批量改名时就把它们全改成了新名，迁移变成在新目录里找新文件，等于没有。
             if !db_path.exists() {
-                let legacy_same_dir = data_dir.join("meridian.db");
-                let legacy_old_dir = data_dir
-                    .parent()
-                    .map(|p| p.join("cn.meridian.desktop").join("meridian.db"));
+                let parent = data_dir.parent().map(|p| p.to_path_buf());
+                let mut candidates: Vec<std::path::PathBuf> = vec![
+                    data_dir.join("lynx.db"),     // 同目录、上一代文件名
+                    data_dir.join("meridian.db"), // 同目录、更早的文件名
+                ];
+                if let Some(p) = parent {
+                    candidates.push(p.join("cn.lynx.desktop").join("lynx.db"));
+                    candidates.push(p.join("cn.lynx.desktop").join("meridian.db"));
+                    candidates.push(p.join("cn.meridian.desktop").join("meridian.db"));
+                }
 
-                let legacy = if legacy_same_dir.exists() {
-                    Some(legacy_same_dir)
-                } else {
-                    legacy_old_dir.filter(|p| p.exists())
-                };
-
-                if let Some(src) = legacy {
+                if let Some(src) = candidates.into_iter().find(|p| p.exists()) {
                     match std::fs::copy(&src, &db_path) {
                         Ok(_) => println!("[migrate] 已迁移旧数据库 {:?} -> {:?}", src, db_path),
                         Err(e) => eprintln!("[migrate] 旧数据库迁移失败（将以空库启动）: {}", e),
@@ -65,11 +70,11 @@ fn main() {
             // 启动 Go 后端 sidecar，监听本地端口；前端经 BACKEND_ORIGIN 连它
             let sidecar = app
                 .shell()
-                .sidecar("lynx-backend")
-                .expect("未找到 lynx-backend sidecar（请先构建 Go 后端到 binaries/）")
+                .sidecar("wjw-backend")
+                .expect("未找到 wjw-backend sidecar（请先构建 Go 后端到 binaries/）")
                 .env("LISTEN_ADDR", "127.0.0.1:8765")
-                .env("LYNX_DB", db_str)
-                .env("LYNX_LOCAL_SHELL", "1") // 桌面端=本机，启用本地终端
+                .env("WJW_DB", db_str)
+                .env("WJW_LOCAL_SHELL", "1") // 桌面端=本机，启用本地终端
                 .env("TZ", "Asia/Shanghai");
 
             let (mut rx, child) = sidecar.spawn().expect("启动后端 sidecar 失败");
@@ -111,7 +116,7 @@ fn main() {
                                 log_path.to_string_lossy()
                             );
                             write_line("[exit]", &msg);
-                            let _ = handle.emit("lynx-backend-exit", msg);
+                            let _ = handle.emit("wjw-backend-exit", msg);
                             break;
                         }
                         _ => {}
@@ -130,5 +135,5 @@ fn main() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("运行 Lynx 桌面端失败");
+        .expect("运行 wjw 桌面端失败");
 }

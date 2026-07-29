@@ -438,7 +438,7 @@ export const ScanTasks: React.FC = () => {
   return (
     <div ref={pageRef} style={{ background: palette.bg, minHeight: '100%' }}>
 
-      <div style={{ padding: pagePadding }} className="lynx-page-in">
+      <div style={{ padding: pagePadding }} className="wjw-page-in">
         {/* 表格主体 */}
         <div style={tablePanelStyle}>
           <TableToolbar
@@ -454,7 +454,7 @@ export const ScanTasks: React.FC = () => {
             }
           />
           <Table
-            className="lynx-table"
+            className="wjw-table"
             columns={columns}
             dataSource={tasks}
             rowKey="id"

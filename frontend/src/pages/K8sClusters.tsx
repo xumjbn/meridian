@@ -439,7 +439,7 @@ export const K8sClusters: React.FC = () => {
         }
       />
 
-      <div style={{ padding: pagePadding }} className="lynx-page-in">
+      <div style={{ padding: pagePadding }} className="wjw-page-in">
         {/* 集群卡片 */}
         {clusters.length === 0 ? (
           <div style={{ ...cardStyle, padding: 40, textAlign: 'center', marginBottom: 16 }}>
@@ -448,7 +448,7 @@ export const K8sClusters: React.FC = () => {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12, marginBottom: 16 }}>
             {clusters.map((cl) => (
-              <Card key={cl.id} style={cardStyle} styles={{ body: { padding: 16 } }} className="lynx-hover-card">
+              <Card key={cl.id} style={cardStyle} styles={{ body: { padding: 16 } }} className="wjw-hover-card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   <ClusterOutlined style={{ color: '#326ce5', fontSize: 18 }} />
                   <span style={{ fontSize: 15, fontWeight: 700, color: palette.text }}>{cl.name}</span>
@@ -542,7 +542,7 @@ export const K8sClusters: React.FC = () => {
             }
           />
           <Table
-            className="lynx-table"
+            className="wjw-table"
             columns={unassignedCols}
             dataSource={unassigned}
             rowKey="id"
@@ -674,7 +674,7 @@ export const K8sClusters: React.FC = () => {
 
         {/* 概览统计 */}
         {overview?.has_token && (
-          <div style={{ display: 'flex', gap: 24, padding: '10px 4px 14px', borderBottom: '1px solid var(--lynx-border)' }}>
+          <div style={{ display: 'flex', gap: 24, padding: '10px 4px 14px', borderBottom: '1px solid var(--wjw-border)' }}>
             <Statistic title="节点(就绪/总)" value={`${overview.nodes_ready ?? 0}/${overview.nodes_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
             <Statistic title="Pod(运行/总)" value={`${overview.pods_running ?? 0}/${overview.pods_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
             <Statistic title="版本" value={overview.version || '-'} valueStyle={{ fontSize: 16 }} />

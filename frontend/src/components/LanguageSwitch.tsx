@@ -28,7 +28,7 @@ export const LanguageSwitch: React.FC<Props> = ({ tone = 'dark' }) => {
       <Tooltip title={text('app.language')}>
         <button
           type="button"
-          className={onDark ? 'lynx-topnav-item' : undefined}
+          className={onDark ? 'wjw-topnav-item' : undefined}
           style={{
             height: 30,
             minWidth: 30,

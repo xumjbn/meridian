@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// Lynx · 设计令牌 (Design Tokens)
+// wjw · 设计令牌 (Design Tokens)
 // 网络资产发现与统一接入平台 — 控制台风格色板与 Antd 主题配置
 //
 // 视觉基调对齐主流公有云控制台（腾讯云 CVM）：
@@ -11,7 +11,7 @@ export const brand = {
   name: 'wjw',
   zh: 'wjw',
   tagline: '网络资产发现与统一接入平台',
-  version: 'v1.0.1',
+  version: 'v1.0.2',
   repo: 'https://github.com/xumjbn/meridian',
 } as const;
 
@@ -28,15 +28,15 @@ export const palette = {
   brandGradientSoft: 'linear-gradient(135deg, rgba(0,110,255,0.10) 0%, rgba(0,164,255,0.10) 100%)',
 
   // 表面与背景（CSS 变量，随 data-theme 切换浅色/深色）
-  bg: 'var(--lynx-bg)',
-  surface: 'var(--lynx-surface)',
-  border: 'var(--lynx-border)',
-  borderStrong: 'var(--lynx-border-strong)',
+  bg: 'var(--wjw-bg)',
+  surface: 'var(--wjw-surface)',
+  border: 'var(--wjw-border)',
+  borderStrong: 'var(--wjw-border-strong)',
 
   // 文本（CSS 变量，随 data-theme 切换浅色/深色）
-  text: 'var(--lynx-text)',
-  textSub: 'var(--lynx-text-sub)',
-  textMute: 'var(--lynx-text-mute)',
+  text: 'var(--wjw-text)',
+  textSub: 'var(--wjw-text-sub)',
+  textMute: 'var(--wjw-text-mute)',
 
   // ── 深色外壳（顶栏 / 侧栏 / 终端共用同一套色阶）────────────
   // 同一蓝黑色族按明度递进：终端内容最深 → 外壳次之 → 悬浮/选中提亮，

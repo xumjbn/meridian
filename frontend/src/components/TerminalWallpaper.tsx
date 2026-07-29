@@ -39,7 +39,7 @@ const MAX_IMG_BYTES = 3 * 1024 * 1024;
 /** 超过这个宽度先缩，手机随手拍的图动辄 4000px，原样存必爆配额 */
 const MAX_IMG_WIDTH = 1920;
 
-export const WALLPAPER_EVENT = 'lynx-wjw-wallpaper';
+export const WALLPAPER_EVENT = 'wjw-wjw-wallpaper';
 
 /** 终端口令。show 的正则要能捕获尾号：wjw-bg / wjw-bg1 / wjw-bg2 */
 export const WALLPAPER_SHOW_RE = /^\s*wjw-bg([12])?\s*$/i;

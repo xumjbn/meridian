@@ -19,10 +19,10 @@ export const api = axios.create({
 
 // 清理本地会话并跳回登录页
 const clearSession = () => {
-  localStorage.removeItem('lynx-auth');
-  localStorage.removeItem('lynx-token');
-  localStorage.removeItem('lynx-user');
-  localStorage.removeItem('lynx-role');
+  localStorage.removeItem('wjw-auth');
+  localStorage.removeItem('wjw-token');
+  localStorage.removeItem('wjw-user');
+  localStorage.removeItem('wjw-role');
 };
 
 // 等待 token 就绪（桌面端 token 由后台静默登录获取，最多等 timeoutMs）
@@ -30,7 +30,7 @@ const waitForToken = (timeoutMs: number): Promise<void> =>
   new Promise((resolve) => {
     const start = Date.now();
     const tick = () => {
-      if (localStorage.getItem('lynx-token') || Date.now() - start > timeoutMs) return resolve();
+      if (localStorage.getItem('wjw-token') || Date.now() - start > timeoutMs) return resolve();
       setTimeout(tick, 150);
     };
     tick();
@@ -41,11 +41,11 @@ const waitForToken = (timeoutMs: number): Promise<void> =>
 api.interceptors.request.use(async (config) => {
   const url = config.url || '';
   const isAuthCall = /\/login$|\/register$/.test(url);
-  if (isTauri && !isAuthCall && !localStorage.getItem('lynx-token')) {
+  if (isTauri && !isAuthCall && !localStorage.getItem('wjw-token')) {
     // 首次安装时 sidecar 要冷启动 + 建库 + 迁移，10s 常常不够，超时后请求裸发就会 401
     await waitForToken(45000);
   }
-  const token = localStorage.getItem('lynx-token');
+  const token = localStorage.getItem('wjw-token');
   if (token) {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
@@ -67,9 +67,9 @@ api.interceptors.response.use(
         // 桌面端：本地存的 token 已失效（后端重启、会话过期等）。
         // 过去这里什么都不做，于是首屏一片「获取数据失败」，只能手动登出再登录。
         // 现在清掉坏 token 并广播一次，由 App 重跑静默登录后刷新页面。
-        if (localStorage.getItem('lynx-token')) {
-          localStorage.removeItem('lynx-token');
-          window.dispatchEvent(new CustomEvent('lynx-token-invalid'));
+        if (localStorage.getItem('wjw-token')) {
+          localStorage.removeItem('wjw-token');
+          window.dispatchEvent(new CustomEvent('wjw-token-invalid'));
         }
       } else {
         clearSession();
@@ -494,7 +494,7 @@ export const sftpRename = (assetId: number, from: string, to: string): Promise<{
 
 // 下载用原生 fetch（携带 token），区分二进制流与 JSON 错误响应
 export const sftpDownload = async (assetId: number, filePath: string): Promise<boolean> => {
-  const token = localStorage.getItem('lynx-token') || '';
+  const token = localStorage.getItem('wjw-token') || '';
   const res = await fetch(`${BACKEND_ORIGIN}/api/assets/${assetId}/sftp/download?path=${encodeURIComponent(filePath)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -628,7 +628,7 @@ export const getAuditLogs = (params?: { actor?: string; action?: string; limit?:
 // ── 扫描日志 SSE 流地址（供 EventSource 使用，走同源 Vite 代理） ──
 // EventSource 无法设置请求头，故 token 通过查询参数传递
 export const getScanStreamUrl = (taskId: number): string => {
-  const token = localStorage.getItem('lynx-token') || '';
+  const token = localStorage.getItem('wjw-token') || '';
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
   return `${BACKEND_ORIGIN}/api/tasks/${taskId}/stream${q}`;
 };
@@ -667,7 +667,7 @@ export const LOCAL_SHELL_OPTIONS: LocalShellOption[] = isWindowsHost()
       { value: 'sh', label: 'sh' },
     ];
 
-const LOCAL_SHELL_KEY = 'lynx-local-shell';
+const LOCAL_SHELL_KEY = 'wjw-local-shell';
 
 /** 读取记住的 Shell 选择；存的值若已不在候选里（换了平台）则当作默认 */
 export const getLocalShellPref = (): string => {
@@ -681,7 +681,7 @@ export const setLocalShellPref = (v: string): void => {
 // 本地终端 WebSocket 地址（连后端本机 Shell）；shell 省略时用记住的选择
 export const getLocalTerminalWsUrl = (shell?: string): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('lynx-token') || '';
+  const token = localStorage.getItem('wjw-token') || '';
   const sh = shell ?? getLocalShellPref();
   const params = new URLSearchParams();
   if (token) params.set('token', token);
@@ -700,7 +700,7 @@ export const getLocalTerminalWsUrl = (shell?: string): string => {
 /** 实时资源监控 WebSocket（后端常驻一条 SSH 连接周期采样推送） */
 export const getMetricsWsUrl = (assetId: number): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('lynx-token') || '';
+  const token = localStorage.getItem('wjw-token') || '';
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
   if (BACKEND_ORIGIN) return `ws://127.0.0.1:8765/api/ws/metrics/${assetId}${q}`;
   if (import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
@@ -761,7 +761,7 @@ export interface LiveMetrics {
 // WebSocket URL 辅助函数（浏览器 WebSocket 无法设置请求头，token 走查询参数）
 export const getTerminalWsUrl = (assetId: number): string => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('lynx-token') || '';
+  const token = localStorage.getItem('wjw-token') || '';
   // 自动尝试已存凭据（默认开）；关闭时附带 autotry=0
   const autoTry = localStorage.getItem('term_auto_cred') !== 'false';
   const params = [token ? `token=${encodeURIComponent(token)}` : '', autoTry ? '' : 'autotry=0'].filter(Boolean);

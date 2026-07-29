@@ -56,7 +56,7 @@ function formatRelativeTime(iso: string): string {
 }
 
 // 「最近连接」由侧栏快速连接写入，这里复用同一份记录
-const RECENT_KEY = 'lynx-recent-hosts';
+const RECENT_KEY = 'wjw-recent-hosts';
 const loadRecentIds = (): number[] => {
   try {
     const arr = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
@@ -159,7 +159,7 @@ export const Dashboard: React.FC = () => {
         extra={<Button icon={<ReloadOutlined />} onClick={() => fetchAll(true)}>刷新</Button>}
       />
 
-      <div style={{ padding: pagePadding }} className="lynx-page-in">
+      <div style={{ padding: pagePadding }} className="wjw-page-in">
         {/* 统计条 */}
         <div style={{ ...cardStyle, padding: '14px 20px', marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: 32 }}>
           {statItems.map((s) => (
@@ -231,7 +231,7 @@ export const Dashboard: React.FC = () => {
                   {recentHosts.map((a) => (
                     <div
                       key={a.id}
-                      className="lynx-hover-card"
+                      className="wjw-hover-card"
                       onClick={() => connect(a)}
                       title={`连接 ${a.name} (${a.ip})`}
                       style={{
@@ -252,7 +252,7 @@ export const Dashboard: React.FC = () => {
                           style={{ color: palette.textMute, fontSize: 13 }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            window.dispatchEvent(new CustomEvent('lynx-open-sftp', { detail: a }));
+                            window.dispatchEvent(new CustomEvent('wjw-open-sftp', { detail: a }));
                           }}
                         />
                       </Tooltip>
@@ -271,7 +271,7 @@ export const Dashboard: React.FC = () => {
                 {quickLinks.map((q) => (
                   <div
                     key={q.to}
-                    className="lynx-hover-card"
+                    className="wjw-hover-card"
                     onClick={() => navigate(q.to)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',

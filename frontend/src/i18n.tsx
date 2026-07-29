@@ -6,7 +6,7 @@ import zhCN from 'antd/locale/zh_CN';
 
 export type LocaleCode = 'zh-CN' | 'en-US';
 
-const STORAGE_KEY = 'lynx-locale';
+const STORAGE_KEY = 'wjw-locale';
 
 export const SUPPORTED_LOCALES: { code: LocaleCode; label: string }[] = [
   { code: 'zh-CN', label: '简体中文' },

@@ -107,7 +107,7 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
                 selectedKeys: [activeKey],
               }}
             >
-              <button type="button" className={`lynx-topnav-item${isActive(it) ? ' is-active' : ''}`}>
+              <button type="button" className={`wjw-topnav-item${isActive(it) ? ' is-active' : ''}`}>
                 {it.label}
                 <DownOutlined style={{ fontSize: 10, opacity: 0.7 }} />
               </button>
@@ -116,7 +116,7 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
             <button
               key={it.key}
               type="button"
-              className={`lynx-topnav-item${isActive(it) ? ' is-active' : ''}`}
+              className={`wjw-topnav-item${isActive(it) ? ' is-active' : ''}`}
               onClick={() => onNavigate(it.key)}
             >
               {it.label}
@@ -129,7 +129,7 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
 
       {/* 全局搜索：点开与 Ctrl+K 同一个面板 */}
       <div
-        onClick={() => window.dispatchEvent(new Event('lynx-open-search'))}
+        onClick={() => window.dispatchEvent(new Event('wjw-open-search'))}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -152,7 +152,7 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
 
       <LanguageSwitch tone="light" />
       <Tooltip title={text('header.help')}>
-        <button type="button" className="lynx-topnav-item" style={{ padding: '0 10px' }} onClick={onHelp}>
+        <button type="button" className="wjw-topnav-item" style={{ padding: '0 10px' }} onClick={onHelp}>
           <QuestionCircleOutlined style={{ fontSize: 15 }} />
         </button>
       </Tooltip>
@@ -161,7 +161,7 @@ export const AppHeader: React.FC<Props> = ({ items, activeKey, onNavigate, onHel
           href={brand.repo}
           target="_blank"
           rel="noreferrer"
-          className="lynx-topnav-item"
+          className="wjw-topnav-item"
           style={{ padding: '0 10px' }}
         >
           <GithubOutlined style={{ fontSize: 15 }} />

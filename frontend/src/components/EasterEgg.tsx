@@ -16,7 +16,7 @@ import { resolveTheme, type EggTheme } from '../festivals';
 //   3. 终端里单独敲一行 love / wjw i love u（在回车处拦截，不下发 shell）
 // ─────────────────────────────────────────────────────────────
 
-export const EASTER_EGG_EVENT = 'lynx-easter-egg';
+export const EASTER_EGG_EVENT = 'wjw-easter-egg';
 
 /** 终端里触发：wjw / love / wjw i love u —— 当天是什么节日就放什么演出 */
 export const EASTER_EGG_RE = /^\s*(wjw|love|wjw\s*i\s*love\s*u)\s*$/i;

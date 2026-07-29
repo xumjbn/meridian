@@ -59,14 +59,14 @@ export const currentSftpDock = (): SftpDock => {
 };
 export const setSftpDock = (d: SftpDock) => {
   localStorage.setItem(DOCK_KEY, d);
-  window.dispatchEvent(new CustomEvent<SftpDock>('lynx-sftp-dock', { detail: d }));
+  window.dispatchEvent(new CustomEvent<SftpDock>('wjw-sftp-dock', { detail: d }));
 };
 export const useSftpDock = (): SftpDock => {
   const [d, setD] = useState<SftpDock>(currentSftpDock);
   useEffect(() => {
     const h = (e: Event) => setD((e as CustomEvent<SftpDock>).detail);
-    window.addEventListener('lynx-sftp-dock', h);
-    return () => window.removeEventListener('lynx-sftp-dock', h);
+    window.addEventListener('wjw-sftp-dock', h);
+    return () => window.removeEventListener('wjw-sftp-dock', h);
   }, []);
   return d;
 };
