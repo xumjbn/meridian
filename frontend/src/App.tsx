@@ -94,6 +94,11 @@ const COLLAPSED = 64;
 // 终端模式：只留标签栏 + 终端，顶栏隐藏、侧栏改为左边缘悬浮唤出。
 // 偏好持久化，下次启动直接进入（仅在确有活动会话时才真正生效，
 // 否则会出现「没有顶栏也没有标签栏」的死界面）。
+//
+// 偏好是三态而非布尔：null=从没表态 / '1'=开 / '0'=关。
+// null 按「开」处理——开终端就是奔着终端去的，默认把顶栏让出来；
+// 之前 null 当 false，新装用户开终端永远不会自动进，只有手动开过一次才行。
+// 显式关掉过的（'0'）就一直不进，别每次开终端又强塞回去。
 const TERM_MODE_KEY = 'wjw-term-mode';
 const PEEK_ZONE_W = 8;   // 左边缘触发条宽度
 
@@ -176,7 +181,7 @@ const AppLayout: React.FC = () => {
   const [newConnOpen, setNewConnOpen] = useState(false);
 
   // ── 终端模式 ─────────────────────────────────────────────────
-  const [termModePref, setTermModePref] = useState(() => localStorage.getItem(TERM_MODE_KEY) === '1');
+  const [termModePref, setTermModePref] = useState(() => localStorage.getItem(TERM_MODE_KEY) !== '0');
   const [siderPeek, setSiderPeek] = useState(false);
   // 没有活动会话时不生效：那种情况下隐藏顶栏会让人无路可走
   const termMode = termModePref && activeId !== null;

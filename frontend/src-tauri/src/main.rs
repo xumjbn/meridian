@@ -62,6 +62,29 @@ fn main() {
                         Ok(_) => println!("[migrate] 已迁移旧数据库 {:?} -> {:?}", src, db_path),
                         Err(e) => eprintln!("[migrate] 旧数据库迁移失败（将以空库启动）: {}", e),
                     }
+
+                    // 库搬过来了，密钥也必须跟着搬——否则等于没迁移。
+                    //
+                    // 凭据密码与 K8s Token 是用 AES-256-GCM 加密后落库的，主密钥放在
+                    // 「数据库同目录」的 .wjw_key / .lynx_key 里。后端能回退读旧名，
+                    // 但只在同一个目录里找；改名后目录变了，它找不到就会**静默生成一把新钥**，
+                    // 于是库里所有已加密的凭据永久解不开——界面上只表现为「密码不对、连不上」，
+                    // 没有任何报错，最难排查的那种。
+                    if let Some(old_dir) = src.parent() {
+                        for name in [".wjw_key", ".lynx_key"] {
+                            let old_key = old_dir.join(name);
+                            let new_key = data_dir.join(name);
+                            if old_key.exists() && !new_key.exists() {
+                                match std::fs::copy(&old_key, &new_key) {
+                                    Ok(_) => println!("[migrate] 已迁移加密密钥 {:?}", old_key),
+                                    Err(e) => eprintln!(
+                                        "[migrate] 加密密钥迁移失败，已保存的凭据将无法解密: {}",
+                                        e
+                                    ),
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
