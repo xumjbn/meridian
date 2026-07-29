@@ -92,6 +92,64 @@ const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value =
 const withWallpaperBg = (t: TermTheme, on: WallpaperId): TermTheme =>
   (on ? { ...t, background: 'rgba(0,0,0,0)' } : { ...t });
 
+// ── 壁纸模式：把「黑底」摘掉 ────────────────────────────────────────────
+// 把 xterm 的 background 设成透明只解决了「默认背景」那部分格子。程序自己
+// 用 SGR 显式刷的背景色（claude / vim / tmux 的状态栏都这么干）依然是实心的，
+// 于是壁纸上会横着一条条黑块，只有没被写过的空隙能透出来——就是截图里那样。
+//
+// 这里在写进终端之前把「黑或接近黑」的背景参数换成 49（默认背景），
+// 落回透明。非黑的背景（选中高亮、告警红底之类）保持原样，不然选中就看不出来了。
+// 只在壁纸开着时启用；关掉壁纸时数据一个字节都不动，走原来的字节直写路径。
+const DARK_BG_MAX = 40;                                  // RGB 三通道都 ≤ 这个值算黑
+const DARK_256 = new Set([0, 16, 232, 233, 234, 235]);   // 256 色里的黑/近黑档
+
+/** 处理一串 SGR 参数，把黑背景换成 49；返回新的参数串 */
+const filterSgrParams = (ps: string[]): string => {
+  const out: string[] = [];
+  for (let i = 0; i < ps.length; i++) {
+    const n = Number(ps[i] || '0');
+    if (n === 40) { out.push('49'); continue; }          // ANSI 黑底
+    if (n === 48) {
+      const mode = Number(ps[i + 1]);
+      if (mode === 5) {                                   // 48;5;n
+        const idx = Number(ps[i + 2]);
+        out.push(DARK_256.has(idx) ? '49' : `48;5;${idx}`);
+        i += 2;
+        continue;
+      }
+      if (mode === 2 && ps.length > i + 4) {               // 48;2;r;g;b
+        const r = Number(ps[i + 2]), g = Number(ps[i + 3]), b = Number(ps[i + 4]);
+        const bad = [r, g, b].some((x) => !Number.isFinite(x));
+        // 参数残缺就原样放回，不要拿 NaN 拼出一条更坏的序列
+        out.push(!bad && Math.max(r, g, b) <= DARK_BG_MAX ? '49' : `48;2;${ps[i + 2]};${ps[i + 3]};${ps[i + 4]}`);
+        i += 4;
+        continue;
+      }
+      // 未知子模式：原样放回，别自作聪明吞掉
+      out.push(ps[i]);
+      continue;
+    }
+    out.push(ps[i]);
+  }
+  return out.join(';');
+};
+
+/** 建一个带状态的过滤器：WebSocket 分片可能正好把转义序列切成两半，
+ *  结尾没闭合的 CSI 要留到下一片一起处理，否则那条序列会漏网。 */
+const makeDarkBgFilter = () => {
+  let pending = '';
+  return (chunk: string): string => {
+    const s = pending + chunk;
+    pending = '';
+    // 结尾是半截 ESC / CSI（还没等到终止字母）就先扣下
+    const tail = s.match(/\x1b(\[[0-9;]*)?$/);
+    const body = tail ? s.slice(0, s.length - tail[0].length) : s;
+    if (tail) pending = tail[0];
+    return body.replace(/\x1b\[([0-9;]*)m/g, (_all, params: string) =>
+      `\x1b[${filterSgrParams(params.split(';'))}m`);
+  };
+};
+
 // 复制/粘贴统一走 ../clipboard：桌面端原生剪贴板优先，Web 端 execCommand + API 兜底。
 const writeClipboard = (text: string) => copyText(text);
 const readClipboard = (): Promise<string> => pasteText();
@@ -1803,6 +1861,20 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     let gbkDecoder: TextDecoder | null = null;
     try { gbkDecoder = new TextDecoder('gb18030'); } catch { gbkDecoder = null; }
 
+    // 壁纸模式下要摘掉程序刷的黑底，就得先看到文本。UTF-8 也上流式解码器，
+    // stream:true 会把跨帧的半个字符留到下一片，不会因为分片切在多字节中间而乱码。
+    let utf8Decoder: TextDecoder | null = null;
+    try { utf8Decoder = new TextDecoder('utf-8'); } catch { utf8Decoder = null; }
+    const darkBg = makeDarkBgFilter();
+
+    // 统一出口：壁纸开着才过滤，关着时一个字节都不动，走原来的路径。
+    const writeOut = (chunk: string | Uint8Array) => {
+      if (typeof chunk !== 'string') { term.write(chunk); appendBuf(chunk); return; }
+      const s = wallpaperRef.current ? darkBg(chunk) : chunk;
+      term.write(s);
+      appendBuf(s);
+    };
+
     // 累积远端输出到历史缓冲（上限 512KB，超出从头丢弃），供重连回放
     const appendBuf = (chunk: string | Uint8Array) => {
       outputBufRef.current.push(chunk);
@@ -1855,20 +1927,20 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             }
           }
         } catch (e) {
-          term.write(event.data);
-          appendBuf(event.data as string);
+          writeOut(event.data as string);
         }
       } else if (event.data instanceof ArrayBuffer) {
         onActivity?.(); // 非激活标签有新输出 → 提示点
         const bytes = new Uint8Array(event.data);
         if (termEncodingRef.current === 'gbk' && gbkDecoder) {
           // GBK 主机：先解码为字符串再写入（xterm 默认按 UTF-8 解析字节，会乱码）
-          const s = gbkDecoder.decode(bytes, { stream: true });
-          term.write(s);
-          appendBuf(s);
+          writeOut(gbkDecoder.decode(bytes, { stream: true }));
+        } else if (wallpaperRef.current && utf8Decoder) {
+          // 壁纸开着：要改写 SGR 就得先解码成文本
+          writeOut(utf8Decoder.decode(bytes, { stream: true }));
         } else {
-          term.write(bytes);
-          appendBuf(bytes);
+          // 没开壁纸：维持原来的字节直写，不引入任何解码开销与行为变化
+          writeOut(bytes);
         }
       }
     };
