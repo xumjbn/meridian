@@ -19,6 +19,9 @@ import { PageHeader } from '../components/PageHeader';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, cardStyle, pagePadding } from '../theme';
 import { useTerminals } from '../terminalSessions';
+import { useI18n } from '../i18n';
+
+type TextFn = (key: string, values?: Record<string, string | number>) => string;
 
 const roleTag = (role?: string) => {
   if (role === 'control-plane') return <Tag color="blue">control-plane</Tag>;
@@ -26,24 +29,32 @@ const roleTag = (role?: string) => {
   return <Tag>-</Tag>;
 };
 
-// 控制台类型 → 中文标签
-const CONSOLE_KIND_LABEL: Record<string, string> = {
-  uc: '容器云 UC',
+// 控制台类型→标签。专有名（Rancher 等）不翻译，只有描述性的走词条。
+const CONSOLE_KIND_KEYS: Record<string, string> = {
+  uc: 'k8s.console.uc',
+  web: 'k8s.console.web',
+};
+const CONSOLE_KIND_FIXED: Record<string, string> = {
   'kubernetes-dashboard': 'K8s Dashboard',
   rancher: 'Rancher',
   kubesphere: 'KubeSphere',
-  web: '通用 Web',
 };
-const consoleKindLabel = (k?: string) => (k ? CONSOLE_KIND_LABEL[k] || k : '未识别');
+const consoleKindLabel = (k: string | undefined, text: TextFn) => {
+  if (!k) return text('k8s.console.unknown');
+  if (CONSOLE_KIND_KEYS[k]) return text(CONSOLE_KIND_KEYS[k]);
+  return CONSOLE_KIND_FIXED[k] || k;
+};
 
-const statusDot = (status?: string) => (
+const makeStatusDot = (text: TextFn) => (status?: string) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
     <span style={{ width: 7, height: 7, borderRadius: '50%', background: status === 'online' ? '#10b981' : '#ef4444' }} />
-    {status === 'online' ? '在线' : '离线'}
+    {status === 'online' ? text('k8s.online') : text('k8s.offline')}
   </span>
 );
 
 export const K8sClusters: React.FC = () => {
+  const { text } = useI18n();
+  const statusDot = makeStatusDot(text);
   const [clusters, setClusters] = useState<K8sCluster[]>([]);
   const [unassigned, setUnassigned] = useState<Asset[]>([]);
   const [creds, setCreds] = useState<Credential[]>([]);
@@ -74,7 +85,7 @@ export const K8sClusters: React.FC = () => {
       setClusters(cl);
       setUnassigned(un);
     } catch (e: any) {
-      message.error(e?.message || '加载 K8s 集群失败');
+      message.error(e?.message || text('k8s.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -99,13 +110,13 @@ export const K8sClusters: React.FC = () => {
       window.open(finalUrl, '_blank', 'noopener');
       message.success(
         hasTpl
-          ? '已打开控制台（已用绑定凭据自动登录）'
+          ? text('k8s.consoleOpenedAuto')
           : password
-          ? `已打开控制台，密码已复制到剪贴板（账号：${username || '-'}），粘贴即可登录`
-          : '已打开控制台（该集群未绑定凭据）',
+          ? text('k8s.consoleOpenedCopy', { user: username || '-' })
+          : text('k8s.consoleOpenedNoCred'),
       );
     } catch (e: any) {
-      message.error(e?.message || '打开控制台失败');
+      message.error(e?.message || text('k8s.consoleOpenFailed'));
     }
   };
 
@@ -124,20 +135,20 @@ export const K8sClusters: React.FC = () => {
     try {
       if (editing?.id) await updateK8sCluster(editing.id, values);
       else await createK8sCluster(values);
-      message.success('已保存');
+      message.success(text('k8s.saved'));
       setModalOpen(false);
       load();
     } catch (e: any) {
-      message.error(e?.message || '保存失败');
+      message.error(e?.message || text('set.saveFailed'));
     }
   };
   const remove = async (id: number) => {
     try {
       await deleteK8sCluster(id);
-      message.success('集群已删除（节点保留）');
+      message.success(text('k8s.clusterDeleted'));
       load();
     } catch (e: any) {
-      message.error(e?.message || '删除失败');
+      message.error(e?.message || text('users.deleteFailed'));
     }
   };
 
@@ -149,7 +160,7 @@ export const K8sClusters: React.FC = () => {
       setDrawerNodes(nodes);
       if (cluster.has_token) loadLive(cluster.id!);
     } catch (e: any) {
-      message.error(e?.message || '加载节点失败');
+      message.error(e?.message || text('k8s.loadNodesFailed'));
     }
   };
 
@@ -167,7 +178,7 @@ export const K8sClusters: React.FC = () => {
       setLiveNodes(ns);
       setLivePods(pods);
     } catch (e: any) {
-      setLiveErr(e?.message || '拉取实时数据失败');
+      setLiveErr(e?.message || text('k8s.liveFailed'));
     } finally {
       setLiveLoading(false);
     }
@@ -175,23 +186,23 @@ export const K8sClusters: React.FC = () => {
   const unassign = async (assetId: number) => {
     if (!drawerCluster) return;
     await unassignK8sNode(drawerCluster.id!, assetId);
-    message.success('已移出集群');
+    message.success(text('k8s.removedFromCluster'));
     openNodes(drawerCluster);
     load();
   };
 
   const doAssign = async () => {
     if (!assignClusterId || selectedNodeIds.length === 0) {
-      message.warning('请勾选节点并选择目标集群');
+      message.warning(text('k8s.pickNodesAndCluster'));
       return;
     }
     try {
       await assignK8sNodes(assignClusterId, selectedNodeIds as number[]);
-      message.success(`已归类 ${selectedNodeIds.length} 个节点`);
+      message.success(text('k8s.assignedN', { n: selectedNodeIds.length }));
       setSelectedNodeIds([]);
       load();
     } catch (e: any) {
-      message.error(e?.message || '归类失败');
+      message.error(e?.message || text('k8s.assignFailed'));
     }
   };
 
@@ -203,14 +214,14 @@ export const K8sClusters: React.FC = () => {
       const r = await autoClassifyK8s();
       const failed = r.details.filter((d) => !d.ok);
       Modal.info({
-        title: '自动归类结果',
+        title: text('k8s.autoClassifyResult'),
         width: 560,
         content: (
           <div style={{ marginTop: 8 }}>
-            <p>处理 {r.processed} 个节点，归类 {r.assigned} 个，新建集群 {r.clusters_created} 个。</p>
+            <p>{text('k8s.autoClassifySummary', { processed: r.processed, assigned: r.assigned, created: r.clusters_created })}</p>
             {failed.length > 0 && (
               <div style={{ marginTop: 8, maxHeight: 240, overflowY: 'auto' }}>
-                <div style={{ color: '#f59e0b', marginBottom: 4 }}>未归类 {failed.length} 个：</div>
+                <div style={{ color: '#f59e0b', marginBottom: 4 }}>{text('k8s.autoClassifyFailed', { n: failed.length })}</div>
                 {failed.map((d) => (
                   <div key={d.ip} style={{ fontSize: 12, fontFamily: 'monospace', color: '#64748b' }}>{d.ip} — {d.msg}</div>
                 ))}
@@ -221,7 +232,7 @@ export const K8sClusters: React.FC = () => {
       });
       load();
     } catch (e: any) {
-      message.error(e?.message || '自动归类失败');
+      message.error(e?.message || text('k8s.autoClassifyError'));
     } finally {
       setAutoLoading(false);
     }
@@ -234,21 +245,21 @@ export const K8sClusters: React.FC = () => {
     try {
       const { best, candidates } = await detectK8sConsole(cl.id!);
       Modal.info({
-        title: `控制台探测结果 — ${cl.name}`,
+        title: text('k8s.detectResult', { name: cl.name }),
         width: 560,
         content: (
           <div style={{ marginTop: 8 }}>
             <p style={{ marginBottom: 8 }}>
-              识别入口：<b style={{ fontFamily: 'monospace' }}>{best.path}</b>
-              　类型 <Tag color="blue">{consoleKindLabel(best.kind)}</Tag>
-              {best.version && <>版本 <Tag>{best.version}</Tag></>}
+              {text('k8s.detectEntry')}<b style={{ fontFamily: 'monospace' }}>{best.path}</b>
+              　{text('k8s.detectKind')} <Tag color="blue">{consoleKindLabel(best.kind, text)}</Tag>
+              {best.version && <>{text('k8s.detectVersion')} <Tag>{best.version}</Tag></>}
             </p>
-            {best.title && <p style={{ color: '#64748b', fontSize: 12 }}>页面标题：{best.title}</p>}
+            {best.title && <p style={{ color: '#64748b', fontSize: 12 }}>{text('k8s.detectPageTitle')}{best.title}</p>}
             <div style={{ marginTop: 10, maxHeight: 220, overflowY: 'auto' }}>
-              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>候选路径探测明细：</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>{text('k8s.detectCandidates')}</div>
               {candidates.map((p) => (
                 <div key={p.path} style={{ fontSize: 12, fontFamily: 'monospace', color: '#64748b' }}>
-                  {p.path} — HTTP {p.status} · {consoleKindLabel(p.kind)} · 得分 {p.score}
+                  {p.path} — HTTP {p.status} · {consoleKindLabel(p.kind, text)} · {text('k8s.detectScore')} {p.score}
                 </div>
               ))}
             </div>
@@ -258,7 +269,7 @@ export const K8sClusters: React.FC = () => {
       load();
       if (drawerCluster?.id === cl.id) openNodes(cl);
     } catch (e: any) {
-      message.error(e?.message || '控制台探测失败');
+      message.error(e?.message || text('k8s.detectFailed'));
     } finally {
       setDetectingId(null);
     }
@@ -273,17 +284,17 @@ export const K8sClusters: React.FC = () => {
       const r = await syncK8sNodes(cl.id!, createMissing);
       const skipped = r.details.filter((d) => d.action === 'skipped');
       Modal.info({
-        title: `节点同步结果 — ${cl.name}`,
+        title: text('k8s.syncResult', { name: cl.name }),
         width: 620,
         content: (
           <div style={{ marginTop: 8 }}>
             <p>
-              API 返回 {r.total} 个节点：归类 <b>{r.assigned}</b>、更新 <b>{r.updated}</b>
-              {createMissing && <>、补录新资产 <b>{r.created}</b></>}。
+              {text('k8s.syncSummary', { total: r.total, assigned: r.assigned, updated: r.updated })}
+              {createMissing && <>{text('k8s.syncCreated', { created: r.created })}</>}
             </p>
             {skipped.length > 0 && (
               <div style={{ marginTop: 8, maxHeight: 260, overflowY: 'auto' }}>
-                <div style={{ color: palette.warning, marginBottom: 4 }}>未处理 {skipped.length} 个：</div>
+                <div style={{ color: palette.warning, marginBottom: 4 }}>{text('k8s.syncSkipped', { n: skipped.length })}</div>
                 {skipped.map((d) => (
                   <div key={d.ip || d.name} style={{ fontSize: 12, fontFamily: 'monospace', color: palette.textMute }}>
                     {d.name} {d.ip} — {d.msg}
@@ -296,7 +307,7 @@ export const K8sClusters: React.FC = () => {
       });
       load();
     } catch (e: any) {
-      message.error(e?.message || '节点同步失败');
+      message.error(e?.message || text('k8s.syncFailed'));
     } finally {
       setSyncingId(null);
     }
@@ -327,28 +338,27 @@ export const K8sClusters: React.FC = () => {
       const r = await bootstrapK8sTokenBySSH(bootCluster.id!, values);
       setBootCluster(null);
       Modal.success({
-        title: `已自动配置 Token — ${bootCluster.name}`,
+        title: text('k8s.bootDone', { name: bootCluster.name }),
         width: 640,
         content: (
           <div style={{ marginTop: 8 }}>
             <p style={{ marginBottom: 6 }}>
               ServiceAccount <b style={{ fontFamily: 'monospace' }}>{r.service_account}</b>
-              　取 Token 方式 <Tag>{r.method}</Tag>
+              　{text('k8s.bootMethod')} <Tag>{r.method}</Tag>
             </p>
             <p style={{ marginBottom: 6, fontSize: 12, color: palette.textSub }}>
-              远端 kubectl：<span style={{ fontFamily: 'monospace' }}>{r.kubectl || '-'}</span>
+              {text('k8s.bootKubectl')}<span style={{ fontFamily: 'monospace' }}>{r.kubectl || '-'}</span>
               　·　API Server <span style={{ fontFamily: 'monospace' }}>{r.api_server}</span>
             </p>
             {r.sync && (
               <p style={{ marginBottom: 6 }}>
-                节点同步：API 返回 {r.sync.total} 个，归类 <b>{r.sync.assigned}</b>、
-                更新 <b>{r.sync.updated}</b>、补录 <b>{r.sync.created}</b>。
+                {text('k8s.bootSync', { total: r.sync.total, assigned: r.sync.assigned, updated: r.sync.updated, created: r.sync.created })}
               </p>
             )}
             {r.sync_error && (
               <Alert type="warning" showIcon style={{ marginBottom: 8 }}
-                message="Token 已保存，但节点同步失败"
-                description={<>{r.sync_error}<br />请检查集群的「API Server」地址是否可从本机访问。</>} />
+                message={text('k8s.bootSyncErrTitle')}
+                description={<>{r.sync_error}<br />{text('k8s.bootSyncErrDesc')}</>} />
             )}
             {r.log.length > 0 && (
               <div style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto' }}>
@@ -364,7 +374,7 @@ export const K8sClusters: React.FC = () => {
       if (drawerCluster?.id === bootCluster.id) openNodes(bootCluster);
     } catch (e: any) {
       // 后端把「试过哪些 kubectl、卡在哪一步」都写进了错误信息，别截断
-      Modal.error({ title: '自动配置失败', width: 640, content: <div style={{ marginTop: 8 }}>{e?.message || '未知错误'}</div> });
+      Modal.error({ title: text('k8s.bootFailed'), width: 640, content: <div style={{ marginTop: 8 }}>{e?.message || text('k8s.unknownError')}</div> });
     } finally {
       setBootLoading(false);
     }
@@ -376,46 +386,46 @@ export const K8sClusters: React.FC = () => {
     p === 'Running' ? 'green' : p === 'Pending' ? 'gold' : p === 'Succeeded' ? 'blue' : p === 'Failed' ? 'red' : 'default';
 
   const liveNodeCols = [
-    { title: '名称', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span> },
-    { title: '就绪', dataIndex: 'ready', key: 'ready', width: 90, render: (v: string) => <Tag color={v === 'Ready' ? 'green' : 'red'}>{v}</Tag> },
-    { title: '角色', dataIndex: 'role', key: 'role', width: 130, render: roleTag },
-    { title: '内网 IP', dataIndex: 'ip', key: 'ip', render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v || '-'}</span> },
-    { title: '版本', dataIndex: 'version', key: 'ver', width: 110 },
+    { title: text('k8s.col.name'), dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span> },
+    { title: text('k8s.col.ready'), dataIndex: 'ready', key: 'ready', width: 90, render: (v: string) => <Tag color={v === 'Ready' ? 'green' : 'red'}>{v}</Tag> },
+    { title: text('k8s.col.role'), dataIndex: 'role', key: 'role', width: 130, render: roleTag },
+    { title: text('k8s.col.internalIp'), dataIndex: 'ip', key: 'ip', render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v || '-'}</span> },
+    { title: text('k8s.col.version'), dataIndex: 'version', key: 'ver', width: 110 },
   ];
 
   const livePodCols = [
-    { title: '命名空间', dataIndex: 'namespace', key: 'ns', width: 130 },
+    { title: text('k8s.col.namespace'), dataIndex: 'namespace', key: 'ns', width: 130 },
     { title: 'Pod', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
-    { title: '状态', dataIndex: 'phase', key: 'phase', width: 100, render: (v: string) => <Tag color={phaseColor(v)}>{v}</Tag> },
-    { title: '节点', dataIndex: 'node', key: 'node', width: 150, render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v || '-'}</span> },
-    { title: '重启', dataIndex: 'restarts', key: 're', width: 70 },
+    { title: text('k8s.col.status'), dataIndex: 'phase', key: 'phase', width: 100, render: (v: string) => <Tag color={phaseColor(v)}>{v}</Tag> },
+    { title: text('k8s.col.node'), dataIndex: 'node', key: 'node', width: 150, render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v || '-'}</span> },
+    { title: text('k8s.col.restarts'), dataIndex: 'restarts', key: 're', width: 70 },
   ];
 
   const unassignedCols = [
     { title: 'IP', dataIndex: 'ip', key: 'ip', render: (ip: string) => <span style={{ fontFamily: 'monospace' }}>{ip}</span> },
-    { title: '角色', dataIndex: 'k8s_role', key: 'role', width: 130, render: roleTag },
-    { title: 'K8s 版本', dataIndex: 'os_version', key: 'ver', render: (v: string) => v || '-' },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: statusDot },
+    { title: text('k8s.col.role'), dataIndex: 'k8s_role', key: 'role', width: 130, render: roleTag },
+    { title: text('k8s.col.k8sVersion'), dataIndex: 'os_version', key: 'ver', render: (v: string) => v || '-' },
+    { title: text('k8s.col.status'), dataIndex: 'status', key: 'status', width: 90, render: statusDot },
     {
-      title: '操作', key: 'act', width: 90,
+      title: text('users.col.action'), key: 'act', width: 90,
       render: (_: unknown, a: Asset) => (
-        <Button type="link" size="small" icon={<CodeOutlined />} onClick={() => toTerminal(a)}>终端</Button>
+        <Button type="link" size="small" icon={<CodeOutlined />} onClick={() => toTerminal(a)}>{text('k8s.terminal')}</Button>
       ),
     },
   ];
 
   const nodeCols = [
     { title: 'IP', dataIndex: 'ip', key: 'ip', render: (ip: string) => <span style={{ fontFamily: 'monospace' }}>{ip}</span> },
-    { title: '角色', dataIndex: 'k8s_role', key: 'role', width: 130, render: roleTag },
-    { title: 'K8s 版本', dataIndex: 'os_version', key: 'ver', render: (v: string) => v || '-' },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: statusDot },
+    { title: text('k8s.col.role'), dataIndex: 'k8s_role', key: 'role', width: 130, render: roleTag },
+    { title: text('k8s.col.k8sVersion'), dataIndex: 'os_version', key: 'ver', render: (v: string) => v || '-' },
+    { title: text('k8s.col.status'), dataIndex: 'status', key: 'status', width: 90, render: statusDot },
     {
-      title: '操作', key: 'act', width: 150,
+      title: text('users.col.action'), key: 'act', width: 150,
       render: (_: unknown, a: Asset) => (
         <Space size={2}>
-          <Button type="link" size="small" icon={<CodeOutlined />} onClick={() => toTerminal(a)}>终端</Button>
-          <Popconfirm title="移出该集群？（资产保留）" onConfirm={() => unassign(a.id!)} okText="移出" cancelText="取消">
-            <Button type="link" size="small" danger>移出</Button>
+          <Button type="link" size="small" icon={<CodeOutlined />} onClick={() => toTerminal(a)}>{text('k8s.terminal')}</Button>
+          <Popconfirm title={text('k8s.unassignConfirm')} onConfirm={() => unassign(a.id!)} okText={text('k8s.unassign')} cancelText={text('common.cancel')}>
+            <Button type="link" size="small" danger>{text('k8s.unassign')}</Button>
           </Popconfirm>
         </Space>
       ),
@@ -425,16 +435,16 @@ export const K8sClusters: React.FC = () => {
   return (
     <div style={{ background: palette.bg, minHeight: '100%' }}>
       <PageHeader
-        title="K8s 集群"
-        subtitle="把扫描发现的 K8s 节点归类为集群，一键跳转容器云控制台"
+        title={text('nav.k8s')}
+        subtitle={text('k8s.subtitle')}
         icon={<CloudServerOutlined />}
         extra={
           <Space>
-            <Tooltip title="读取各 K8s 节点 /etc/hosts 的 cluster-vip 标记按 VIP 自动建/并集群，并探测控制台真实路径与版本">
-              <Button icon={<ApiOutlined />} loading={autoLoading} onClick={runAutoClassify}>自动归类</Button>
+            <Tooltip title={text('k8s.autoClassifyTip')}>
+              <Button icon={<ApiOutlined />} loading={autoLoading} onClick={runAutoClassify}>{text('k8s.autoClassify')}</Button>
             </Tooltip>
-            <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建集群</Button>
+            <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>{text('common.refresh')}</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{text('k8s.newCluster')}</Button>
           </Space>
         }
       />
@@ -443,7 +453,7 @@ export const K8sClusters: React.FC = () => {
         {/* 集群卡片 */}
         {clusters.length === 0 ? (
           <div style={{ ...cardStyle, padding: 40, textAlign: 'center', marginBottom: 16 }}>
-            <Empty description="还没有集群，先「新建集群」并把下方探测到的 K8s 节点归类进来" />
+            <Empty description={text('k8s.emptyClusters')} />
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12, marginBottom: 16 }}>
@@ -458,55 +468,55 @@ export const K8sClusters: React.FC = () => {
                   <ApiOutlined /> VIP <span style={{ fontFamily: 'monospace' }}>{cl.vip}:{cl.console_port}</span>
                 </div>
                 <div style={{ fontSize: 13, color: palette.textSub, marginBottom: 4 }}>
-                  节点 {cl.node_count}（master {cl.master_count} / worker {(cl.node_count || 0) - (cl.master_count || 0)}）
+                  {text('k8s.nodeCounts', { total: cl.node_count || 0, master: cl.master_count || 0, worker: (cl.node_count || 0) - (cl.master_count || 0) })}
                 </div>
                 {/* 控制台指纹：真实入口路径 + 类型 + 版本（由「探测控制台」写入） */}
                 <div style={{ fontSize: 12, color: palette.textSub, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span>控制台</span>
+                  <span>{text('k8s.console')}</span>
                   <span style={{ fontFamily: 'monospace' }}>{cl.console_path || '/'}</span>
                   {cl.console_kind ? (
-                    <Tag color="blue" style={{ margin: 0 }}>{consoleKindLabel(cl.console_kind)}</Tag>
+                    <Tag color="blue" style={{ margin: 0 }}>{consoleKindLabel(cl.console_kind, text)}</Tag>
                   ) : (
-                    <Tag style={{ margin: 0 }}>未探测</Tag>
+                    <Tag style={{ margin: 0 }}>{text('k8s.notDetected')}</Tag>
                   )}
                   {cl.console_version && <Tag style={{ margin: 0 }}>{cl.console_version}</Tag>}
                 </div>
                 <div style={{ fontSize: 12, color: palette.textMute, marginBottom: 12 }}>
-                  凭据：{cl.cred_name || <span style={{ color: palette.warning }}>未绑定</span>}
+                  {text('k8s.credential')}{cl.cred_name || <span style={{ color: palette.warning }}>{text('k8s.unbound')}</span>}
                 </div>
                 <Space wrap>
-                  <Tooltip title={`打开 https://${cl.vip}:${cl.console_port}${cl.console_path || '/'} 并复制绑定密码`}>
-                    <Button type="primary" size="small" icon={<LinkOutlined />} onClick={() => openConsole(cl.id!)}>打开控制台</Button>
+                  <Tooltip title={text('k8s.openConsoleTip', { url: `https://${cl.vip}:${cl.console_port}${cl.console_path || '/'}` })}>
+                    <Button type="primary" size="small" icon={<LinkOutlined />} onClick={() => openConsole(cl.id!)}>{text('k8s.openConsole')}</Button>
                   </Tooltip>
-                  <Tooltip title="探测该 VIP 上控制台的真实入口路径、类型与版本，并写回配置">
-                    <Button size="small" icon={<ApiOutlined />} loading={detectingId === cl.id} onClick={() => runDetectConsole(cl)}>探测控制台</Button>
+                  <Tooltip title={text('k8s.detectConsoleTip')}>
+                    <Button size="small" icon={<ApiOutlined />} loading={detectingId === cl.id} onClick={() => runDetectConsole(cl)}>{text('k8s.detectConsole')}</Button>
                   </Tooltip>
-                  <Tooltip title="用已有 SSH 凭据登到 master，自动创建只读 ServiceAccount 并取 API Token，随后拉取节点入库——不用手工粘贴 Token">
+                  <Tooltip title={text('k8s.bootTip')}>
                     <Button size="small" type={cl.has_token ? 'default' : 'primary'} ghost={!cl.has_token}
                       icon={<ThunderboltOutlined />} onClick={() => openBootstrap(cl)}>
-                      {cl.has_token ? '重取 Token' : '用 SSH 凭据自动配置'}
+                      {cl.has_token ? text('k8s.retoken') : text('k8s.bootstrap')}
                     </Button>
                   </Tooltip>
                   {cl.has_token && (
-                    <Tooltip title="从 kube-apiserver 拉节点清单并按 IP 归类到本集群（不需要 SSH，也不依赖 /etc/hosts 标记）">
+                    <Tooltip title={text('k8s.syncTip')}>
                       <Dropdown
                         menu={{
                           items: [
-                            { key: 'match', label: '仅归类已有资产' },
-                            { key: 'create', label: '同时补录缺失节点为新资产' },
+                            { key: 'match', label: text('k8s.syncMatchOnly') },
+                            { key: 'create', label: text('k8s.syncCreateMissing') },
                           ],
                           onClick: ({ key }) => runSyncNodes(cl, key === 'create'),
                         }}
                       >
                         <Button size="small" icon={<CloudServerOutlined />} loading={syncingId === cl.id}>
-                          同步节点
+                          {text('k8s.syncNodes')}
                         </Button>
                       </Dropdown>
                     </Tooltip>
                   )}
-                  <Button size="small" onClick={() => openNodes(cl)}>节点{cl.has_token ? ' / 看板' : ''}</Button>
+                  <Button size="small" onClick={() => openNodes(cl)}>{cl.has_token ? text('k8s.nodesAndBoard') : text('k8s.nodes')}</Button>
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(cl)} />
-                  <Popconfirm title={`删除集群「${cl.name}」？节点会被解除归属但保留`} onConfirm={() => remove(cl.id!)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
+                  <Popconfirm title={text('k8s.deleteClusterConfirm', { name: cl.name })} onConfirm={() => remove(cl.id!)} okText={text('k8s.delete')} cancelText={text('common.cancel')} okButtonProps={{ danger: true }}>
                     <Button size="small" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
                 </Space>
@@ -518,7 +528,7 @@ export const K8sClusters: React.FC = () => {
         {/* 未归类 K8s 节点 */}
         <div style={tablePanelStyle}>
           <div style={{ padding: '12px 16px 0', fontSize: 14, fontWeight: 500, color: palette.text }}>
-            未归类 K8s 节点（{unassigned.length}）
+            {text('k8s.unassignedNodes', { n: unassigned.length })}
           </div>
           <TableToolbar
             onRefresh={load}
@@ -528,7 +538,7 @@ export const K8sClusters: React.FC = () => {
             left={
               <>
                 <Select
-                  placeholder="归类到集群…"
+                  placeholder={text('k8s.assignToCluster')}
                   style={{ width: 220 }}
                   value={assignClusterId}
                   onChange={setAssignClusterId}
@@ -536,7 +546,7 @@ export const K8sClusters: React.FC = () => {
                   disabled={clusters.length === 0}
                 />
                 <Button type="primary" onClick={doAssign} disabled={selectedNodeIds.length === 0}>
-                  归类到集群
+                  {text('k8s.assignBtn')}
                 </Button>
               </>
             }
@@ -550,7 +560,7 @@ export const K8sClusters: React.FC = () => {
             loading={loading}
             rowSelection={{ selectedRowKeys: selectedNodeIds, onChange: setSelectedNodeIds }}
             pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
-            locale={{ emptyText: '暂无未归类的 K8s 节点（在「自动发现」任务里勾选「探测 Kubernetes 节点」即可发现）' }}
+            locale={{ emptyText: text('k8s.noUnassigned') }}
           />
         </div>
       </div>
@@ -558,42 +568,42 @@ export const K8sClusters: React.FC = () => {
       {/* 新建/编辑集群 */}
       <Modal
         open={modalOpen}
-        title={editing ? '编辑集群' : '新建集群'}
+        title={editing ? text('k8s.editCluster') : text('k8s.newCluster')}
         onCancel={() => setModalOpen(false)}
         onOk={() => form.submit()}
-        okText="保存"
-        cancelText="取消"
+        okText={text('k8s.save')}
+        cancelText={text('common.cancel')}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={submit} initialValues={{ console_port: 443, console_path: '/' }}>
-          <Form.Item label="集群名称" name="name" rules={[{ required: true, message: '请输入集群名称' }]}>
-            <Input placeholder="如 prod-cluster" />
+          <Form.Item label={text('k8s.form.name')} name="name" rules={[{ required: true, message: text('k8s.form.nameRequired') }]}>
+            <Input placeholder={text('k8s.form.namePlaceholder')} />
           </Form.Item>
-          <Form.Item label="VIP（控制台/控制平面虚拟 IP）" name="vip" rules={[{ required: true, message: '请输入 VIP' }]}>
-            <Input placeholder="如 10.0.0.250" />
+          <Form.Item label={text('k8s.form.vip')} name="vip" rules={[{ required: true, message: text('k8s.form.vipRequired') }]}>
+            <Input placeholder={text('k8s.form.vipPlaceholder')} />
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item label="控制台端口" name="console_port" style={{ width: 140 }}>
+            <Form.Item label={text('k8s.form.consolePort')} name="console_port" style={{ width: 140 }}>
               <InputNumber min={1} max={65535} style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item label="控制台路径" name="console_path" style={{ flex: 1, minWidth: 260 }}
-              tooltip="留空可用「探测控制台」自动识别真实入口（/uc、/、/console 等）。支持占位符 {username}/{password}：控制台若接受 URL 传凭据/Token（如 /login?token={password}），即可真·一键免登；否则点开后自动复制密码粘贴登录。">
-              <Input placeholder="留空自动探测，或 /login?token={password}" />
+            <Form.Item label={text('k8s.form.consolePath')} name="console_path" style={{ flex: 1, minWidth: 260 }}
+              tooltip={text('k8s.form.consolePathTip')}>
+              <Input placeholder={text('k8s.form.consolePathPlaceholder')} />
             </Form.Item>
           </Space>
-          <Form.Item label="绑定登录凭据" name="credential_id" tooltip="点「打开控制台」时复制该凭据的密码到剪贴板">
-            <Select allowClear placeholder="选择控制台登录凭据（账号/密码）"
+          <Form.Item label={text('k8s.form.bindCred')} name="credential_id" tooltip={text('k8s.form.bindCredTip')}>
+            <Select allowClear placeholder={text('k8s.form.bindCredPlaceholder')}
               options={creds.map((c) => ({ label: `${c.name} (${c.username})`, value: c.id }))} />
           </Form.Item>
-          <Form.Item label="API Server（可选）" name="api_server" tooltip="默认 VIP:6443">
-            <Input placeholder="如 10.0.0.250:6443" />
+          <Form.Item label={text('k8s.form.apiServer')} name="api_server" tooltip={text('k8s.form.apiServerTip')}>
+            <Input placeholder={text('k8s.form.apiServerPlaceholder')} />
           </Form.Item>
-          <Form.Item label="API Token（实时看板用）" name="api_token"
-            tooltip="ServiceAccount Bearer Token，仅用于服务端调 kube-apiserver 拉实时节点/Pod；留空=保持不变。建议建只读 SA：kubectl create token <sa>">
-            <Input.Password placeholder={editing?.has_token ? '已配置（留空保持不变）' : 'kube-apiserver ServiceAccount Token'} autoComplete="new-password" />
+          <Form.Item label={text('k8s.form.apiToken')} name="api_token"
+            tooltip={text('k8s.form.apiTokenTip')}>
+            <Input.Password placeholder={editing?.has_token ? text('k8s.form.apiTokenSet') : 'kube-apiserver ServiceAccount Token'} autoComplete="new-password" />
           </Form.Item>
-          <Form.Item label="描述" name="description">
-            <Input.TextArea rows={2} placeholder="备注用途、环境等" />
+          <Form.Item label={text('k8s.form.description')} name="description">
+            <Input.TextArea rows={2} placeholder={text('k8s.form.descriptionPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>
@@ -601,45 +611,45 @@ export const K8sClusters: React.FC = () => {
       {/* 用 SSH 凭据自动配置 Token */}
       <Modal
         open={!!bootCluster}
-        title={`用 SSH 凭据自动配置 — ${bootCluster?.name || ''}`}
+        title={text('k8s.bootTitle', { name: bootCluster?.name || '' })}
         onCancel={() => setBootCluster(null)}
         onOk={() => bootForm.submit()}
-        okText="开始配置"
-        cancelText="取消"
+        okText={text('k8s.bootStart')}
+        cancelText={text('common.cancel')}
         confirmLoading={bootLoading}
         destroyOnHidden
       >
         <Alert style={{ marginBottom: 12 }} type="info" showIcon
-          message="后端会 SSH 登到下面这台机器"
-          description="自动寻找可用的 kubectl（含 k3s / microk8s / sudo / 常见 kubeconfig 路径），创建一个只读 ServiceAccount（只允许读 nodes / pods / namespaces），取回 Token 加密落库，然后立刻同步节点。Token 不会回传到浏览器。" />
+          message={text('k8s.bootAlertTitle')}
+          description={text('k8s.bootAlertDesc')} />
         <Form form={bootForm} layout="vertical" onFinish={runBootstrap}>
           <Space style={{ width: '100%' }} size="middle" align="start">
-            <Form.Item label="master 地址" name="host" style={{ flex: 1, minWidth: 300 }}
-              rules={[{ required: true, message: '请输入可 SSH 登录的 master 地址' }]}
-              tooltip="默认用集群 VIP；若 VIP 不能 SSH（比如只是个 LB），改成任意一台 control-plane 节点的 IP">
-              <Input placeholder="如 10.0.0.11" />
+            <Form.Item label={text('k8s.boot.host')} name="host" style={{ flex: 1, minWidth: 300 }}
+              rules={[{ required: true, message: text('k8s.boot.hostRequired') }]}
+              tooltip={text('k8s.boot.hostTip')}>
+              <Input placeholder={text('k8s.boot.hostPlaceholder')} />
             </Form.Item>
-            <Form.Item label="SSH 端口" name="ssh_port" style={{ width: 120 }}>
+            <Form.Item label={text('k8s.boot.sshPort')} name="ssh_port" style={{ width: 120 }}>
               <InputNumber min={1} max={65535} style={{ width: '100%' }} />
             </Form.Item>
           </Space>
-          <Form.Item label="SSH 凭据" name="credential_id"
-            rules={[{ required: true, message: '请选择一份 SSH 凭据' }]}
-            tooltip="默认用集群绑定的凭据。这个账号需要能在 master 上执行 kubectl（或已配置免密 sudo）">
-            <Select placeholder="选择一份 SSH 凭据（密码或私钥）"
+          <Form.Item label={text('k8s.boot.cred')} name="credential_id"
+            rules={[{ required: true, message: text('k8s.boot.credRequired') }]}
+            tooltip={text('k8s.boot.credTip')}>
+            <Select placeholder={text('k8s.boot.credPlaceholder')}
               options={creds.filter((c) => c.type !== 'telnet').map((c) => ({ label: `${c.name} (${c.username})`, value: c.id }))} />
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle" align="start">
-            <Form.Item label="命名空间" name="namespace" style={{ width: 200 }}>
+            <Form.Item label={text('k8s.col.namespace')} name="namespace" style={{ width: 200 }}>
               <Input placeholder="kube-system" />
             </Form.Item>
-            <Form.Item label="ServiceAccount 名" name="service_account" style={{ flex: 1, minWidth: 220 }}
-              tooltip="已存在则复用，不会重复创建；对应的只读 ClusterRole 名为 <名字>-readonly">
+            <Form.Item label={text('k8s.boot.saName')} name="service_account" style={{ flex: 1, minWidth: 220 }}
+              tooltip={text('k8s.boot.saNameTip')}>
               <Input placeholder="assetmanager" />
             </Form.Item>
           </Space>
           <Form.Item name="create_missing" valuePropName="checked" style={{ marginBottom: 0 }}>
-            <Checkbox>把资产表里没有的节点补录为新资产</Checkbox>
+            <Checkbox>{text('k8s.boot.createMissing')}</Checkbox>
           </Form.Item>
         </Form>
       </Modal>
@@ -653,9 +663,9 @@ export const K8sClusters: React.FC = () => {
         extra={drawerCluster && (
           <Space>
             {drawerCluster.has_token && (
-              <Button icon={<ReloadOutlined />} loading={liveLoading} onClick={() => loadLive(drawerCluster.id!)}>刷新看板</Button>
+              <Button icon={<ReloadOutlined />} loading={liveLoading} onClick={() => loadLive(drawerCluster.id!)}>{text('k8s.refreshBoard')}</Button>
             )}
-            <Button type="primary" icon={<LinkOutlined />} onClick={() => openConsole(drawerCluster.id!)}>打开控制台</Button>
+            <Button type="primary" icon={<LinkOutlined />} onClick={() => openConsole(drawerCluster.id!)}>{text('k8s.openConsole')}</Button>
           </Space>
         )}
       >
@@ -663,31 +673,31 @@ export const K8sClusters: React.FC = () => {
           <div style={{ marginBottom: 12, fontSize: 13, color: palette.textSub, lineHeight: 1.9 }}>
             VIP <span style={{ fontFamily: 'monospace' }}>{drawerCluster.vip}:{drawerCluster.console_port}</span>
             　·　API <span style={{ fontFamily: 'monospace' }}>{drawerCluster.api_server || `${drawerCluster.vip}:6443`}</span>
-            　·　凭据 {drawerCluster.cred_name || '未绑定'}
+            　·　{text('k8s.credential')}{drawerCluster.cred_name || text('k8s.unbound')}
             <br />
-            控制台 <span style={{ fontFamily: 'monospace' }}>{drawerCluster.console_path || '/'}</span>
-            　·　类型 {consoleKindLabel(drawerCluster.console_kind)}
-            {drawerCluster.console_version && <>　·　版本 {drawerCluster.console_version}</>}
-            {drawerCluster.console_title && <>　·　标题 {drawerCluster.console_title}</>}
+            {text('k8s.console')} <span style={{ fontFamily: 'monospace' }}>{drawerCluster.console_path || '/'}</span>
+            　·　{text('k8s.detectKind')} {consoleKindLabel(drawerCluster.console_kind, text)}
+            {drawerCluster.console_version && <>　·　{text('k8s.detectVersion')} {drawerCluster.console_version}</>}
+            {drawerCluster.console_title && <>　·　{text('k8s.consoleTitle')} {drawerCluster.console_title}</>}
           </div>
         )}
 
         {/* 概览统计 */}
         {overview?.has_token && (
           <div style={{ display: 'flex', gap: 24, padding: '10px 4px 14px', borderBottom: '1px solid var(--wjw-border)' }}>
-            <Statistic title="节点(就绪/总)" value={`${overview.nodes_ready ?? 0}/${overview.nodes_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
-            <Statistic title="Pod(运行/总)" value={`${overview.pods_running ?? 0}/${overview.pods_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
-            <Statistic title="版本" value={overview.version || '-'} valueStyle={{ fontSize: 16 }} />
+            <Statistic title={text('k8s.stat.nodes')} value={`${overview.nodes_ready ?? 0}/${overview.nodes_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
+            <Statistic title={text('k8s.stat.pods')} value={`${overview.pods_running ?? 0}/${overview.pods_total ?? 0}`} valueStyle={{ fontSize: 20 }} />
+            <Statistic title={text('k8s.col.version')} value={overview.version || '-'} valueStyle={{ fontSize: 16 }} />
           </div>
         )}
 
         {drawerCluster && !drawerCluster.has_token && (
           <Alert style={{ marginBottom: 12 }} type="info" showIcon
-            message="未配置 API Token，无法显示实时看板"
-            description="点右边的按钮，用已有 SSH 凭据自动取 Token；也可以编辑集群手工粘贴 ServiceAccount Bearer Token。"
+            message={text('k8s.noTokenTitle')}
+            description={text('k8s.noTokenDesc')}
             action={
               <Button size="small" type="primary" icon={<ThunderboltOutlined />} onClick={() => openBootstrap(drawerCluster)}>
-                用 SSH 凭据自动配置
+                {text('k8s.bootstrap')}
               </Button>
             } />
         )}
@@ -698,7 +708,7 @@ export const K8sClusters: React.FC = () => {
           items={[
             ...(drawerCluster?.has_token ? [
               {
-                key: 'nodes', label: `实时节点 (${liveNodes.length})`,
+                key: 'nodes', label: text('k8s.tab.liveNodes', { n: liveNodes.length }),
                 children: <Table size="small" rowKey="name" loading={liveLoading} dataSource={liveNodes} pagination={false} columns={liveNodeCols} scroll={{ y: 420 }} />,
               },
               {
@@ -707,9 +717,9 @@ export const K8sClusters: React.FC = () => {
               },
             ] : []),
             {
-              key: 'assigned', label: `归类节点 (${drawerNodes.length})`,
+              key: 'assigned', label: text('k8s.tab.assigned', { n: drawerNodes.length }),
               children: <Table columns={nodeCols} dataSource={drawerNodes} rowKey="id" size="small" pagination={false}
-                locale={{ emptyText: '该集群暂无归类节点，请在「未归类 K8s 节点」中归类' }} />,
+                locale={{ emptyText: text('k8s.noAssignedNodes') }} />,
             },
           ]}
         />

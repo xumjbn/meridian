@@ -4,45 +4,49 @@ import { FileSearchOutlined } from '@ant-design/icons';
 import { getAuditLogs, type AuditLog } from '../services/api';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
+import { useI18n } from '../i18n';
 
 const { Option } = Select;
 
-// 把「方法 + 路径」翻译成易读的中文动作
-const describeAction = (action: string, rawPath: string): string => {
+type TextFn = (key: string, values?: Record<string, string | number>) => string;
+
+// 把「方法 + 路径」翻译成易读的动作描述
+const describeAction = (action: string, rawPath: string, text: TextFn): string => {
   const p = rawPath.replace(/^\/api/, '');
   const rules: Array<[boolean, string]> = [
-    [action === 'POST' && p === '/login', '登录'],
-    [action === 'POST' && p === '/logout', '退出登录'],
-    [action === 'POST' && p === '/register', '注册账号'],
-    [action === 'POST' && p === '/users/change-password', '修改密码'],
-    [action === 'POST' && p === '/users', '新增用户'],
-    [action === 'PUT' && /^\/users\/\d+$/.test(p), '更新用户'],
-    [action === 'DELETE' && /^\/users\/\d+$/.test(p), '删除用户'],
-    [action === 'POST' && p === '/assets', '新建资产'],
-    [action === 'PUT' && /^\/assets\/\d+$/.test(p), '更新资产'],
-    [action === 'DELETE' && /^\/assets\/\d+$/.test(p), '删除资产'],
-    [action === 'POST' && /^\/assets\/\d+\/collect$/.test(p), '认证采集'],
-    [action === 'POST' && /^\/assets\/\d+\/ping$/.test(p), '资产探测'],
-    [action === 'POST' && p === '/assets/batch-ping', '批量探测'],
-    [action === 'POST' && p === '/credentials', '新建凭据'],
-    [action === 'PUT' && /^\/credentials\/\d+$/.test(p), '更新凭据'],
-    [action === 'DELETE' && /^\/credentials\/\d+$/.test(p), '删除凭据'],
-    [action === 'POST' && /^\/credentials\/\d+\/test$/.test(p), '测试凭据'],
-    [action === 'POST' && p === '/tasks', '新建扫描任务'],
-    [action === 'PUT' && /^\/tasks\/\d+$/.test(p), '更新扫描任务'],
-    [action === 'DELETE' && /^\/tasks\/\d+$/.test(p), '删除扫描任务'],
-    [action === 'POST' && /^\/tasks\/\d+\/run$/.test(p), '运行扫描'],
-    [action === 'POST' && /^\/tasks\/\d+\/stop$/.test(p), '停止扫描'],
-    [action === 'POST' && p === '/tags', '新建标签'],
-    [action === 'PUT' && /^\/tags\/\d+$/.test(p), '更新标签'],
-    [action === 'DELETE' && /^\/tags\/\d+$/.test(p), '删除标签'],
-    [action === 'PUT' && p === '/settings', '更新系统设置'],
-    [action === 'LIST', `列目录 ${p}`],
-    [action === 'DOWNLOAD', `下载文件 ${p}`],
-    [action === 'UPLOAD', `上传文件 ${p}`],
-    [action === 'MKDIR', `新建目录 ${p}`],
-    [action === 'RENAME', `重命名 ${p}`],
-    [action === 'DELETE' && p.startsWith('资产#'), `删除文件/目录 ${p}`],
+    [action === 'POST' && p === '/login', text('audit.act.login')],
+    [action === 'POST' && p === '/logout', text('audit.act.logout')],
+    [action === 'POST' && p === '/register', text('audit.act.register')],
+    [action === 'POST' && p === '/users/change-password', text('audit.act.changePassword')],
+    [action === 'POST' && p === '/users', text('audit.act.userCreate')],
+    [action === 'PUT' && /^\/users\/\d+$/.test(p), text('audit.act.userUpdate')],
+    [action === 'DELETE' && /^\/users\/\d+$/.test(p), text('audit.act.userDelete')],
+    [action === 'POST' && p === '/assets', text('audit.act.assetCreate')],
+    [action === 'PUT' && /^\/assets\/\d+$/.test(p), text('audit.act.assetUpdate')],
+    [action === 'DELETE' && /^\/assets\/\d+$/.test(p), text('audit.act.assetDelete')],
+    [action === 'POST' && /^\/assets\/\d+\/collect$/.test(p), text('audit.act.assetCollect')],
+    [action === 'POST' && /^\/assets\/\d+\/ping$/.test(p), text('audit.act.assetPing')],
+    [action === 'POST' && p === '/assets/batch-ping', text('audit.act.assetBatchPing')],
+    [action === 'POST' && p === '/credentials', text('audit.act.credCreate')],
+    [action === 'PUT' && /^\/credentials\/\d+$/.test(p), text('audit.act.credUpdate')],
+    [action === 'DELETE' && /^\/credentials\/\d+$/.test(p), text('audit.act.credDelete')],
+    [action === 'POST' && /^\/credentials\/\d+\/test$/.test(p), text('audit.act.credTest')],
+    [action === 'POST' && p === '/tasks', text('audit.act.taskCreate')],
+    [action === 'PUT' && /^\/tasks\/\d+$/.test(p), text('audit.act.taskUpdate')],
+    [action === 'DELETE' && /^\/tasks\/\d+$/.test(p), text('audit.act.taskDelete')],
+    [action === 'POST' && /^\/tasks\/\d+\/run$/.test(p), text('audit.act.taskRun')],
+    [action === 'POST' && /^\/tasks\/\d+\/stop$/.test(p), text('audit.act.taskStop')],
+    [action === 'POST' && p === '/tags', text('audit.act.tagCreate')],
+    [action === 'PUT' && /^\/tags\/\d+$/.test(p), text('audit.act.tagUpdate')],
+    [action === 'DELETE' && /^\/tags\/\d+$/.test(p), text('audit.act.tagDelete')],
+    [action === 'PUT' && p === '/settings', text('audit.act.settingsUpdate')],
+    [action === 'LIST', text('audit.act.sftpList', { path: p })],
+    [action === 'DOWNLOAD', text('audit.act.sftpDownload', { path: p })],
+    [action === 'UPLOAD', text('audit.act.sftpUpload', { path: p })],
+    [action === 'MKDIR', text('audit.act.sftpMkdir', { path: p })],
+    [action === 'RENAME', text('audit.act.sftpRename', { path: p })],
+    // 「资产#」是后端写进审计路径的前缀（SFTP 操作），属于数据不是界面文案，不参与翻译
+    [action === 'DELETE' && p.startsWith('资产#'), text('audit.act.sftpDelete', { path: p })],
   ];
   const hit = rules.find(([cond]) => cond);
   return hit ? hit[1] : `${action} ${p}`;
@@ -55,6 +59,7 @@ const methodColor: Record<string, string> = {
 };
 
 export const Audit: React.FC = () => {
+  const { text } = useI18n();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [actor, setActor] = useState('');
@@ -70,7 +75,7 @@ export const Audit: React.FC = () => {
       });
       setLogs(data);
     } catch (e: any) {
-      message.error(e?.message || '获取审计日志失败');
+      message.error(e?.message || text('audit.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -83,45 +88,48 @@ export const Audit: React.FC = () => {
 
   const columns = [
     {
-      title: '时间',
+      title: text('audit.col.time'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (t: string) => <span>{t ? new Date(t).toLocaleString() : '-'}</span>,
+      render: (v: string) => <span>{v ? new Date(v).toLocaleString() : '-'}</span>,
     },
     {
-      title: '操作人',
+      title: text('audit.col.actor'),
       dataIndex: 'actor',
       key: 'actor',
       width: 140,
-      render: (a: string) => (a ? <span style={{ fontWeight: 500 }}>{a}</span> : <span style={{ color: '#cbd5e1' }}>匿名</span>),
+      render: (a: string) =>
+        a ? <span style={{ fontWeight: 500 }}>{a}</span> : <span style={{ color: '#cbd5e1' }}>{text('audit.anonymous')}</span>,
     },
     {
-      title: '动作',
+      title: text('audit.col.action'),
       key: 'action',
       render: (_: unknown, r: AuditLog) => (
         <Space size={8}>
           <Tag color={methodColor[r.action] || 'default'} style={{ borderRadius: 4, fontFamily: 'monospace' }}>{r.action}</Tag>
-          <span>{describeAction(r.action, r.path)}</span>
+          <span>{describeAction(r.action, r.path, text)}</span>
         </Space>
       ),
     },
     {
-      title: '路径',
+      title: text('audit.col.path'),
       dataIndex: 'path',
       key: 'path',
       render: (p: string) => <span style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'monospace' }}>{p}</span>,
     },
     {
-      title: '结果',
+      title: text('audit.col.result'),
       dataIndex: 'status',
       key: 'status',
       width: 110,
       render: (s: number) =>
         s === 200 ? (
-          <Tag color="green" style={{ borderRadius: 4 }}>成功</Tag>
+          <Tag color="green" style={{ borderRadius: 4 }}>{text('audit.success')}</Tag>
         ) : (
-          <Tag color={s === 401 || s === 403 ? 'red' : 'orange'} style={{ borderRadius: 4 }}>失败 {s || ''}</Tag>
+          <Tag color={s === 401 || s === 403 ? 'red' : 'orange'} style={{ borderRadius: 4 }}>
+            {text('audit.failed')} {s || ''}
+          </Tag>
         ),
     },
     {
@@ -139,15 +147,15 @@ export const Audit: React.FC = () => {
       <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
-            title="审计日志"
-            subtitle="记录所有写操作的操作人、动作、结果与来源 IP"
+            title={text('audit.title')}
+            subtitle={text('audit.subtitle')}
             icon={<FileSearchOutlined />}
             onRefresh={fetchLogs}
             loading={loading}
             left={
               <>
                 <Input
-                  placeholder="按操作人筛选"
+                  placeholder={text('audit.filterActor')}
                   value={actor}
                   onChange={(e) => setActor(e.target.value)}
                   onPressEnter={fetchLogs}
@@ -155,17 +163,17 @@ export const Audit: React.FC = () => {
                   style={{ width: 190 }}
                 />
                 <Select
-                  placeholder="动作类型"
+                  placeholder={text('audit.filterAction')}
                   value={action}
                   onChange={(v) => setAction(v)}
                   allowClear
                   style={{ width: 165 }}
                 >
-                  <Option value="POST">POST（新增/执行）</Option>
-                  <Option value="PUT">PUT（更新）</Option>
-                  <Option value="DELETE">DELETE（删除）</Option>
+                  <Option value="POST">{text('audit.method.post')}</Option>
+                  <Option value="PUT">{text('audit.method.put')}</Option>
+                  <Option value="DELETE">{text('audit.method.delete')}</Option>
                 </Select>
-                <Button type="primary" onClick={fetchLogs}>查询</Button>
+                <Button type="primary" onClick={fetchLogs}>{text('audit.query')}</Button>
               </>
             }
           />
@@ -176,7 +184,12 @@ export const Audit: React.FC = () => {
             rowKey="id"
             loading={loading}
             size="middle"
-            pagination={{ pageSize: 15, showSizeChanger: false, showTotal: (t) => `共 ${t} 条`, style: { padding: '0 16px' } }}
+            pagination={{
+              pageSize: 15,
+              showSizeChanger: false,
+              showTotal: (t) => text('common.totalItems', { count: t }),
+              style: { padding: '0 16px' },
+            }}
           />
         </div>
       </div>

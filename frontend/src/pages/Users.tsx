@@ -4,10 +4,12 @@ import { PlusOutlined, DeleteOutlined, KeyOutlined, TeamOutlined, UserOutlined }
 import { getUsers, createUser, updateUser, deleteUser, type User } from '../services/api';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
+import { useI18n } from '../i18n';
 
 const { Option } = Select;
 
 export const Users: React.FC = () => {
+  const { text } = useI18n();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +28,7 @@ export const Users: React.FC = () => {
       setLoading(true);
       setUsers(await getUsers());
     } catch (e: any) {
-      message.error(e?.message || '获取用户列表失败');
+      message.error(e?.message || text('users.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -39,12 +41,12 @@ export const Users: React.FC = () => {
   const handleAdd = async (values: { username: string; password: string; role: string }) => {
     try {
       await createUser(values);
-      message.success('用户创建成功');
+      message.success(text('users.createSuccess'));
       setAddOpen(false);
       addForm.resetFields();
       fetchUsers();
     } catch (e: any) {
-      message.error(e?.message || '创建失败');
+      message.error(e?.message || text('users.createFailed'));
     }
   };
 
@@ -52,11 +54,11 @@ export const Users: React.FC = () => {
     if (!resetUser) return;
     try {
       await updateUser(resetUser.id, { password: values.password });
-      message.success(`已重置 ${resetUser.username} 的密码`);
+      message.success(text('users.resetSuccess', { user: resetUser.username }));
       setResetUser(null);
       resetForm.resetFields();
     } catch (e: any) {
-      message.error(e?.message || '重置失败');
+      message.error(e?.message || text('users.resetFailed'));
     }
   };
 
@@ -66,45 +68,45 @@ export const Users: React.FC = () => {
       message.success(okMsg);
       fetchUsers();
     } catch (e: any) {
-      message.error(e?.message || '操作失败');
+      message.error(e?.message || text('users.opFailed'));
     }
   };
 
   const changeRole = async (record: User, role: string) => {
     try {
       await updateUser(record.id, { role });
-      message.success('角色已更新');
+      message.success(text('users.roleUpdated'));
       fetchUsers();
     } catch (e: any) {
-      message.error(e?.message || '操作失败');
+      message.error(e?.message || text('users.opFailed'));
     }
   };
 
   const handleDelete = async (record: User) => {
     try {
       await deleteUser(record.id);
-      message.success('用户已删除');
+      message.success(text('users.deleted'));
       fetchUsers();
     } catch (e: any) {
-      message.error(e?.message || '删除失败');
+      message.error(e?.message || text('users.deleteFailed'));
     }
   };
 
   const columns = [
     {
-      title: '用户名',
+      title: text('users.col.username'),
       dataIndex: 'username',
       key: 'username',
-      render: (text: string) => (
+      render: (name: string) => (
         <Space>
           <UserOutlined style={{ color: palette.primary }} />
-          <span style={{ fontWeight: 500 }}>{text}</span>
-          {text === currentUser && <Tag color="blue" style={{ borderRadius: 4 }}>当前</Tag>}
+          <span style={{ fontWeight: 500 }}>{name}</span>
+          {name === currentUser && <Tag color="blue" style={{ borderRadius: 4 }}>{text('users.current')}</Tag>}
         </Space>
       ),
     },
     {
-      title: '角色',
+      title: text('users.col.role'),
       dataIndex: 'role',
       key: 'role',
       render: (role: string, record: User) => (
@@ -114,23 +116,23 @@ export const Users: React.FC = () => {
           style={{ width: 110 }}
           onChange={(val) => changeRole(record, val)}
         >
-          <Option value="admin">管理员</Option>
-          <Option value="user">普通用户</Option>
+          <Option value="admin">{text('users.role.admin')}</Option>
+          <Option value="user">{text('users.role.user')}</Option>
         </Select>
       ),
     },
     {
-      title: '状态',
+      title: text('users.col.status'),
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => {
-        if (status === 'active') return <Tag color="green" style={{ borderRadius: 4 }}>启用</Tag>;
-        if (status === 'pending') return <Tag color="orange" style={{ borderRadius: 4 }}>待审批</Tag>;
-        return <Tag color="red" style={{ borderRadius: 4 }}>禁用</Tag>;
+        if (status === 'active') return <Tag color="green" style={{ borderRadius: 4 }}>{text('users.status.active')}</Tag>;
+        if (status === 'pending') return <Tag color="orange" style={{ borderRadius: 4 }}>{text('users.status.pending')}</Tag>;
+        return <Tag color="red" style={{ borderRadius: 4 }}>{text('users.status.disabled')}</Tag>;
       },
     },
     {
-      title: '上次登录',
+      title: text('users.col.lastLogin'),
       key: 'last_login',
       render: (_: unknown, r: User) =>
         r.last_login_at ? (
@@ -139,17 +141,17 @@ export const Users: React.FC = () => {
             {r.last_login_ip && <span style={{ color: '#94a3b8', marginLeft: 6 }}>({r.last_login_ip})</span>}
           </span>
         ) : (
-          <span style={{ color: '#cbd5e1' }}>从未登录</span>
+          <span style={{ color: '#cbd5e1' }}>{text('users.neverLoggedIn')}</span>
         ),
     },
     {
-      title: '创建时间',
+      title: text('users.col.createdAt'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => <span>{text ? new Date(text).toLocaleString() : '-'}</span>,
+      render: (v: string) => <span>{v ? new Date(v).toLocaleString() : '-'}</span>,
     },
     {
-      title: '操作',
+      title: text('users.col.action'),
       key: 'action',
       render: (_: unknown, record: User) => (
         <Space size="middle">
@@ -160,16 +162,16 @@ export const Users: React.FC = () => {
             onClick={() => setResetUser(record)}
             style={{ padding: 0, fontWeight: 500, color: palette.primary }}
           >
-            重置密码
+            {text('users.resetPassword')}
           </Button>
           {record.status === 'pending' ? (
             <Button
               type="link"
               size="small"
-              onClick={() => setStatus(record, 'active', `已批准 ${record.username}`)}
+              onClick={() => setStatus(record, 'active', text('users.approved', { user: record.username }))}
               style={{ padding: 0, fontWeight: 600, color: '#16a34a' }}
             >
-              批准
+              {text('users.approve')}
             </Button>
           ) : (
             <Button
@@ -177,19 +179,19 @@ export const Users: React.FC = () => {
               size="small"
               onClick={() =>
                 record.status === 'active'
-                  ? setStatus(record, 'disabled', '已禁用账号')
-                  : setStatus(record, 'active', '已启用账号')
+                  ? setStatus(record, 'disabled', text('users.disabledOk'))
+                  : setStatus(record, 'active', text('users.enabledOk'))
               }
               style={{ padding: 0, fontWeight: 500, color: record.status === 'active' ? '#d97706' : '#16a34a' }}
             >
-              {record.status === 'active' ? '禁用' : '启用'}
+              {record.status === 'active' ? text('users.disable') : text('users.enable')}
             </Button>
           )}
           <Popconfirm
-            title={`确认删除用户 ${record.username} 吗？`}
+            title={text('users.deleteConfirm', { user: record.username })}
             onConfirm={() => handleDelete(record)}
-            okText="是"
-            cancelText="否"
+            okText={text('common.yes')}
+            cancelText={text('common.no')}
             okButtonProps={{ danger: true }}
           >
             <Button type="text" danger size="small" icon={<DeleteOutlined />} style={{ padding: 0 }} />
@@ -205,14 +207,14 @@ export const Users: React.FC = () => {
       <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
-            title="用户管理"
-            subtitle="管理平台登录账户的角色、状态与密码"
+            title={text('users.title')}
+            subtitle={text('users.subtitle')}
             icon={<TeamOutlined />}
             onRefresh={fetchUsers}
             loading={loading}
             left={
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-                新增用户
+                {text('users.add')}
               </Button>
             }
           />
@@ -229,33 +231,39 @@ export const Users: React.FC = () => {
 
       {/* 新增用户 */}
       <Modal
-        title={<span><PlusOutlined style={{ marginRight: 8, color: palette.primary }} />新增用户</span>}
+        title={<span><PlusOutlined style={{ marginRight: 8, color: palette.primary }} />{text('users.add')}</span>}
         open={addOpen}
         onCancel={() => { setAddOpen(false); addForm.resetFields(); }}
         onOk={() => addForm.submit()}
-        okText="创建"
-        cancelText="取消"
+        okText={text('users.create')}
+        cancelText={text('common.cancel')}
         destroyOnHidden
       >
         <Form form={addForm} layout="vertical" onFinish={handleAdd} initialValues={{ role: 'user' }} style={{ marginTop: 12 }}>
           <Form.Item
-            label="用户名"
+            label={text('users.col.username')}
             name="username"
-            rules={[{ required: true, message: '请输入用户名' }, { min: 3, max: 32, message: '用户名长度需为 3–32 个字符' }]}
+            rules={[
+              { required: true, message: text('login.username.required') },
+              { min: 3, max: 32, message: text('login.username.length') },
+            ]}
           >
-            <Input placeholder="登录用户名" autoComplete="off" />
+            <Input placeholder={text('users.usernamePlaceholder')} autoComplete="off" />
           </Form.Item>
           <Form.Item
-            label="初始密码"
+            label={text('users.initialPassword')}
             name="password"
-            rules={[{ required: true, message: '请输入密码' }, { min: 6, max: 64, message: '密码长度需为 6–64 个字符' }]}
+            rules={[
+              { required: true, message: text('login.password.required') },
+              { min: 6, max: 64, message: text('login.password.length') },
+            ]}
           >
-            <Input.Password placeholder="6–64 位密码" autoComplete="new-password" />
+            <Input.Password placeholder={text('users.passwordPlaceholder')} autoComplete="new-password" />
           </Form.Item>
-          <Form.Item label="角色" name="role" rules={[{ required: true }]}>
+          <Form.Item label={text('users.col.role')} name="role" rules={[{ required: true }]}>
             <Select>
-              <Option value="user">普通用户</Option>
-              <Option value="admin">管理员</Option>
+              <Option value="user">{text('users.role.user')}</Option>
+              <Option value="admin">{text('users.role.admin')}</Option>
             </Select>
           </Form.Item>
         </Form>
@@ -263,24 +271,27 @@ export const Users: React.FC = () => {
 
       {/* 重置密码 */}
       <Modal
-        title={<span><KeyOutlined style={{ marginRight: 8, color: palette.primary }} />重置密码</span>}
+        title={<span><KeyOutlined style={{ marginRight: 8, color: palette.primary }} />{text('users.resetPassword')}</span>}
         open={!!resetUser}
         onCancel={() => { setResetUser(null); resetForm.resetFields(); }}
         onOk={() => resetForm.submit()}
-        okText="确认重置"
-        cancelText="取消"
+        okText={text('users.confirmReset')}
+        cancelText={text('common.cancel')}
         destroyOnHidden
       >
         <p style={{ color: palette.textSub, fontSize: 13, marginTop: 8 }}>
-          为用户 <strong>{resetUser?.username}</strong> 设置一个新密码（无需原密码）。
+          {text('users.resetHint', { user: resetUser?.username || '' })}
         </p>
         <Form form={resetForm} layout="vertical" onFinish={handleReset}>
           <Form.Item
-            label="新密码"
+            label={text('password.new')}
             name="password"
-            rules={[{ required: true, message: '请输入新密码' }, { min: 6, max: 64, message: '密码长度需为 6–64 个字符' }]}
+            rules={[
+              { required: true, message: text('password.new.required') },
+              { min: 6, max: 64, message: text('login.password.length') },
+            ]}
           >
-            <Input.Password placeholder="6–64 位新密码" autoComplete="new-password" />
+            <Input.Password placeholder={text('users.newPasswordPlaceholder')} autoComplete="new-password" />
           </Form.Item>
         </Form>
       </Modal>

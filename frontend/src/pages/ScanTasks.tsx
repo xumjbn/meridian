@@ -4,18 +4,27 @@ import { PlusOutlined, PlayCircleOutlined, HistoryOutlined, EditOutlined, Delete
 import { getScanTasks, createScanTask, updateScanTask, deleteScanTask, runScanTask, stopScanTask, getScanLogs, getScanStreamUrl, type ScanTask, type ScanLog } from '../services/api';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
+import { useI18n } from '../i18n';
 
-const scheduleLabelMap: Record<string, string> = {
-  '@every 15m': '每 15 分钟',
-  '@every 30m': '每 30 分钟',
-  '@every 1h': '每小时',
-  '@every 6h': '每 6 小时',
-  'daily:02:00': '每天 02:00',
-  'daily:08:00': '每天 08:00',
+type TextFn = (key: string, values?: Record<string, string | number>) => string;
+
+// 定时表达式 -> 词条 key。daily:HH:MM 单独拼，时间部分不翻译。
+const SCHEDULE_KEYS: Record<string, string> = {
+  '@every 15m': 'scan.sched.every15m',
+  '@every 30m': 'scan.sched.every30m',
+  '@every 1h': 'scan.sched.every1h',
+  '@every 6h': 'scan.sched.every6h',
+  '@every 12h': 'scan.sched.every12h',
+  '@every 24h': 'scan.sched.every24h',
 };
-const scheduleLabel = (s: string) => scheduleLabelMap[s] || s;
+const scheduleLabel = (s: string, text: TextFn) => {
+  if (SCHEDULE_KEYS[s]) return text(SCHEDULE_KEYS[s]);
+  if (s.startsWith('daily:')) return text('scan.sched.dailyAt', { time: s.slice('daily:'.length) });
+  return s;
+};
 
 export const ScanTasks: React.FC = () => {
+  const { text } = useI18n();
   const [tasks, setTasks] = useState<ScanTask[]>([]);
   const [loading, setLoading] = useState(false);
   const tasksRef = useRef<ScanTask[]>([]);
@@ -53,8 +62,8 @@ export const ScanTasks: React.FC = () => {
       if (showLoading) setLoading(true);
       const data = await getScanTasks();
       setTasks(data);
-    } catch (e) {
-      message.error('获取扫描任务失败');
+    } catch {
+      message.error(text('scan.loadFailed'));
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -115,32 +124,32 @@ export const ScanTasks: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteScanTask(id);
-      message.success('任务已删除');
+      message.success(text('scan.deleted'));
       fetchTasks();
-    } catch (e) {
-      message.error('删除任务失败');
+    } catch {
+      message.error(text('scan.deleteFailed'));
     }
   };
 
   const handleRunTask = async (id: number) => {
     try {
-      message.loading({ content: '正在启动扫描任务...', key: 'run_scan' });
+      message.loading({ content: text('scan.starting'), key: 'run_scan' });
       await runScanTask(id);
-      message.success({ content: '扫描已在后台启动！', key: 'run_scan' });
+      message.success({ content: text('scan.started'), key: 'run_scan' });
       fetchTasks();
     } catch (e: any) {
-      message.error({ content: e.message || '运行任务失败', key: 'run_scan' });
+      message.error({ content: e.message || text('scan.runFailed'), key: 'run_scan' });
     }
   };
 
   const handleStopTask = async (id: number) => {
     try {
-      message.loading({ content: '正在停止扫描任务...', key: 'stop_scan' });
+      message.loading({ content: text('scan.stopping'), key: 'stop_scan' });
       await stopScanTask(id);
-      message.success({ content: '扫描强制停止命令发送成功！', key: 'stop_scan' });
+      message.success({ content: text('scan.stopSent'), key: 'stop_scan' });
       fetchTasks();
     } catch (e: any) {
-      message.error({ content: e.message || '停止任务失败', key: 'stop_scan' });
+      message.error({ content: e.message || text('scan.stopFailed'), key: 'stop_scan' });
     }
   };
 
@@ -278,15 +287,15 @@ export const ScanTasks: React.FC = () => {
       const payload = { ...values, schedule: computeSchedule() };
       if (editingTask && editingTask.id) {
         await updateScanTask(editingTask.id, payload);
-        message.success('扫描任务更新成功');
+        message.success(text('scan.updated'));
       } else {
         await createScanTask(payload);
-        message.success('扫描任务创建成功');
+        message.success(text('scan.created'));
       }
       setModalVisible(false);
       fetchTasks();
-    } catch (e) {
-      message.error('操作失败，请确认填写是否完整');
+    } catch {
+      message.error(text('scan.submitFailed'));
     }
   };
 
@@ -304,80 +313,80 @@ export const ScanTasks: React.FC = () => {
     if (isFinishZero) {
       if (log.status === 'running') {
         const elapsed = Math.round((Date.now() - start) / 1000);
-        return `已运行 ${elapsed > 0 ? elapsed : 0} 秒`;
+        return text('scan.elapsedSeconds', { n: elapsed > 0 ? elapsed : 0 });
       }
       return '-';
     }
     
     const seconds = Math.round((finish - start) / 1000);
-    return `${seconds > 0 ? seconds : 0} 秒`;
+    return text('scan.seconds', { n: seconds > 0 ? seconds : 0 });
   };
 
   const columns = [
     {
-      title: '任务名称',
+      title: text('scan.col.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>,
+      render: (v: string) => <span style={{ fontWeight: 500 }}>{v}</span>,
     },
     {
-      title: '类型',
+      title: text('scan.col.kind'),
       dataIndex: 'kind',
       key: 'kind',
       render: (kind: string) =>
         kind === 'vuln' ? (
-          <Tag color="purple" style={{ borderRadius: 4 }}>漏洞</Tag>
+          <Tag color="purple" style={{ borderRadius: 4 }}>{text('scan.kind.vuln')}</Tag>
         ) : (
-          <Tag color="blue" style={{ borderRadius: 4 }}>发现</Tag>
+          <Tag color="blue" style={{ borderRadius: 4 }}>{text('scan.kind.discovery')}</Tag>
         ),
     },
     {
-      title: '扫描网段 / IP 范围',
+      title: text('scan.col.range'),
       dataIndex: 'target_range',
       key: 'target_range',
-      render: (text: string) => <span style={{ color: '#60a5fa', fontFamily: 'monospace' }}>{text}</span>,
+      render: (v: string) => <span style={{ color: '#60a5fa', fontFamily: 'monospace' }}>{v}</span>,
     },
     {
-      title: '探测端口',
+      title: text('scan.col.ports'),
       dataIndex: 'ports',
       key: 'ports',
-      render: (text: string) => <span>{text}</span>,
+      render: (v: string) => <span>{v}</span>,
     },
     {
-      title: '执行状态',
+      title: text('scan.col.status'),
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => {
-        if (status === 'running') return <Badge status="processing" text="正在扫描" />;
-        if (status === 'completed') return <Badge status="success" text="已完成" />;
-        if (status === 'failed') return <Badge status="error" text="扫描失败" />;
-        return <Badge status="default" text="空闲" />;
+        if (status === 'running') return <Badge status="processing" text={text('scan.status.running')} />;
+        if (status === 'completed') return <Badge status="success" text={text('scan.status.completed')} />;
+        if (status === 'failed') return <Badge status="error" text={text('scan.status.failed')} />;
+        return <Badge status="default" text={text('scan.status.idle')} />;
       },
     },
     {
-      title: '上次运行时间',
+      title: text('scan.col.lastRun'),
       dataIndex: 'last_run_at',
       key: 'last_run_at',
-      render: (text: string) => {
-        if (!text) return <span>从未执行</span>;
-        const t = new Date(text).getTime();
-        if (isNaN(t) || t < -60000000000000) return <span>从未执行</span>;
-        return <span>{new Date(text).toLocaleString()}</span>;
+      render: (v: string) => {
+        if (!v) return <span>{text('scan.neverRun')}</span>;
+        const t = new Date(v).getTime();
+        if (isNaN(t) || t < -60000000000000) return <span>{text('scan.neverRun')}</span>;
+        return <span>{new Date(v).toLocaleString()}</span>;
       },
     },
     {
-      title: '定时计划',
+      title: text('scan.col.schedule'),
       dataIndex: 'schedule',
       key: 'schedule',
       render: (s: string) =>
         s ? (
-          <Tag color="purple" style={{ borderRadius: 4 }}>⏱ {scheduleLabel(s)}</Tag>
+          <Tag color="purple" style={{ borderRadius: 4 }}>⏱ {scheduleLabel(s, text)}</Tag>
         ) : (
-          <span style={{ color: '#94a3b8' }}>仅手动</span>
+          <span style={{ color: '#94a3b8' }}>{text('scan.manualOnly')}</span>
         ),
     },
     {
-      title: '操作',
+      title: text('users.col.action'),
       key: 'action',
       render: (_: any, record: ScanTask) => (
         <Space size="middle">
@@ -390,7 +399,7 @@ export const ScanTasks: React.FC = () => {
               onClick={() => handleStopTask(record.id!)}
               style={{ padding: 0 }}
             >
-              停止扫描
+              {text('scan.stop')}
             </Button>
           ) : (
             <Button
@@ -400,7 +409,7 @@ export const ScanTasks: React.FC = () => {
               onClick={() => handleRunTask(record.id!)}
               style={{ color: '#10b981', padding: 0 }}
             >
-              启动扫描
+              {text('scan.run')}
             </Button>
           )}
           <Button
@@ -410,7 +419,7 @@ export const ScanTasks: React.FC = () => {
             onClick={() => handleShowLogs(record)}
             style={{ color: '#475569', padding: 0 }}
           >
-            日志历史
+            {text('scan.logs')}
           </Button>
           <Button
             type="text"
@@ -421,10 +430,10 @@ export const ScanTasks: React.FC = () => {
             style={{ padding: 0 }}
           />
           <Popconfirm
-            title="确认删除该扫描任务吗？"
+            title={text('scan.deleteConfirm')}
             onConfirm={() => handleDelete(record.id!)}
-            okText="是"
-            cancelText="否"
+            okText={text('common.yes')}
+            cancelText={text('common.no')}
             okButtonProps={{ danger: true }}
             disabled={record.status === 'running'}
           >
@@ -442,14 +451,14 @@ export const ScanTasks: React.FC = () => {
         {/* 表格主体 */}
         <div style={tablePanelStyle}>
           <TableToolbar
-            title="自动发现"
-            subtitle="配置并触发端口网段发现任务，自动将在线主机录入资产清单"
+            title={text('nav.discovery')}
+            subtitle={text('scan.subtitle')}
             icon={<RadarChartOutlined />}
             onRefresh={() => fetchTasks(true)}
             loading={loading}
             left={
               <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
-                创建扫描任务
+                {text('scan.create')}
               </Button>
             }
           />
@@ -465,7 +474,7 @@ export const ScanTasks: React.FC = () => {
 
       {/* 创建/编辑扫描任务弹窗 */}
       <Modal
-        title={editingTask ? '编辑扫描任务' : '创建扫描任务'}
+        title={editingTask ? text('scan.editTitle') : text('scan.create')}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
@@ -473,53 +482,53 @@ export const ScanTasks: React.FC = () => {
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ ports: '22,23,80,443', kind: 'discovery' }} style={{ marginTop: 16 }}>
           <Form.Item
-            label="任务名称"
+            label={text('scan.col.name')}
             name="name"
-            rules={[{ required: true, message: '请输入扫描任务别名' }]}
+            rules={[{ required: true, message: text('scan.form.nameRequired') }]}
           >
-            <Input placeholder="例如: 腾讯云测试机扫描" />
+            <Input placeholder={text('scan.form.namePlaceholder')} />
           </Form.Item>
 
-          <Form.Item label="扫描类型" name="kind">
+          <Form.Item label={text('scan.form.kind')} name="kind">
             <Select
               options={[
-                { label: '端口发现', value: 'discovery' },
-                { label: '漏洞扫描 (nuclei)', value: 'vuln' },
+                { label: text('scan.form.kindDiscovery'), value: 'discovery' },
+                { label: text('scan.form.kindVuln'), value: 'vuln' },
               ]}
             />
           </Form.Item>
 
           <Form.Item
-            label="扫描网段 / IP 范围"
+            label={text('scan.col.range')}
             name="target_range"
-            rules={[{ required: true, message: '请输入 CIDR 或 IP 范围' }]}
-            help="支持网段(如 192.168.1.0/24) 或范围(如 192.168.1.1-192.168.1.50)"
+            rules={[{ required: true, message: text('scan.form.rangeRequired') }]}
+            help={text('scan.form.rangeHelp')}
           >
-            <Input placeholder="例如: 192.168.1.0/24" />
+            <Input placeholder={text('scan.form.rangePlaceholder')} />
           </Form.Item>
 
           <Form.Item
-            label="探测端口范围 (逗号分隔)"
+            label={text('scan.form.ports')}
             name="ports"
-            rules={[{ required: true, message: '请输入需要扫描的端口' }]}
-          >
-            <Input placeholder="例如: 22,23,80,443" />
+            rules={[{ required: true, message: text('scan.form.portsRequired') }]}
+            >
+            <Input placeholder={text('scan.form.portsPlaceholder')} />
           </Form.Item>
 
           <Form.Item name="detect_k8s" valuePropName="checked" style={{ marginBottom: 8 }}>
-            <Checkbox>探测 Kubernetes 节点（自动并入 6443/10250，命中打 <code>k8s</code> 标签与角色）</Checkbox>
+            <Checkbox>{text('scan.form.detectK8s')}</Checkbox>
           </Form.Item>
 
-          <Form.Item label="定时计划" help="到点自动执行；「不启用」则仅手动运行">
+          <Form.Item label={text('scan.col.schedule')} help={text('scan.form.scheduleHelp')}>
             <Space wrap>
               <Select
                 value={schedMode}
                 onChange={(v) => setSchedMode(v as 'none' | 'interval' | 'daily')}
                 style={{ width: 120 }}
                 options={[
-                  { label: '不启用', value: 'none' },
-                  { label: '固定间隔', value: 'interval' },
-                  { label: '每天定时', value: 'daily' },
+                  { label: text('scan.sched.none'), value: 'none' },
+                  { label: text('scan.sched.interval'), value: 'interval' },
+                  { label: text('scan.sched.daily'), value: 'daily' },
                 ]}
               />
               {schedMode === 'interval' && (
@@ -528,12 +537,12 @@ export const ScanTasks: React.FC = () => {
                   onChange={(v) => setSchedInterval(v)}
                   style={{ width: 150 }}
                   options={[
-                    { label: '每 15 分钟', value: '@every 15m' },
-                    { label: '每 30 分钟', value: '@every 30m' },
-                    { label: '每小时', value: '@every 1h' },
-                    { label: '每 6 小时', value: '@every 6h' },
-                    { label: '每 12 小时', value: '@every 12h' },
-                    { label: '每 24 小时', value: '@every 24h' },
+                    { label: text('scan.sched.every15m'), value: '@every 15m' },
+                    { label: text('scan.sched.every30m'), value: '@every 30m' },
+                    { label: text('scan.sched.every1h'), value: '@every 1h' },
+                    { label: text('scan.sched.every6h'), value: '@every 6h' },
+                    { label: text('scan.sched.every12h'), value: '@every 12h' },
+                    { label: text('scan.sched.every24h'), value: '@every 24h' },
                   ]}
                 />
               )}
@@ -550,9 +559,9 @@ export const ScanTasks: React.FC = () => {
 
           <Form.Item style={{ marginBottom: 0, marginTop: 24, textAlign: 'right' }}>
             <Space>
-              <Button onClick={() => setModalVisible(false)}>取消</Button>
+              <Button onClick={() => setModalVisible(false)}>{text('common.cancel')}</Button>
               <Button type="primary" htmlType="submit">
-                确认
+                {text('common.confirm')}
               </Button>
             </Space>
           </Form.Item>
@@ -561,7 +570,7 @@ export const ScanTasks: React.FC = () => {
 
       {/* 历史日志弹窗 */}
       <Modal
-        title={`扫描执行日志 - ${selectedTask?.name}`}
+        title={text('scan.logsTitle', { name: selectedTask?.name || '' })}
         open={logsVisible}
         onCancel={() => {
           // 关闭弹窗：停止实时流并清空实时尾随缓存
@@ -579,13 +588,13 @@ export const ScanTasks: React.FC = () => {
         {logsLoading && scanLogs.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px' }}><Spin size="large" /></div>
         ) : scanLogs.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#9CA3AF' }}>暂无该任务的扫描执行历史记录</div>
+          <div style={{ textAlign: 'center', padding: '40px', color: '#9CA3AF' }}>{text('scan.noLogs')}</div>
         ) : (
           <div style={{ marginTop: 16 }}>
             {/* 日志选择与状态 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Space>
-                <span style={{ color: '#9CA3AF' }}>选择执行历史:</span>
+                <span style={{ color: '#9CA3AF' }}>{text('scan.pickRun')}</span>
                 <Select
                   value={selectedLog?.id}
                   onChange={(val) => {
@@ -595,15 +604,15 @@ export const ScanTasks: React.FC = () => {
                   style={{ width: 280 }}
                   options={scanLogs.map(l => ({
                     value: l.id,
-                    label: `${new Date(l.started_at).toLocaleString()} (${l.status === 'running' ? '正在执行' : l.status === 'completed' ? '已完成' : '已停止/失败'})`
+                    label: `${new Date(l.started_at).toLocaleString()} (${l.status === 'running' ? text('scan.log.running') : l.status === 'completed' ? text('scan.status.completed') : text('scan.log.stopped')})`
                   }))}
                 />
               </Space>
               
               {selectedLog && (
                 <div style={{ fontSize: 13, color: '#9CA3AF' }}>
-                  状态: <Badge status={selectedLog.status === 'running' ? 'processing' : selectedLog.status === 'completed' ? 'success' : 'error'} style={{ marginRight: 12 }} />
-                  耗时: <span style={{ color: '#3B82F6', fontWeight: 500 }}>{getDurationText(selectedLog)}</span>
+                  {text('scan.log.status')} <Badge status={selectedLog.status === 'running' ? 'processing' : selectedLog.status === 'completed' ? 'success' : 'error'} style={{ marginRight: 12 }} />
+                  {text('scan.log.duration')} <span style={{ color: '#3B82F6', fontWeight: 500 }}>{getDurationText(selectedLog)}</span>
                 </div>
               )}
             </div>
@@ -636,13 +645,13 @@ export const ScanTasks: React.FC = () => {
                 {/* 正在查看运行中的记录时，优先展示 SSE 实时尾随内容；否则展示历史 detail */}
                 {(selectedLog?.status === 'running' && liveDetail !== null
                   ? liveDetail
-                  : selectedLog?.detail) || '[SYSTEM] 暂无详细控制台日志数据。'}
+                  : selectedLog?.detail) || text('scan.log.empty')}
               </pre>
             </div>
             
             {selectedLog && (
               <div style={{ marginTop: 12, fontSize: 13, background: '#f8fafc', padding: '12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                <span style={{ fontWeight: 600, color: '#3b82f6' }}>工作摘要: </span>
+                <span style={{ fontWeight: 600, color: '#3b82f6' }}>{text('scan.log.summary')} </span>
                 <span style={{ color: '#334155' }}>{selectedLog.summary}</span>
               </div>
             )}

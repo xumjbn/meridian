@@ -4,10 +4,12 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, SafetyCertificateOutlined, 
 import { getCredentials, createCredential, updateCredential, deleteCredential, testCredential, type Credential, type CredTestResult } from '../services/api';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
+import { useI18n } from '../i18n';
 const { Option } = Select;
 const { TextArea } = Input;
 
 export const Credentials: React.FC = () => {
+  const { text } = useI18n();
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -30,7 +32,7 @@ export const Credentials: React.FC = () => {
 
   const runTest = async () => {
     if (!testCred?.id || !testHost.trim()) {
-      message.warning('请输入目标主机 IP');
+      message.warning(text('cred.needHost'));
       return;
     }
     try {
@@ -39,7 +41,7 @@ export const Credentials: React.FC = () => {
       const res = await testCredential(testCred.id, testHost.trim());
       setTestResult(res);
     } catch (e: any) {
-      setTestResult({ ok: false, message: e?.message || '测试请求失败' });
+      setTestResult({ ok: false, message: e?.message || text('cred.testRequestFailed') });
     } finally {
       setTesting(false);
     }
@@ -50,8 +52,8 @@ export const Credentials: React.FC = () => {
       setLoading(true);
       const data = await getCredentials();
       setCredentials(data);
-    } catch (e) {
-      message.error('获取凭据列表失败');
+    } catch {
+      message.error(text('cred.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -65,19 +67,20 @@ export const Credentials: React.FC = () => {
   // 不做任何额外上传请求，随表单一起提交（与手工粘贴等价）。
   const handlePickKeyFile = (file: File) => {
     if (file.size > 64 * 1024) {
-      message.error('文件过大，SSH 私钥通常不超过几 KB，请确认选对了文件');
+      message.error(text('cred.keyFileTooLarge'));
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const text = String(reader.result || '').trim();
-      if (!/-----BEGIN [\w ]*PRIVATE KEY-----/.test(text)) {
-        message.warning('该文件看起来不是 PEM/OpenSSH 私钥（缺少 BEGIN PRIVATE KEY 标记），已仍然填入，请自行确认');
+      // 变量原名 text，会遮蔽 i18n 的 text()，改叫 pem
+      const pem = String(reader.result || '').trim();
+      if (!/-----BEGIN [\w ]*PRIVATE KEY-----/.test(pem)) {
+        message.warning(text('cred.keyFileNotPem'));
       }
-      form.setFieldsValue({ private_key: text });
-      message.success(`已导入私钥文件：${file.name}`);
+      form.setFieldsValue({ private_key: pem });
+      message.success(text('cred.keyFileImported', { name: file.name }));
     };
-    reader.onerror = () => message.error('读取文件失败');
+    reader.onerror = () => message.error(text('cred.readFileFailed'));
     reader.readAsText(file);
   };
 
@@ -99,10 +102,10 @@ export const Credentials: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteCredential(id);
-      message.success('凭据已成功删除');
+      message.success(text('cred.deleted'));
       fetchCredentials();
-    } catch (e) {
-      message.error('删除凭据失败');
+    } catch {
+      message.error(text('cred.deleteFailed'));
     }
   };
 
@@ -110,52 +113,49 @@ export const Credentials: React.FC = () => {
     try {
       if (editingCred && editingCred.id) {
         await updateCredential(editingCred.id, values);
-        message.success('凭据更新成功');
+        message.success(text('cred.updated'));
       } else {
         await createCredential(values);
-        message.success('凭据创建成功');
+        message.success(text('cred.created'));
       }
       setModalVisible(false);
       fetchCredentials();
-    } catch (e) {
-      message.error('操作失败，请重试');
+    } catch {
+      message.error(text('cred.opFailed'));
     }
   };
 
   const columns = [
     {
-      title: '凭证名称',
+      title: text('cred.col.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>,
+      render: (v: string) => <span style={{ fontWeight: 500 }}>{v}</span>,
     },
     {
-      title: '登录方式',
+      title: text('cred.col.type'),
       dataIndex: 'type',
       key: 'type',
       render: (type: string) => {
-        const typeMap: Record<string, string> = {
-          ssh_password: 'SSH 密码',
-          ssh_key: 'SSH 密钥',
-          telnet: 'Telnet 登录',
-        };
-        return <span style={{ color: '#2563eb', fontWeight: 500 }}>{typeMap[type] || type}</span>;
+        const known = ['ssh_password', 'ssh_key', 'telnet'];
+        const label = known.includes(type) ? text(`cred.type.${type}`) : type;
+        return <span style={{ color: '#2563eb', fontWeight: 500 }}>{label}</span>;
       },
     },
     {
-      title: '用户名',
+      title: text('cred.col.username'),
       dataIndex: 'username',
       key: 'username',
-      render: (text: string) => <span>{text || '-'}</span>,
+      render: (v: string) => <span>{v || '-'}</span>,
     },
     {
-      title: '创建时间',
+      title: text('cred.col.createdAt'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => <span>{text ? new Date(text).toLocaleString() : '-'}</span>,
+      render: (v: string) => <span>{v ? new Date(v).toLocaleString() : '-'}</span>,
     },
     {
-      title: '操作',
+      title: text('users.col.action'),
       key: 'action',
       render: (_: any, record: Credential) => (
         <Space size="middle">
@@ -166,7 +166,7 @@ export const Credentials: React.FC = () => {
             onClick={() => openTest(record)}
             style={{ padding: 0, fontWeight: 500, color: palette.primary }}
           >
-            测试连接
+            {text('cred.test')}
           </Button>
           <Button
             type="text"
@@ -176,10 +176,10 @@ export const Credentials: React.FC = () => {
             style={{ padding: 0 }}
           />
           <Popconfirm
-            title="确认要删除该凭据吗？"
+            title={text('cred.deleteConfirm')}
             onConfirm={() => handleDelete(record.id!)}
-            okText="是"
-            cancelText="否"
+            okText={text('common.yes')}
+            cancelText={text('common.no')}
             okButtonProps={{ danger: true }}
           >
             <Button 
@@ -201,14 +201,14 @@ export const Credentials: React.FC = () => {
       <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={tablePanelStyle}>
           <TableToolbar
-            title="凭据保管箱"
-            subtitle="集中管理服务器与网络设备的 SSH/Telnet 账号及证书"
+            title={text('nav.credentials')}
+            subtitle={text('cred.subtitle')}
             icon={<SafetyCertificateOutlined />}
             onRefresh={fetchCredentials}
             loading={loading}
             left={
               <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
-                添加登录凭证
+                {text('cred.add')}
               </Button>
             }
           />
@@ -227,7 +227,7 @@ export const Credentials: React.FC = () => {
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <SafetyCertificateOutlined style={{ color: '#1677ff' }} />
-            {editingCred ? '编辑凭据' : '创建凭据'}
+            {editingCred ? text('cred.editTitle') : text('cred.createTitle')}
           </div>
         }
         open={modalVisible}
@@ -243,52 +243,52 @@ export const Credentials: React.FC = () => {
           style={{ marginTop: 16 }}
         >
           <Form.Item
-            label="凭据别名"
+            label={text('cred.form.alias')}
             name="name"
-            rules={[{ required: true, message: '请输入凭据名称' }]}
+            rules={[{ required: true, message: text('cred.form.aliasRequired') }]}
           >
-            <Input placeholder="例如: 腾讯云测试机, 核心交换机" />
+            <Input placeholder={text('cred.form.aliasPlaceholder')} />
           </Form.Item>
 
           <Form.Item
-            label="登录方式"
+            label={text('cred.col.type')}
             name="type"
-            rules={[{ required: true, message: '请选择登录方式' }]}
+            rules={[{ required: true, message: text('cred.form.typeRequired') }]}
           >
             <Select onChange={(val) => setCredType(val)}>
-              <Option value="ssh_password">SSH 密码登录</Option>
-              <Option value="ssh_key">SSH 密钥登录</Option>
-              <Option value="telnet">Telnet 登录 (遗留硬件)</Option>
+              <Option value="ssh_password">{text('cred.typeOpt.ssh_password')}</Option>
+              <Option value="ssh_key">{text('cred.typeOpt.ssh_key')}</Option>
+              <Option value="telnet">{text('cred.typeOpt.telnet')}</Option>
             </Select>
           </Form.Item>
 
           <Form.Item
-            label="用户名"
+            label={text('cred.col.username')}
             name="username"
-            rules={[{ required: true, message: '请输入登录用户名' }]}
+            rules={[{ required: true, message: text('cred.form.usernameRequired') }]}
           >
-            <Input placeholder="例如: root, admin" />
+            <Input placeholder={text('cred.form.usernamePlaceholder')} />
           </Form.Item>
 
           {credType !== 'ssh_key' ? (
             <Form.Item
-              label="密码"
+              label={text('login.password')}
               name="password"
               // 编辑已有凭据时留空 = 保持原密码；新建时必填
-              rules={editingCred ? [] : [{ required: true, message: '请输入密码' }]}
+              rules={editingCred ? [] : [{ required: true, message: text('login.password.required') }]}
               extra={
                 editingCred?.has_password
-                  ? '已配置密码（加密存储，不回显）。留空保持不变，填写则覆盖。'
-                  : '密码经 AES-256-GCM 加密后入库，接口不会返回。'
+                  ? text('cred.form.passwordSetHint')
+                  : text('cred.form.passwordNewHint')
               }
             >
-              <Input.Password placeholder={editingCred?.has_password ? '留空保持原密码不变' : '输入密码'} />
+              <Input.Password placeholder={editingCred?.has_password ? text('cred.form.passwordKeep') : text('cred.form.passwordPlaceholder')} />
             </Form.Item>
           ) : (
             <Form.Item
               label={
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-                  SSH 私钥
+                  {text('cred.form.privateKey')}
                   {/* 支持直接选本地私钥文件（id_rsa / id_ed25519 / *.pem），读出文本填入下方 */}
                   <Upload
                     accept=".pem,.key,.ppk,.txt,application/x-pem-file"
@@ -298,17 +298,17 @@ export const Credentials: React.FC = () => {
                       return false; // 阻止 antd 自动上传：私钥只在本地读取，不经额外请求
                     }}
                   >
-                    <Button size="small" icon={<UploadOutlined />}>从文件导入</Button>
+                    <Button size="small" icon={<UploadOutlined />}>{text('cred.form.importFromFile')}</Button>
                   </Upload>
                 </span>
               }
               name="private_key"
-              rules={editingCred ? [] : [{ required: true, message: '请输入或导入私钥内容' }]}
-              extra={editingCred?.has_private_key ? '已配置私钥（加密存储，不回显）。留空保持不变。' : undefined}
+              rules={editingCred ? [] : [{ required: true, message: text('cred.form.privateKeyRequired') }]}
+              extra={editingCred?.has_private_key ? text('cred.form.privateKeySetHint') : undefined}
             >
               <TextArea
                 rows={6}
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;… 可粘贴，或点右上「从文件导入」选择 id_rsa / id_ed25519 / *.pem"
+                placeholder={text('cred.form.privateKeyPlaceholder')}
                 style={{ fontFamily: 'monospace' }}
               />
             </Form.Item>
@@ -316,9 +316,9 @@ export const Credentials: React.FC = () => {
 
           <Form.Item style={{ marginBottom: 0, marginTop: 24, textAlign: 'right' }}>
             <Space>
-              <Button onClick={() => setModalVisible(false)}>取消</Button>
+              <Button onClick={() => setModalVisible(false)}>{text('common.cancel')}</Button>
               <Button type="primary" htmlType="submit">
-                确认
+                {text('common.confirm')}
               </Button>
             </Space>
           </Form.Item>
@@ -327,24 +327,24 @@ export const Credentials: React.FC = () => {
 
       {/* 凭据连通性测试 */}
       <Modal
-        title={<span><ApiOutlined style={{ marginRight: 8, color: palette.primary }} />测试凭据连通性</span>}
+        title={<span><ApiOutlined style={{ marginRight: 8, color: palette.primary }} />{text('cred.testTitle')}</span>}
         open={!!testCred}
         onCancel={() => setTestCred(null)}
         footer={null}
         destroyOnHidden
       >
         <p style={{ color: palette.textSub, fontSize: 13, marginTop: 8 }}>
-          使用凭据 <strong>{testCred?.name}</strong>（{testCred?.username}）尝试连接指定主机，校验账号/端口是否有效。
+          {text('cred.testHint', { name: testCred?.name || '', user: testCred?.username || '' })}
         </p>
         <Space.Compact style={{ width: '100%', marginTop: 8 }}>
           <Input
-            placeholder="目标主机 IP，如 192.168.1.10"
+            placeholder={text('cred.testHostPlaceholder')}
             value={testHost}
             onChange={(e) => setTestHost(e.target.value)}
             onPressEnter={runTest}
             autoFocus
           />
-          <Button type="primary" loading={testing} onClick={runTest}>测试</Button>
+          <Button type="primary" loading={testing} onClick={runTest}>{text('cred.testBtn')}</Button>
         </Space.Compact>
         {testResult && (
           <div style={{

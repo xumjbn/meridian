@@ -67,6 +67,7 @@ import {
 import { SftpDrawer } from '../components/SftpDrawer';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
+import { useI18n } from '../i18n';
 import { saveBlob } from '../saveFile';
 import { useTerminals } from '../terminalSessions';
 
@@ -74,6 +75,7 @@ const { Text, Title, Paragraph } = Typography;
 const { Option } = Select;
 
 export const Assets: React.FC = () => {
+  const { text } = useI18n();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(false);
@@ -146,26 +148,26 @@ export const Assets: React.FC = () => {
   };
 
   const fieldLabelMap: Record<string, string> = {
-    name: '显示名称',
-    ip: '管理 IP',
-    type: '设备类型',
-    status: '在线状态',
-    vendor: '设备厂商',
-    os_version: '系统/固件版本',
-    arch: 'CPU架构',
-    virtualization: '虚拟化环境',
-    ports: '开放端口',
-    tags: '资产标签',
-    description: '描述备注',
-    credential_id: '管理凭证',
+    name: text('asset.f.name'),
+    ip: text('asset.f.ip'),
+    type: text('asset.f.type'),
+    status: text('asset.f.status'),
+    vendor: text('asset.f.vendor'),
+    os_version: text('asset.f.osVersion'),
+    arch: text('asset.f.arch'),
+    virtualization: text('asset.f.virt'),
+    ports: text('asset.f.ports'),
+    tags: text('asset.f.tags'),
+    description: text('asset.f.description'),
+    credential_id: text('asset.f.credential'),
   };
 
   const translateHistoryValue = (field: string, val: string) => {
-    if (!val || val === 'null' || val === '[]') return '无';
+    if (!val || val === 'null' || val === '[]') return text('asset.none');
     if (field === 'credential_id') {
       const credId = Number(val);
       const cred = credentials.find(c => c.id === credId);
-      return cred ? `${cred.name} (${cred.username})` : `凭证 ID: ${val}`;
+      return cred ? `${cred.name} (${cred.username})` : text('asset.credId', { id: val });
     }
     if (field === 'type') {
       return typeLabelMap[val] || val;
@@ -179,62 +181,63 @@ export const Assets: React.FC = () => {
   const handleCreateTag = async () => {
     const name = newTagName.trim();
     if (!name) {
-      message.error('标签名字不能为空');
+      message.error(text('tag.nameEmpty'));
       return;
     }
     if (globalTags.some(t => t.name === name)) {
-      message.error('该标签已存在');
+      message.error(text('tag.exists'));
       return;
     }
     try {
       await createTag({ name, color: newTagColor });
-      message.success('标签创建成功');
+      message.success(text('tag.created'));
       setNewTagName('');
       fetchGlobalTags();
       fetchAssets();
     } catch (e: any) {
-      message.error(e.message || '创建标签失败');
+      message.error(e.message || text('tag.createFailed'));
     }
   };
 
   const handleSaveTag = async (id: number) => {
     const name = editingTagName.trim();
     if (!name) {
-      message.error('标签名字不能为空');
+      message.error(text('tag.nameEmpty'));
       return;
     }
     if (globalTags.some(t => t.name === name && t.id !== id)) {
-      message.error('标签名字已存在');
+      message.error(text('tag.nameExists'));
       return;
     }
     try {
       await updateTag(id, { name, color: editingTagColor });
-      message.success('标签修改成功');
+      message.success(text('tag.updated'));
       setEditingTagId(null);
       fetchGlobalTags();
       fetchAssets();
     } catch (e: any) {
-      message.error(e.message || '更新标签失败');
+      message.error(e.message || text('tag.updateFailed'));
     }
   };
 
   const handleDeleteTag = async (id: number) => {
     try {
       await deleteTag(id);
-      message.success('标签删除成功');
+      message.success(text('tag.deleted'));
       fetchGlobalTags();
       fetchAssets();
     } catch (e: any) {
-      message.error(e.message || '删除标签失败');
+      message.error(e.message || text('tag.deleteFailed'));
     }
   };
 
   const tagColumns = [
     {
-      title: '标签名称',
+      title: text('tag.col.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string, record: GlobalTag) => {
+      // 入参原名 text，会遮蔽 i18n 的 text()，统一改名 v
+      render: (v: string, record: GlobalTag) => {
         if (editingTagId === record.id) {
           return (
             <Input 
@@ -245,11 +248,11 @@ export const Assets: React.FC = () => {
             />
           );
         }
-        return <Tag color={record.color} style={{ borderRadius: '4px', fontWeight: 500 }}>{text}</Tag>;
+        return <Tag color={record.color} style={{ borderRadius: '4px', fontWeight: 500 }}>{v}</Tag>;
       }
     },
     {
-      title: '颜色值',
+      title: text('tag.col.color'),
       dataIndex: 'color',
       key: 'color',
       render: (color: string, record: GlobalTag) => {
@@ -289,14 +292,14 @@ export const Assets: React.FC = () => {
       }
     },
     {
-      title: '操作',
+      title: text('users.col.action'),
       key: 'action',
       render: (_: any, record: GlobalTag) => {
         if (editingTagId === record.id) {
           return (
             <Space size="middle">
-              <Button type="link" size="small" onClick={() => handleSaveTag(record.id!)}>保存</Button>
-              <Button type="link" size="small" onClick={() => setEditingTagId(null)}>取消</Button>
+              <Button type="link" size="small" onClick={() => handleSaveTag(record.id!)}>{text('asset.save')}</Button>
+              <Button type="link" size="small" onClick={() => setEditingTagId(null)}>{text('common.cancel')}</Button>
             </Space>
           );
         }
@@ -306,13 +309,13 @@ export const Assets: React.FC = () => {
               setEditingTagId(record.id!);
               setEditingTagName(record.name);
               setEditingTagColor(record.color);
-            }}>编辑</Button>
+            }}>{text('asset.edit')}</Button>
             <Popconfirm
-              title="确定删除此标签？这会自动将其从所有关联的资产中移除！"
+              title={text('tag.deleteConfirm')}
               onConfirm={() => handleDeleteTag(record.id!)}
-              okText="是" cancelText="否" okButtonProps={{ danger: true }}
+              okText={text('common.yes')} cancelText={text('common.no')} okButtonProps={{ danger: true }}
             >
-              <Button type="link" danger size="small">删除</Button>
+              <Button type="link" danger size="small">{text('k8s.delete')}</Button>
             </Popconfirm>
           </Space>
         );
@@ -331,7 +334,7 @@ export const Assets: React.FC = () => {
       });
       setAssets(data);
     } catch (e) {
-      message.error('获取资产列表失败');
+      message.error(text('asset.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -478,22 +481,22 @@ export const Assets: React.FC = () => {
       ...record,
       id: undefined,
       ip: '',                       // IP 唯一，必须手填新的
-      name: `${record.name} 副本`,
+      name: text('asset.copySuffix', { name: record.name }),
       status: undefined,            // 在线状态由探测决定，不继承
       tags,
       ports: portsJsonToText(record.ports),
     });
     setModalVisible(true);
-    message.info('已按该资产预填，请填写新的 IP 后保存');
+    message.info(text('asset.copyPrefilled'));
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteAsset(id);
-      message.success('资产已成功删除');
+      message.success(text('asset.deleted'));
       fetchAssets();
     } catch (e) {
-      message.error('删除资产失败');
+      message.error(text('asset.deleteFailed'));
     }
   };
 
@@ -525,15 +528,15 @@ export const Assets: React.FC = () => {
 
       if (editingAsset && editingAsset.id) {
         await updateAsset(editingAsset.id, payload);
-        message.success('资产信息更新成功');
+        message.success(text('asset.updated'));
       } else {
         await createAsset(payload);
-        message.success('资产添加成功');
+        message.success(text('asset.created'));
       }
       setModalVisible(false);
       fetchAssets();
     } catch (e) {
-      message.error('操作失败，IP地址不可重复或格式错误');
+      message.error(text('asset.submitFailed'));
     }
   };
 
@@ -553,9 +556,9 @@ export const Assets: React.FC = () => {
     try {
       const res = await pingAsset(id);
       if (res.status === 'online') {
-        message.success(`探测完成：资产 ${res.ip} 在线`);
+        message.success(text('asset.pingOnline', { ip: res.ip }));
       } else {
-        message.warning(`探测完成：资产 ${res.ip} 离线/不可达`);
+        message.warning(text('asset.pingOffline', { ip: res.ip }));
       }
       fetchAssets();
       // 如果抽屉正打开且是当前资产，同步更新抽屉内状态
@@ -563,7 +566,7 @@ export const Assets: React.FC = () => {
         setDrawerAsset((prev) => prev ? { ...prev, status: res.status } : null);
       }
     } catch (e: any) {
-      message.error(`探测失败: ${e.message || '网络连接超时'}`);
+      message.error(text('asset.pingFailed', { msg: e.message || text('asset.netTimeout') }));
     } finally {
       setPingingIds((prev) => ({ ...prev, [id]: false }));
     }
@@ -577,12 +580,12 @@ export const Assets: React.FC = () => {
   const handleBatchPing = async () => {
     const ids = selectedRowKeys.map(Number);
     if (ids.length === 0) return;
-    message.loading({ content: `正在批量探测 ${ids.length} 台资产...`, key: 'batch_ping', duration: 0 });
+    message.loading({ content: text('asset.batchPinging', { n: ids.length }), key: 'batch_ping', duration: 0 });
     try {
       await batchPingAssets(ids);
-      message.success({ content: `已完成 ${ids.length} 台资产探测`, key: 'batch_ping' });
+      message.success({ content: text('asset.batchPingDone', { n: ids.length }), key: 'batch_ping' });
     } catch (e: any) {
-      message.error({ content: `批量探测失败: ${e.message || '网络连接超时'}`, key: 'batch_ping' });
+      message.error({ content: text('asset.batchPingFailed', { msg: e.message || text('asset.netTimeout') }), key: 'batch_ping' });
     }
     setSelectedRowKeys([]);
     fetchAssets();
@@ -593,13 +596,13 @@ export const Assets: React.FC = () => {
     const ids = selectedRowKeys.map(Number);
     if (ids.length === 0) return;
     await Promise.allSettled(ids.map((id) => deleteAsset(id)));
-    message.success(`已删除 ${ids.length} 台资产`);
+    message.success(text('asset.batchDeleted', { n: ids.length }));
     setSelectedRowKeys([]);
     fetchAssets();
   };
 
   const handleExportCSV = async () => {
-    const header = ['名称', 'IP', '类型', '状态', '厂商', '系统', '架构', '虚拟化', '端口', '标签', '描述'];
+    const header = [text('asset.csv.name'), 'IP', text('asset.csv.type'), text('asset.csv.status'), text('asset.csv.vendor'), text('asset.csv.os'), text('asset.csv.arch'), text('asset.csv.virt'), text('asset.csv.ports'), text('asset.csv.tags'), text('asset.csv.description')];
     const rows = assets.map((a) => [
       a.name, a.ip, a.type, a.status || '', a.vendor || '', a.os_version || '', a.arch || '', a.virtualization || '',
       a.ports || '', a.tags || '', (a.description || '').replace(/\n/g, ' '),
@@ -610,20 +613,20 @@ export const Assets: React.FC = () => {
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     const ok = await saveBlob(blob, `wjw-assets-${ts}.csv`);
-    if (ok) message.success(`已导出 ${assets.length} 台资产`);
+    if (ok) message.success(text('asset.exported', { n: assets.length }));
   };
 
   const handleImportCSV = async (file: File) => {
-    message.loading({ content: '正在导入资产...', key: 'import', duration: 0 });
+    message.loading({ content: text('asset.importing'), key: 'import', duration: 0 });
     try {
       const res = await importAssets(file);
       message.success({
-        content: `导入完成：新增 ${res.created}，更新 ${res.updated}，失败 ${res.failed}`,
+        content: text('asset.importDone', { created: res.created, updated: res.updated, failed: res.failed }),
         key: 'import',
       });
       if (res.failed > 0 && res.errors?.length) {
         Modal.warning({
-          title: `${res.failed} 行未导入`,
+          title: text('asset.importFailedRows', { n: res.failed }),
           width: 520,
           content: (
             <div style={{ maxHeight: 320, overflowY: 'auto', fontSize: 13 }}>
@@ -636,22 +639,22 @@ export const Assets: React.FC = () => {
       }
       fetchAssets();
     } catch (e: any) {
-      message.error({ content: e?.message || '导入失败', key: 'import' });
+      message.error({ content: e?.message || text('asset.importFailed'), key: 'import' });
     }
   };
 
   const typeLabelMap: Record<string, string> = {
-    server: 'PC 服务器', switch: '以太网交换机', router: '核心路由器', other: '其他硬件',
+    server: text('asset.type.server'), switch: text('asset.type.switch'), router: text('asset.type.router'), other: text('asset.type.other'),
   };
-  const statusLabelMap: Record<string, string> = { online: '在线', offline: '离线', unknown: '未知' };
+  const statusLabelMap: Record<string, string> = { online: text('k8s.online'), offline: text('k8s.offline'), unknown: text('asset.unknown') };
 
   // 按 groupBy 把资产分组 -> [组名, 资产[]][]
   const groupedAssets = (): [string, Asset[]][] => {
     const map = new Map<string, Asset[]>();
     assets.forEach((a) => {
-      let keys: string[] = ['其他'];
+      let keys: string[] = [text('asset.group.other')];
       if (groupBy === 'type') keys = [typeLabelMap[a.type] || a.type];
-      else if (groupBy === 'status') keys = [statusLabelMap[a.status || 'unknown'] || '未知'];
+      else if (groupBy === 'status') keys = [statusLabelMap[a.status || 'unknown'] || text('asset.unknown')];
       else if (groupBy === 'tag') {
         let tags: string[] = [];
         try {
@@ -660,7 +663,7 @@ export const Assets: React.FC = () => {
         } catch (e) {
           tags = [];
         }
-        keys = tags.length ? tags : ['未打标签'];
+        keys = tags.length ? tags : [text('asset.group.untagged')];
       }
       keys.forEach((k) => {
         if (!map.has(k)) map.set(k, []);
@@ -671,10 +674,10 @@ export const Assets: React.FC = () => {
   };
 
   const renderPorts = (portsStr?: string) => {
-    if (!portsStr) return <Text type="secondary">无开放端口</Text>;
+    if (!portsStr) return <Text type="secondary">{text('asset.noPorts')}</Text>;
     try {
       const ports: number[] = JSON.parse(portsStr);
-      if (!Array.isArray(ports) || ports.length === 0) return <Text type="secondary">无开放端口</Text>;
+      if (!Array.isArray(ports) || ports.length === 0) return <Text type="secondary">{text('asset.noPorts')}</Text>;
       return (
         <Space size={[0, 4]} wrap>
           {ports.map((port) => {
@@ -698,7 +701,7 @@ export const Assets: React.FC = () => {
 
   // 虚拟化标签：绿色=实体机，其它颜色=虚拟机/云/容器，一眼区分是否为虚拟机
   const virtTagMap: Record<string, { label: string; color: string }> = {
-    physical: { label: '实体机', color: 'green' },
+    physical: { label: text('asset.virt.physical'), color: 'green' },
     vmware: { label: 'VMware', color: 'blue' },
     kvm: { label: 'KVM', color: 'geekblue' },
     'hyper-v': { label: 'Hyper-V', color: 'purple' },
@@ -707,7 +710,7 @@ export const Assets: React.FC = () => {
     qemu: { label: 'QEMU', color: 'geekblue' },
     aws: { label: 'AWS', color: 'gold' },
     gcp: { label: 'GCP', color: 'gold' },
-    aliyun: { label: '阿里云', color: 'gold' },
+    aliyun: { label: text('asset.virt.aliyun'), color: 'gold' },
     openstack: { label: 'OpenStack', color: 'gold' },
     parallels: { label: 'Parallels', color: 'magenta' },
   };
@@ -715,9 +718,9 @@ export const Assets: React.FC = () => {
   const renderVirtTag = (v?: string) => {
     if (!v) return null;
     const base: React.CSSProperties = { borderRadius: 4, margin: 0 };
-    if (v === 'physical') return <Tag color="green" style={base}>🖥 实体机</Tag>;
+    if (v === 'physical') return <Tag color="green" style={base}>🖥 {text('asset.virt.physical')}</Tag>;
     if (v.startsWith('container:'))
-      return <Tag color="magenta" style={base}>📦 容器·{v.slice('container:'.length)}</Tag>;
+      return <Tag color="magenta" style={base}>📦 {text('asset.virt.container')}·{v.slice('container:'.length)}</Tag>;
     const info = virtTagMap[v] || { label: v, color: 'geekblue' };
     const prefix = CLOUD_VIRT.has(v) ? '☁ ' : '💻 ';
     return <Tag color={info.color} style={base}>{prefix}{info.label}</Tag>;
@@ -753,17 +756,17 @@ export const Assets: React.FC = () => {
 
   const columns = [
     {
-      title: '资产名称',
+      title: text('asset.col.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string, record: Asset) => {
+      render: (v: string, record: Asset) => {
         // 紧凑单行：名称 → 标签 → 虚拟化 → 「系统(厂商) · 架构」，不再另起一行，
         // 每行少占一行高度。原始 SSH/Telnet banner（os_version）过长，仅在详情抽屉展示。
         const info = [record.vendor, record.arch].filter(Boolean).join(' · ');
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
             <a onClick={() => handleShowDetail(record)} style={{ fontWeight: 600, color: palette.text, whiteSpace: 'nowrap' }}>
-              {text}
+              {v}
             </a>
             {renderTags(record.tags)}
             {renderVirtTag(record.virtualization)}
@@ -773,47 +776,47 @@ export const Assets: React.FC = () => {
       },
     },
     {
-      title: 'IP 地址',
+      title: text('asset.col.ip'),
       dataIndex: 'ip',
       key: 'ip',
-      render: (text: string) => <span style={{ fontFamily: 'monospace', fontWeight: 500, color: '#334155' }}>{text}</span>,
+      render: (v: string) => <span style={{ fontFamily: 'monospace', fontWeight: 500, color: '#334155' }}>{v}</span>,
     },
     {
-      title: '设备类型',
+      title: text('asset.f.type'),
       dataIndex: 'type',
       key: 'type',
       render: (type: string) => {
         const typeMap: Record<string, { label: string; color: string }> = {
-          server: { label: 'PC 服务器', color: 'blue' },
-          switch: { label: '以太网交换机', color: 'green' },
-          router: { label: '核心路由器', color: 'orange' },
-          other: { label: '其他硬件', color: 'default' },
+          server: { label: text('asset.type.server'), color: 'blue' },
+          switch: { label: text('asset.type.switch'), color: 'green' },
+          router: { label: text('asset.type.router'), color: 'orange' },
+          other: { label: text('asset.type.other'), color: 'default' },
         };
         const info = typeMap[type] || { label: type, color: 'default' };
         return <Tag color={info.color} style={{ borderRadius: '4px' }}>{info.label}</Tag>;
       },
     },
     {
-      title: '当前状态',
+      title: text('asset.col.status'),
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => {
-        if (status === 'online') return <Badge status="success" text="在线" />;
-        if (status === 'offline') return <Badge status="error" text="离线" />;
-        return <Badge status="default" text="未知" />;
+        if (status === 'online') return <Badge status="success" text={text('k8s.online')} />;
+        if (status === 'offline') return <Badge status="error" text={text('k8s.offline')} />;
+        return <Badge status="default" text={text('asset.unknown')} />;
       },
     },
     {
-      title: '开放端口',
+      title: text('asset.f.ports'),
       dataIndex: 'ports',
       key: 'ports',
-      render: (text: string) => renderPorts(text),
+      render: (v: string) => renderPorts(v),
     },
     // 原先这里有一列「CPU / 内存」，显示的是点「采集」才更新的一次性快照，
     // 列表里看到的永远是上次采集那一刻的数字，越看越假。资源用量只在终端
     // 会话里看实时的（LiveMetricsBar，走 WebSocket 持续推送）。
     {
-      title: '操作',
+      title: text('users.col.action'),
       key: 'action',
       render: (_: any, record: Asset) => (
         <Space size="middle">
@@ -824,7 +827,7 @@ export const Assets: React.FC = () => {
             onClick={() => handleConnectConsole(record)}
             style={{ padding: 0, fontWeight: 500 }}
           >
-            连接终端
+            {text('asset.connectTerminal')}
           </Button>
           <Button
             type="link"
@@ -833,7 +836,7 @@ export const Assets: React.FC = () => {
             onClick={() => { setSftpAsset(record); setSftpOpen(true); }}
             style={{ padding: 0, fontWeight: 500, color: '#f59e0b' }}
           >
-            文件
+            {text('asset.files')}
           </Button>
           <Button
             type="link"
@@ -843,9 +846,9 @@ export const Assets: React.FC = () => {
             onClick={() => handlePing(record.id!)}
             style={{ padding: 0, fontWeight: 500, color: '#0ea5e9' }}
           >
-            在线探测
+            {text('asset.ping')}
           </Button>
-          <Tooltip title="复制为新资产（沿用配置，只需换 IP）">
+          <Tooltip title={text('asset.copyTip')}>
             <Button
               type="text"
               size="small"
@@ -854,7 +857,7 @@ export const Assets: React.FC = () => {
               style={{ padding: 0 }}
             />
           </Tooltip>
-          <Tooltip title="编辑">
+          <Tooltip title={text('asset.edit')}>
             <Button
               type="text"
               size="small"
@@ -864,10 +867,10 @@ export const Assets: React.FC = () => {
             />
           </Tooltip>
           <Popconfirm
-            title="确定要删除该资产吗？"
+            title={text('asset.deleteConfirm')}
             onConfirm={() => handleDelete(record.id!)}
-            okText="是"
-            cancelText="否"
+            okText={text('common.yes')}
+            cancelText={text('common.no')}
             okButtonProps={{ danger: true }}
           >
             <Button type="text" danger icon={<DeleteOutlined />} style={{ padding: 0 }} />
@@ -884,8 +887,8 @@ export const Assets: React.FC = () => {
         <div style={groupBy === 'none' ? tablePanelStyle : { ...tablePanelStyle, background: 'transparent', border: 'none' }}>
           {/* 工具栏：左=新建/批量操作，右=检索/过滤/分组 */}
           <TableToolbar
-            title="资产清单"
-            subtitle="登记并维护物理主机与网络设备，支持端口探测与一键交互式 SSH 会话"
+            title={text('nav.assets')}
+            subtitle={text('asset.subtitle')}
             icon={<DatabaseOutlined />}
             onRefresh={fetchAssets}
             loading={loading}
@@ -894,21 +897,21 @@ export const Assets: React.FC = () => {
             left={
               <>
                 <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAdd}>
-                  手动录入资产
+                  {text('asset.addManual')}
                 </Button>
                 {groupBy === 'none' && selectedRowKeys.length > 0 && (
                   <>
-                    <Button icon={<CompassOutlined />} onClick={handleBatchPing}>批量探测</Button>
+                    <Button icon={<CompassOutlined />} onClick={handleBatchPing}>{text('asset.batchPing')}</Button>
                     <Popconfirm
-                      title={`确认删除选中的 ${selectedRowKeys.length} 台资产？`}
+                      title={text('asset.batchDeleteConfirm', { n: selectedRowKeys.length })}
                       onConfirm={handleBatchDelete}
-                      okText="是" cancelText="否" okButtonProps={{ danger: true }}
+                      okText={text('common.yes')} cancelText={text('common.no')} okButtonProps={{ danger: true }}
                     >
-                      <Button danger icon={<DeleteOutlined />}>批量删除</Button>
+                      <Button danger icon={<DeleteOutlined />}>{text('asset.batchDelete')}</Button>
                     </Popconfirm>
                   </>
                 )}
-                <Button icon={<TagOutlined />} onClick={() => setIsTagModalOpen(true)}>标签管理</Button>
+                <Button icon={<TagOutlined />} onClick={() => setIsTagModalOpen(true)}>{text('asset.tagManage')}</Button>
                 <Upload
                   accept=".csv"
                   showUploadList={false}
@@ -917,40 +920,40 @@ export const Assets: React.FC = () => {
                     return false; // 阻止 antd 自动上传，改由我们手动调用接口
                   }}
                 >
-                  <Button icon={<UploadOutlined />}>导入 CSV</Button>
+                  <Button icon={<UploadOutlined />}>{text('asset.importCsv')}</Button>
                 </Upload>
-                <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>导出 CSV</Button>
+                <Button icon={<DownloadOutlined />} onClick={handleExportCSV}>{text('asset.exportCsv')}</Button>
               </>
             }
             right={
               <>
                 <Input
-                  placeholder="搜索 IP、设备名称..."
+                  placeholder={text('asset.searchPlaceholder')}
                   prefix={<SearchOutlined style={{ color: palette.textMute }} />}
                   style={{ width: 210 }}
                   allowClear
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                 />
-                <Select placeholder="设备类型" style={{ width: 130 }} allowClear onChange={(val) => setFilterType(val || '')}>
-                  <Option value="server">PC 服务器</Option>
-                  <Option value="switch">以太网交换机</Option>
-                  <Option value="router">核心路由器</Option>
-                  <Option value="other">其他硬件</Option>
+                <Select placeholder={text('asset.f.type')} style={{ width: 130 }} allowClear onChange={(val) => setFilterType(val || '')}>
+                  <Option value="server">{text('asset.type.server')}</Option>
+                  <Option value="switch">{text('asset.type.switch')}</Option>
+                  <Option value="router">{text('asset.type.router')}</Option>
+                  <Option value="other">{text('asset.type.other')}</Option>
                 </Select>
-                <Select placeholder="在线状态" style={{ width: 120 }} allowClear onChange={(val) => setFilterStatus(val || '')}>
-                  <Option value="online">在线</Option>
-                  <Option value="offline">离线</Option>
-                  <Option value="unknown">未知</Option>
+                <Select placeholder={text('asset.f.status')} style={{ width: 120 }} allowClear onChange={(val) => setFilterStatus(val || '')}>
+                  <Option value="online">{text('k8s.online')}</Option>
+                  <Option value="offline">{text('k8s.offline')}</Option>
+                  <Option value="unknown">{text('asset.unknown')}</Option>
                 </Select>
                 <Segmented
                   value={groupBy}
                   onChange={(v) => setGroupBy(v as 'none' | 'type' | 'status' | 'tag')}
                   options={[
-                    { label: '不分组', value: 'none' },
-                    { label: '类型', value: 'type' },
-                    { label: '状态', value: 'status' },
-                    { label: '标签', value: 'tag' },
+                    { label: text('asset.group.none'), value: 'none' },
+                    { label: text('asset.csv.type'), value: 'type' },
+                    { label: text('asset.csv.status'), value: 'status' },
+                    { label: text('asset.csv.tags'), value: 'tag' },
                   ]}
                 />
               </>
@@ -999,7 +1002,7 @@ export const Assets: React.FC = () => {
 
       {/* 手动录入/编辑资产弹窗 */}
       <Modal
-        title={editingAsset ? '编辑资产信息' : '手动录入新资产'}
+        title={editingAsset ? text('asset.editTitle') : text('asset.createTitle')}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
@@ -1018,23 +1021,23 @@ export const Assets: React.FC = () => {
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item
-                label="资产显示名称"
+                label={text('asset.form.name')}
                 name="name"
-                rules={[{ required: true, message: '请输入资产显示名称' }]}
+                rules={[{ required: true, message: text('asset.form.nameRequired') }]}
                 style={{ marginBottom: 12 }}
               >
-                <Input placeholder="例如: 腾讯云测试机" />
+                <Input placeholder={text('asset.form.namePlaceholder')} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item
-                label="管理 IP 地址"
+                label={text('asset.form.ip')}
                 name="ip"
-                rules={[{ required: true, message: '请输入有效的 IP 地址或范围' }]}
+                rules={[{ required: true, message: text('asset.form.ipRequired') }]}
                 style={{ marginBottom: 12 }}
               >
                 {/* IP 可改：换网段/迁机器时不必删了重建，后端会查重并记入变更历史 */}
-                <Input placeholder="例如: 192.168.1.100" />
+                <Input placeholder={text('asset.form.ipPlaceholder')} />
               </Form.Item>
             </Col>
           </Row>
@@ -1042,40 +1045,40 @@ export const Assets: React.FC = () => {
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item
-                label="资产类型"
+                label={text('asset.form.kind')}
                 name="type"
-                rules={[{ required: true, message: '请选择资产类型' }]}
+                rules={[{ required: true, message: text('asset.form.kindRequired') }]}
                 style={{ marginBottom: 12 }}
               >
-                <Select placeholder="选择资产硬件类别">
-                  <Option value="server">PC 服务器</Option>
-                  <Option value="switch">以太网交换机</Option>
-                  <Option value="router">核心路由器</Option>
-                  <Option value="other">其他硬件</Option>
+                <Select placeholder={text('asset.form.kindPlaceholder')}>
+                  <Option value="server">{text('asset.type.server')}</Option>
+                  <Option value="switch">{text('asset.type.switch')}</Option>
+                  <Option value="router">{text('asset.type.router')}</Option>
+                  <Option value="other">{text('asset.type.other')}</Option>
                 </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item
-                label="SSH 端口"
+                label={text('asset.form.sshPort')}
                 name="ssh_port"
-                tooltip="终端连接、SFTP 文件传输与认证采集使用的 SSH 端口，支持非标端口，默认 22"
+                tooltip={text('asset.form.sshPortTip')}
                 style={{ marginBottom: 12 }}
               >
-                <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="默认 22" />
+                <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder={text('asset.form.sshPortPlaceholder')} />
               </Form.Item>
             </Col>
           </Row>
 
           <Form.Item
-            label="资产标签"
+            label={text('asset.f.tags')}
             name="tags"
             style={{ marginBottom: 12 }}
           >
             <Select
               mode="tags"
               style={{ width: '100%' }}
-              placeholder="输入或选择标签，按回车键新增"
+              placeholder={text('asset.form.tagsPlaceholder')}
               tokenSeparators={[',', ' ']}
             >
               {(globalTags || []).map(gt => (
@@ -1098,11 +1101,11 @@ export const Assets: React.FC = () => {
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item
-                label="关联扫描及登录凭证"
+                label={text('asset.form.credential')}
                 name="credential_id"
                 style={{ marginBottom: 12 }}
               >
-                <Select placeholder="可留空，连接时手动输入" allowClear>
+                <Select placeholder={text('asset.form.credentialPlaceholder')} allowClear>
                   {credentials.map((c) => (
                     <Option value={c.id} key={c.id}>
                       {c.name} ({c.username})
@@ -1113,27 +1116,27 @@ export const Assets: React.FC = () => {
             </Col>
             <Col span={12}>
               <Form.Item
-                label="开放端口"
+                label={text('asset.f.ports')}
                 name="ports"
-                tooltip="手动登记该资产对外开放的端口，逗号分隔；自动发现/在线探测也会回填此项"
+                tooltip={text('asset.form.portsTip')}
                 style={{ marginBottom: 12 }}
               >
-                <Input placeholder="如 22, 80, 443（可留空）" />
+                <Input placeholder={text('asset.form.portsPlaceholder')} />
               </Form.Item>
             </Col>
           </Row>
 
           {isAdmin && (
             <Form.Item
-              label="归属用户"
+              label={text('asset.form.owner')}
               name="owner_id"
-              tooltip="将该资产分配给指定用户；该用户将拥有此资产的查看与操作权限"
+              tooltip={text('asset.form.ownerTip')}
               style={{ marginBottom: 12 }}
             >
-              <Select placeholder="选择归属用户 (默认归创建者)" allowClear showSearch optionFilterProp="children">
+              <Select placeholder={text('asset.form.ownerPlaceholder')} allowClear showSearch optionFilterProp="children">
                 {users.map((u) => (
                   <Option value={u.id} key={u.id}>
-                    {u.username}（{u.role === 'admin' ? '管理员' : '普通用户'}）
+                    {u.username}（{u.role === 'admin' ? text('users.role.admin') : text('users.role.user')}）
                   </Option>
                 ))}
               </Select>
@@ -1141,18 +1144,18 @@ export const Assets: React.FC = () => {
           )}
 
           <Form.Item
-            label="描述与备忘"
+            label={text('asset.form.description')}
             name="description"
             style={{ marginBottom: 12 }}
           >
-            <Input.TextArea rows={2} placeholder="备注用途、位置、负责人等..." />
+            <Input.TextArea rows={2} placeholder={text('asset.form.descriptionPlaceholder')} />
           </Form.Item>
 
           <Form.Item style={{ marginBottom: 0, marginTop: 8, textAlign: 'right' }}>
             <Space>
-              <Button onClick={() => setModalVisible(false)}>取消</Button>
+              <Button onClick={() => setModalVisible(false)}>{text('common.cancel')}</Button>
               <Button type="primary" htmlType="submit">
-                保存
+                {text('asset.save')}
               </Button>
             </Space>
           </Form.Item>
@@ -1164,7 +1167,7 @@ export const Assets: React.FC = () => {
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <InfoCircleOutlined style={{ color: '#0284c7' }} />
-            <span>设备资产详情</span>
+            <span>{text('asset.detailTitle')}</span>
           </div>
         }
         placement="right"
@@ -1183,15 +1186,15 @@ export const Assets: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <Title level={4} style={{ margin: 0, color: '#0f172a' }}>{drawerAsset.name}</Title>
                     {drawerAsset.status === 'online' ? (
-                      <Tag color="green" style={{ borderRadius: '4px', margin: 0 }}>在线</Tag>
+                      <Tag color="green" style={{ borderRadius: '4px', margin: 0 }}>{text('k8s.online')}</Tag>
                     ) : drawerAsset.status === 'offline' ? (
-                      <Tag color="red" style={{ borderRadius: '4px', margin: 0 }}>离线</Tag>
+                      <Tag color="red" style={{ borderRadius: '4px', margin: 0 }}>{text('k8s.offline')}</Tag>
                     ) : (
-                      <Tag color="default" style={{ borderRadius: '4px', margin: 0 }}>未知</Tag>
+                      <Tag color="default" style={{ borderRadius: '4px', margin: 0 }}>{text('asset.unknown')}</Tag>
                     )}
                   </div>
                   <div>
-                    <span style={{ fontSize: '13px', color: '#64748b', marginRight: '8px' }}>管理IP:</span>
+                    <span style={{ fontSize: '13px', color: '#64748b', marginRight: '8px' }}>{text('asset.mgmtIp')}</span>
                     <Text copyable={{ text: drawerAsset.ip }} style={{ fontFamily: 'monospace', fontWeight: 600, color: '#334155', fontSize: '14px' }}>
                       {drawerAsset.ip}
                     </Text>
@@ -1205,76 +1208,76 @@ export const Assets: React.FC = () => {
               </Card>
 
               {/* 基础配置项目 */}
-              <Descriptions title="基本属性" column={1} bordered size="small" styles={{ label: { width: '120px', background: '#f8fafc', color: '#475569' }, content: { color: '#1e293b' } }}>
-                <Descriptions.Item label="硬件类型">
-                  {drawerAsset.type === 'server' && 'PC 服务器'}
-                  {drawerAsset.type === 'switch' && '以太网交换机'}
-                  {drawerAsset.type === 'router' && '核心路由器'}
-                  {drawerAsset.type === 'other' && '其他硬件'}
+              <Descriptions title={text('asset.basicProps')} column={1} bordered size="small" styles={{ label: { width: '120px', background: '#f8fafc', color: '#475569' }, content: { color: '#1e293b' } }}>
+                <Descriptions.Item label={text('asset.hwType')}>
+                  {drawerAsset.type === 'server' && text('asset.type.server')}
+                  {drawerAsset.type === 'switch' && text('asset.type.switch')}
+                  {drawerAsset.type === 'router' && text('asset.type.router')}
+                  {drawerAsset.type === 'other' && text('asset.type.other')}
                 </Descriptions.Item>
-                <Descriptions.Item label="厂商识别">
-                  {drawerAsset.vendor || <Text type="secondary">暂无厂商数据 (待扫描)</Text>}
+                <Descriptions.Item label={text('asset.vendorId')}>
+                  {drawerAsset.vendor || <Text type="secondary">{text('asset.noVendor')}</Text>}
                 </Descriptions.Item>
-                <Descriptions.Item label="系统版本">
+                <Descriptions.Item label={text('asset.osVersion')}>
                   <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
-                    {drawerAsset.os_version || <Text type="secondary">暂无系统信息 (待扫描)</Text>}
+                    {drawerAsset.os_version || <Text type="secondary">{text('asset.noOsInfo')}</Text>}
                   </span>
                 </Descriptions.Item>
-                <Descriptions.Item label="CPU 架构">
+                <Descriptions.Item label={text('asset.cpuArch')}>
                   {drawerAsset.arch ? (
                     <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{drawerAsset.arch}</span>
                   ) : (
-                    <Text type="secondary">未采集</Text>
+                    <Text type="secondary">{text('asset.notCollected')}</Text>
                   )}
                 </Descriptions.Item>
-                <Descriptions.Item label="虚拟化">
-                  {drawerAsset.virtualization ? renderVirtTag(drawerAsset.virtualization) : <Text type="secondary">未采集（点「采集」探测）</Text>}
+                <Descriptions.Item label={text('asset.f.virt')}>
+                  {drawerAsset.virtualization ? renderVirtTag(drawerAsset.virtualization) : <Text type="secondary">{text('asset.notCollected')}</Text>}
                 </Descriptions.Item>
-                <Descriptions.Item label="最后扫描时间">
+                <Descriptions.Item label={text('asset.lastScan')}>
                   {drawerAsset.last_scanned_at ? (
                     new Date(drawerAsset.last_scanned_at).toLocaleString('zh-CN')
                   ) : (
-                    <Text type="secondary">从未扫描</Text>
+                    <Text type="secondary">{text('asset.neverScanned')}</Text>
                   )}
                 </Descriptions.Item>
-                <Descriptions.Item label="负责人">
+                <Descriptions.Item label={text('asset.owner')}>
                   {drawerAsset.owner_name
                     ? <Tag color="blue" style={{ borderRadius: 4 }}>{drawerAsset.owner_name}</Tag>
-                    : <Text type="secondary">未归属</Text>}
+                    : <Text type="secondary">{text('asset.noOwner')}</Text>}
                 </Descriptions.Item>
-                <Descriptions.Item label="SSH 端口">
+                <Descriptions.Item label={text('asset.form.sshPort')}>
                   <span style={{ fontFamily: 'monospace' }}>{drawerAsset.ssh_port || 22}</span>
                 </Descriptions.Item>
               </Descriptions>
 
               {/* 开放端口 */}
               <div>
-                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>探测到开放端口</Title>
+                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>{text('asset.detectedPorts')}</Title>
                 <div style={{ background: '#f8fafc', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
                   {renderPorts(drawerAsset.ports)}
                 </div>
               </div>
 
               {/* 关联凭证和备注 */}
-              <Descriptions title="访问凭据与备注" column={1} bordered size="small" styles={{ label: { width: '120px', background: '#f8fafc', color: '#475569' }, content: { color: '#1e293b' } }}>
-                <Descriptions.Item label="关联登录凭证">
+              <Descriptions title={text('asset.credAndNotes')} column={1} bordered size="small" styles={{ label: { width: '120px', background: '#f8fafc', color: '#475569' }, content: { color: '#1e293b' } }}>
+                <Descriptions.Item label={text('asset.boundCred')}>
                   {drawerAsset.credential_id
-                    ? credentials.find((c) => c.id === drawerAsset.credential_id)?.name || `凭证 ID: ${drawerAsset.credential_id}`
-                    : <Text type="secondary">无绑定 (发起连接时手动输入密码)</Text>}
+                    ? credentials.find((c) => c.id === drawerAsset.credential_id)?.name || text('asset.credId', { id: drawerAsset.credential_id })
+                    : <Text type="secondary">{text('asset.noBoundCred')}</Text>}
                 </Descriptions.Item>
-                <Descriptions.Item label="资产备注说明">
+                <Descriptions.Item label={text('asset.notes')}>
                   <Paragraph style={{ margin: 0, fontStyle: drawerAsset.description ? 'normal' : 'italic', color: drawerAsset.description ? '#1e293b' : '#94a3b8' }}>
-                    {drawerAsset.description || '无备注说明信息'}
+                    {drawerAsset.description || text('asset.noNotes')}
                   </Paragraph>
                 </Descriptions.Item>
               </Descriptions>
 
               {/* 可用性（近 24h） */}
               <div>
-                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>可用性（近 24 小时）</Title>
+                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>{text('asset.uptime24h')}</Title>
                 <div style={{ background: '#f8fafc', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
                   {!uptime || uptime.total === 0 ? (
-                    <Text type="secondary">暂无监控数据（请在「系统设置 → 可用性监控」开启定时探测）</Text>
+                    <Text type="secondary">{text('asset.noUptimeData')}</Text>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
                       <div>
@@ -1284,11 +1287,11 @@ export const Assets: React.FC = () => {
                         }}>
                           {uptime.uptime_percent.toFixed(1)}%
                         </div>
-                        <div style={{ fontSize: 12, color: '#94a3b8' }}>在线率</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>{text('asset.uptimeRate')}</div>
                       </div>
                       <div style={{ fontSize: 13, color: '#475569' }}>
-                        共探测 <b>{uptime.total}</b> 次，在线 <b style={{ color: '#16a34a' }}>{uptime.online}</b> 次，
-                        离线 <b style={{ color: '#dc2626' }}>{uptime.total - uptime.online}</b> 次
+                        {text('asset.uptimeProbes')} <b>{uptime.total}</b>　{text('k8s.online')} <b style={{ color: '#16a34a' }}>{uptime.online}</b>　
+                        {text('k8s.offline')} <b style={{ color: '#dc2626' }}>{uptime.total - uptime.online}</b>
                       </div>
                     </div>
                   )}
@@ -1297,12 +1300,12 @@ export const Assets: React.FC = () => {
 
               {/* 变更历史 */}
               <div>
-                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>变更历史</Title>
+                <Title level={5} style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569' }}>{text('asset.changeHistory')}</Title>
                 <div style={{ background: '#f8fafc', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
                   {historyLoading ? (
                     <div style={{ textAlign: 'center', padding: '12px' }}><Spin /></div>
                   ) : history.length === 0 ? (
-                    <Text type="secondary">暂无变更记录</Text>
+                    <Text type="secondary">{text('asset.noChanges')}</Text>
                   ) : (
                     <Timeline
                       items={history.map((h) => ({
@@ -1341,7 +1344,7 @@ export const Assets: React.FC = () => {
                   loading={pingingIds[drawerAsset.id!]}
                   onClick={() => handlePing(drawerAsset.id!)}
                 >
-                  在线探测(Ping)
+                  {text('asset.pingBtn')}
                 </Button>
                 <Button
                   style={{ height: '40px', width: '45px', padding: 0 }}
@@ -1360,7 +1363,7 @@ export const Assets: React.FC = () => {
                 }}
                 style={{ width: '100%', height: '42px', fontWeight: 600, background: '#0f172a' }}
               >
-                发起 SSH / Telnet 终端会话
+                {text('asset.openSession')}
               </Button>
             </div>
 
@@ -1372,7 +1375,7 @@ export const Assets: React.FC = () => {
         title={
           <Space>
             <TagOutlined style={{ color: palette.primary }} />
-            <span style={{ fontWeight: 600 }}>全局标签管理</span>
+            <span style={{ fontWeight: 600 }}>{text('tag.globalTitle')}</span>
           </Space>
         }
         open={isTagModalOpen}
@@ -1382,19 +1385,19 @@ export const Assets: React.FC = () => {
         destroyOnClose
       >
         <div style={{ marginBottom: 20, padding: '16px 20px', backgroundColor: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-          <Title level={5} style={{ marginTop: 0, marginBottom: 12, fontSize: 14, color: '#1e293b' }}>新建标签</Title>
+          <Title level={5} style={{ marginTop: 0, marginBottom: 12, fontSize: 14, color: '#1e293b' }}>{text('tag.newTag')}</Title>
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
             <Space style={{ width: '100%' }}>
               <Input 
-                placeholder="标签名称，如：生产环境" 
+                placeholder={text('tag.namePlaceholder')} 
                 value={newTagName}
                 onChange={e => setNewTagName(e.target.value)}
                 style={{ width: 220, borderRadius: 6 }}
               />
-              <Button type="primary" onClick={handleCreateTag} style={{ borderRadius: 6 }}>创建标签</Button>
+              <Button type="primary" onClick={handleCreateTag} style={{ borderRadius: 6 }}>{text('tag.createBtn')}</Button>
             </Space>
             <Space align="center" size="small" wrap>
-              <span style={{ fontSize: 13, color: '#64748b' }}>选择颜色：</span>
+              <span style={{ fontSize: 13, color: '#64748b' }}>{text('tag.pickColor')}</span>
               {presetColors.map(c => (
                 <div 
                   key={c}

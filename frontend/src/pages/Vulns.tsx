@@ -4,18 +4,21 @@ import { BugOutlined } from '@ant-design/icons';
 import { getVulns, type VulnFinding } from '../services/api';
 import { TableToolbar, tablePanelStyle } from '../components/TableToolbar';
 import { palette, pagePadding } from '../theme';
+import { useI18n } from '../i18n';
 
 const { Text } = Typography;
 
-const severityMap: Record<string, { label: string; color: string }> = {
-  critical: { label: '严重', color: 'red' },
-  high: { label: '高危', color: 'volcano' },
-  medium: { label: '中危', color: 'gold' },
-  low: { label: '低危', color: 'blue' },
-  info: { label: '信息', color: 'default' },
+// 严重程度只保留颜色，文案走词条（vuln.sev.*）
+const severityColor: Record<string, string> = {
+  critical: 'red',
+  high: 'volcano',
+  medium: 'gold',
+  low: 'blue',
+  info: 'default',
 };
 
 export const Vulns: React.FC = () => {
+  const { text } = useI18n();
   const [findings, setFindings] = useState<VulnFinding[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -24,8 +27,8 @@ export const Vulns: React.FC = () => {
       setLoading(true);
       const data = await getVulns();
       setFindings(data);
-    } catch (e) {
-      message.error('获取漏洞发现列表失败');
+    } catch {
+      message.error(text('vuln.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -35,45 +38,47 @@ export const Vulns: React.FC = () => {
     load();
   }, []);
 
+  // 注意：render 的入参原来叫 text，会把 i18n 的 text() 遮蔽掉，统一改名为 v
   const columns = [
     {
-      title: '严重程度',
+      title: text('vuln.col.severity'),
       dataIndex: 'severity',
       key: 'severity',
       render: (severity: string) => {
-        const info = severityMap[severity] || { label: severity, color: 'default' };
-        return <Tag color={info.color} style={{ borderRadius: 4 }}>{info.label}</Tag>;
+        const color = severityColor[severity] || 'default';
+        const label = severityColor[severity] ? text(`vuln.sev.${severity}`) : severity;
+        return <Tag color={color} style={{ borderRadius: 4 }}>{label}</Tag>;
       },
     },
     {
-      title: '漏洞名称',
+      title: text('vuln.col.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string) => <span style={{ fontWeight: 500, color: palette.text }}>{text}</span>,
+      render: (v: string) => <span style={{ fontWeight: 500, color: palette.text }}>{v}</span>,
     },
     {
-      title: '模板',
+      title: text('vuln.col.template'),
       dataIndex: 'template_id',
       key: 'template_id',
-      render: (text: string) => <span style={{ fontFamily: 'monospace', fontSize: 12, color: palette.textSub }}>{text}</span>,
+      render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12, color: palette.textSub }}>{v}</span>,
     },
     {
-      title: '目标',
+      title: text('vuln.col.target'),
       dataIndex: 'target',
       key: 'target',
-      render: (text: string) => <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#334155' }}>{text}</span>,
+      render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#334155' }}>{v}</span>,
     },
     {
-      title: '引擎',
+      title: text('vuln.col.engine'),
       dataIndex: 'engine',
       key: 'engine',
-      render: (text: string) => <Text type="secondary">{text}</Text>,
+      render: (v: string) => <Text type="secondary">{v}</Text>,
     },
     {
-      title: '发现时间',
+      title: text('vuln.col.foundAt'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => (text ? new Date(text).toLocaleString() : <Text type="secondary">-</Text>),
+      render: (v: string) => (v ? new Date(v).toLocaleString() : <Text type="secondary">-</Text>),
     },
   ];
 
@@ -82,14 +87,14 @@ export const Vulns: React.FC = () => {
 
       <div style={{ padding: pagePadding }} className="wjw-page-in">
         <div style={tablePanelStyle}>
-          <TableToolbar title="漏洞发现" subtitle="nuclei 漏洞扫描结果" icon={<BugOutlined />} onRefresh={load} loading={loading} />
+          <TableToolbar title={text('vuln.title')} subtitle={text('vuln.subtitle')} icon={<BugOutlined />} onRefresh={load} loading={loading} />
           <Table
             className="wjw-table"
             columns={columns}
             dataSource={findings}
             rowKey="id"
             loading={loading}
-            locale={{ emptyText: '暂无漏洞发现记录' }}
+            locale={{ emptyText: text('vuln.empty') }}
             pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
           />
         </div>
