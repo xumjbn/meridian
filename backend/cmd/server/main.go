@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"backend/internal/handler"
 	"backend/internal/monitor"
@@ -30,6 +31,29 @@ func resetAdminFlag() (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// requestLogger 是 gin.Logger 的替代：只记路径，绝不记 query string。
+//
+// gin.Default() 自带的 Logger 打完整 URL。WebSocket 握手带不了 Authorization 头，
+// 所以会话令牌只能以 ?token=xxx 传递（见 handler.extractToken），
+// 结果每开一次终端/监控就把令牌明文写进访问日志一次。而桌面端把 sidecar 的
+// stdout 整份追加进 backend.log，用户排查问题时发日志给别人，等于连同可用会话
+// 一起发出去——令牌在会话过期前都能直接拿来用。
+//
+// 这里保留排查所需的信息（方法、路径、状态码、耗时、客户端 IP），
+// 把 query 整段丢掉。真要看参数就去审计日志，那边只存 URL.Path，同样不含令牌。
+func requestLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		log.Printf("%3d | %8v | %-15s | %-6s %s",
+			c.Writer.Status(),
+			time.Since(start).Truncate(time.Microsecond),
+			c.ClientIP(),
+			c.Request.Method,
+			c.Request.URL.Path) // 只用 Path，不要 RequestURI/String()——那两个都带 query
+	}
 }
 
 func CORSMiddleware() gin.HandlerFunc {
@@ -90,7 +114,15 @@ func main() {
 	handler.PurgeExpiredSessions()
 
 	// 2. 初始化 Gin 引擎
-	r := gin.Default()
+	//
+	// 不用 gin.Default()：它自带的 Logger 打的是完整 URL（含 query string），
+	// 而 WebSocket 握手带不了自定义头，会话令牌只能走 ?token=xxx——
+	// 于是每开一次终端/监控，令牌就明文进一次访问日志。桌面端又把 sidecar 的
+	// stdout 整份写进 backend.log（实测那个文件里已经有 26 行带令牌），
+	// 用户报问题时顺手发的这个日志就等于把可用会话一起发出去了。
+	// 这里改用 gin.New() + 自己的日志中间件，只记路径不记 query。
+	r := gin.New()
+	r.Use(requestLogger(), gin.Recovery())
 
 	// 3. 应用跨域中间件
 	r.Use(CORSMiddleware())

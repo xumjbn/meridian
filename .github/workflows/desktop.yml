@@ -56,9 +56,16 @@ jobs:
         shell: bash
         run: |
           mkdir -p frontend/src-tauri/binaries
+          # Windows 必须编成 GUI 子系统（-H=windowsgui），否则 sidecar 作为控制台
+          # 程序被 Tauri 拉起时会多出一个 cmd 黑框，且关掉黑框会把整个 wjw 一起终止。
+          # -s -w 与 release.yml 对齐，剥掉符号表，安装包少 7MB。
+          LDFLAGS="-s -w"
+          if [ "${{ matrix.goos }}" = "windows" ]; then LDFLAGS="$LDFLAGS -H=windowsgui"; fi
+          echo "ldflags: $LDFLAGS"
           cd backend
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -mod=mod -o "../frontend/src-tauri/binaries/wjw-backend-${{ matrix.triple }}${{ matrix.ext }}" ./cmd/server
+            go build -mod=mod -trimpath -ldflags "$LDFLAGS" \
+              -o "../frontend/src-tauri/binaries/wjw-backend-${{ matrix.triple }}${{ matrix.ext }}" ./cmd/server
 
       - name: 前端依赖
         working-directory: frontend
