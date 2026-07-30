@@ -315,6 +315,31 @@ func SftpMkdir(c *gin.Context) {
 	SendSuccess(c, gin.H{"ok": true, "path": req.Path})
 }
 
+// unsafeDeletePath 判断这个路径是否不该被删除。
+//
+// 这个接口对目录是递归删的，所以校验必须挡住一切指向根或家目录的写法。
+// 原来的实现是 p == "" || p == "/" 两个字面量比较——路径校验用字符串相等
+// 是错的形状，下面这些都不等于 "/"，却全都指向根或家目录，一律能过：
+//
+//	"//"        POSIX 解析为 /        -> 递归删整个文件系统
+//	"/.."       解析为 /              -> 同上
+//	"/etc/../"  解析为 /              -> 同上
+//	"."         解析为 SSH 用户家目录 -> 递归删掉整个家目录
+//	".."        家目录的上一级
+//
+// 改为 path.Clean 归一后再判：非绝对路径、或归一后就是根，都拒。
+//
+// 注意：只用归一后的值做判断，实际删除仍用原始路径。path.Clean 会把
+// a/b/../c 折成 a/c，若 b 是软链，折叠后指向的就不是用户点的那个东西了，
+// 删除这种不可逆操作上不能做这种替换。
+func unsafeDeletePath(p string) bool {
+	if strings.TrimSpace(p) == "" {
+		return true
+	}
+	clean := path.Clean(p)
+	return !strings.HasPrefix(clean, "/") || clean == "/"
+}
+
 // SftpRemove 删除远端文件或目录（目录递归删除）
 func SftpRemove(c *gin.Context) {
 	var req struct {
@@ -327,8 +352,7 @@ func SftpRemove(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 安全：禁止删除空路径或根目录
-	if req.Path == "" || req.Path == "/" {
+	if unsafeDeletePath(req.Path) {
 		auditSftp(c, asset.ID, "DELETE", req.Path, 400)
 		SendError(c, 400, "路径非法，拒绝删除")
 		return
