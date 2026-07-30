@@ -13,7 +13,7 @@ import {
   TerminalWallpaper, useWallpaper, setWallpaper, wallpaperIdFromCmd,
   WALLPAPER_SHOW_RE, WALLPAPER_HIDE_RE, WALLPAPER_OPTIONS, WALLPAPER_LABELS,
   useWallpaperOpacity, setWallpaperOpacity, MIN_OPACITY, MAX_OPACITY,
-  readImageAsWallpaper, setCustomWallpaper, clearCustomWallpaper, customWallpaperImage,
+  readImageAsWallpaper, setCustomWallpaper, clearCustomWallpaper, customWallpaperImage, pickImageFile,
   type WallpaperId,
 } from '../components/TerminalWallpaper';
 import { saveBlob } from '../saveFile';
@@ -274,6 +274,17 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
   const wallpaperOn = useWallpaper();
   const wallpaperAlpha = useWallpaperOpacity();
   const bgFileRef = useRef<HTMLInputElement>(null);
+
+  // 选图的收口：原生对话框和 <input type="file"> 两条入口都走这里，
+  // 保证体积/尺寸校验、错误提示、成功提示只有一份实现。
+  const applyWallpaperFile = async (f: File) => {
+    try {
+      setCustomWallpaper(await readImageAsWallpaper(f));
+      message.success('背景已更新');
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '图片处理失败');
+    }
+  };
 
   const [assets, setAssets] = useState<Asset[]>([]);
 
@@ -838,11 +849,13 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                     <Select
                       size="small"
                       value={wallpaperOn}
-                      onChange={(val: WallpaperId) => {
+                      onChange={async (val: WallpaperId) => {
                         // 选了自定义却还没传过图，直接开会是一片空白，所以先引导去传
                         if (val === 'custom' && !customWallpaperImage()) {
                           message.info('先选一张图片');
-                          bgFileRef.current?.click();
+                          const r = await pickImageFile();
+                          if (r.ok) applyWallpaperFile(r.file);
+                          else if (r.reason === 'unavailable') bgFileRef.current?.click();
                           return;
                         }
                         setWallpaper(val);
@@ -871,7 +884,18 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Button size="small" onClick={() => bgFileRef.current?.click()} style={{ fontSize: 12 }}>
+                    <Button
+                      size="small"
+                      style={{ fontSize: 12 }}
+                      onClick={async () => {
+                        // 桌面端优先走 Tauri 原生对话框：Windows 上点 <input type="file">
+                        // 会和 Tauri 的拖放目标打架，把应用整个拖死。
+                        const r = await pickImageFile();
+                        if (r.ok) { applyWallpaperFile(r.file); return; }
+                        if (r.reason === 'cancelled') return;   // 用户自己取消，别再弹一次
+                        bgFileRef.current?.click();             // Web 端 / 插件不可用时兜底
+                      }}
+                    >
                       选择图片
                     </Button>
                     {!!customWallpaperImage() && (
@@ -885,17 +909,10 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                       type="file"
                       accept="image/*"
                       style={{ display: 'none' }}
-                      onChange={async (e) => {
+                      onChange={(e) => {
                         const f = e.target.files?.[0];
                         e.target.value = ''; // 允许连着选同一个文件
-                        if (!f) return;
-                        try {
-                          const dataUrl = await readImageAsWallpaper(f);
-                          setCustomWallpaper(dataUrl);
-                          message.success('背景已更新');
-                        } catch (err) {
-                          message.error(err instanceof Error ? err.message : '图片处理失败');
-                        }
+                        if (f) applyWallpaperFile(f);
                       }}
                     />
                   </div>

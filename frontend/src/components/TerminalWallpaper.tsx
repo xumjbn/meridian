@@ -34,10 +34,28 @@ export const DEFAULT_OPACITY = 0.14;
 export const MIN_OPACITY = 0.02;
 export const MAX_OPACITY = 0.85;
 
-/** 存进 localStorage 的图片体积上限。整个域一般只有 5MB，留出余量给其它键 */
-const MAX_IMG_BYTES = 3 * 1024 * 1024;
+/**
+ * data URL 的长度上限，单位是「字符」而不是字节。
+ * localStorage 整个域大约 5MB，但 Chromium 按 UTF-16 计量，一个字符占 2 字节——
+ * 原来这里拿 3*1024*1024 当「3MB」比 out.length，实际占用是 6MB，
+ * 稳超配额，大图必然走到 QuotaExceededError。
+ * 1.6M 字符 ≈ 3.2MB 占用，给其它键留出余量。
+ */
+const MAX_IMG_CHARS = 1_600_000;
 /** 超过这个宽度先缩，手机随手拍的图动辄 4000px，原样存必爆配额 */
 const MAX_IMG_WIDTH = 1920;
+/**
+ * 源文件体积上限。这是防崩溃的闸门，不是省空间的优化：
+ * img.src = objectURL 会把整张图解码进内存，一张 20000×15000 的图就是
+ * 3 亿像素 × 4 字节 ≈ 1.2GB 像素缓冲，WebView2 直接 OOM——整个应用消失，
+ * 不是抛异常，JS 层什么都接不住。所以必须在解码之前按体积拦掉。
+ */
+const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
+/**
+ * 解码后的像素总数上限。体积小但尺寸极大的图（高压缩比的长图、
+ * 恶意构造的 PNG）能绕过体积闸门，所以解码完成后再按面积兜一道。
+ */
+const MAX_SOURCE_PIXELS = 60_000_000;
 
 export const WALLPAPER_EVENT = 'wjw-wjw-wallpaper';
 
@@ -108,27 +126,53 @@ export const setWallpaperOpacity = (v: number) => {
  */
 export const readImageAsWallpaper = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) { reject(new Error('请选择图片文件')); return; }
+    // type 可能为空（从原生对话框拿到的 File 自己拼的 mime、或系统没登记该扩展名），
+    // 空就放过去让解码环节自己判断，别把正常图片挡在门外。
+    if (file.type && !file.type.startsWith('image/')) {
+      reject(new Error('请选择图片文件'));
+      return;
+    }
+    // 解码之前先按体积拦：超大图解进内存会把 WebView 撑爆，那是进程级崩溃，
+    // 到不了 onerror，也 catch 不到。
+    if (file.size > MAX_SOURCE_BYTES) {
+      reject(new Error(`图片有 ${(file.size / 1024 / 1024).toFixed(1)}MB，超过 20MB 上限。先压一下或换一张。`));
+      return;
+    }
     const url = URL.createObjectURL(file);
     const img = new Image();
+    // 无论走哪条分支都要释放 objectURL，否则这张图一直被引用着不回收
+    const done = (fn: () => void) => { URL.revokeObjectURL(url); fn(); };
     img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, MAX_IMG_WIDTH / img.naturalWidth);
-      const w = Math.max(1, Math.round(img.naturalWidth * scale));
-      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const sw = img.naturalWidth, sh = img.naturalHeight;
+      if (!sw || !sh) { done(() => reject(new Error('这个文件读不出图像'))); return; }
+      if (sw * sh > MAX_SOURCE_PIXELS) {
+        done(() => reject(new Error(`图片尺寸 ${sw}×${sh} 太大了，换一张小点的吧。`)));
+        return;
+      }
+      // 同时按宽度和面积缩：只按宽度缩的话，一张 1920×30000 的长图缩完还是
+      // 5760 万像素，canvas 分配照样能把内存打满。
+      const scale = Math.min(1, MAX_IMG_WIDTH / sw, Math.sqrt(MAX_SOURCE_PIXELS / 16 / (sw * sh)));
+      const w = Math.max(1, Math.round(sw * scale));
+      const h = Math.max(1, Math.round(sh * scale));
       const cv = document.createElement('canvas');
       cv.width = w; cv.height = h;
       const ctx = cv.getContext('2d');
-      if (!ctx) { reject(new Error('浏览器不支持画布，无法处理图片')); return; }
+      if (!ctx) { done(() => reject(new Error('浏览器不支持画布，无法处理图片'))); return; }
       ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
       // 逐档降质量，直到塞得下为止
+      let smallest = '';
       for (const q of [0.82, 0.7, 0.58, 0.45, 0.34]) {
         const out = cv.toDataURL('image/jpeg', q);
-        if (out.length <= MAX_IMG_BYTES) { resolve(out); return; }
+        if (!out || out.length < 32) break;   // 画布过大时 toDataURL 会返回 "data:,"
+        smallest = out;
+        if (out.length <= MAX_IMG_CHARS) { resolve(out); return; }
       }
-      reject(new Error('图片太大，压到最低质量仍超过 3MB，换一张小点的吧'));
+      reject(new Error(smallest
+        ? '图片压到最低质量仍然存不下，换一张尺寸小点的吧'
+        : '图片处理失败，画布导出为空'));
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('这个文件读不出图像')); };
+    img.onerror = () => done(() => reject(new Error('这个文件读不出图像')));
     img.src = url;
   });
 
@@ -137,9 +181,65 @@ export const setCustomWallpaper = (dataUrl: string) => {
   try {
     localStorage.setItem(IMG_KEY, dataUrl);
   } catch {
-    throw new Error('本地存储空间不足，图片没能保存');
+    // 大概率是上一张图还占着配额。先腾掉再试一次——
+    // 换背景图这个动作本身就意味着旧图不要了，没有保留价值。
+    try {
+      localStorage.removeItem(IMG_KEY);
+      localStorage.setItem(IMG_KEY, dataUrl);
+    } catch {
+      throw new Error('本地存储空间不足，图片没能保存');
+    }
   }
   setWallpaper('custom');
+};
+
+/** 桌面端选图的结果。要区分「用户取消」和「这条路走不通」——
+ *  取消就该什么都不做，走不通才回落到 <input type="file">。 */
+export type PickResult =
+  | { ok: true; file: File }
+  | { ok: false; reason: 'cancelled' | 'unavailable' };
+
+const inTauri = typeof window !== 'undefined' &&
+  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
+const MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  webp: 'image/webp', bmp: 'image/bmp', gif: 'image/gif',
+};
+
+/**
+ * 桌面端用 Tauri 的原生对话框选图，而不是 <input type="file">。
+ *
+ * 原因：Windows 上 Tauri 默认开着 dragDropEnabled（本应用的 SFTP 拖拽上传要用它，
+ * 不能关），它注册的 OLE 拖放目标与 WebView2 弹原生文件对话框相互干扰，
+ * 点 file input 会把整个应用拖死/崩掉。走插件的 dialog 就完全绕开了 WebView2
+ * 那条路径。Web 端没这个问题，调用方回落到 file input。
+ */
+export const pickImageFile = async (): Promise<PickResult> => {
+  if (!inTauri) return { ok: false, reason: 'unavailable' };
+  try {
+    const [dialog, fs] = await Promise.all([
+      import('@tauri-apps/plugin-dialog'),
+      import('@tauri-apps/plugin-fs'),
+    ]);
+    const picked = await dialog.open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: '图片', extensions: Object.keys(MIME_BY_EXT) }],
+    });
+    if (!picked || typeof picked !== 'string') return { ok: false, reason: 'cancelled' };
+    const bytes = await fs.readFile(picked);
+    const name = picked.split(/[\\/]/).pop() || 'image';
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    return {
+      ok: true,
+      // File 而不是 Blob：readImageAsWallpaper 要看 size 和 type
+      file: new File([bytes], name, { type: MIME_BY_EXT[ext] || 'image/jpeg' }),
+    };
+  } catch {
+    // 插件缺失 / 能力未授权 —— 别把用户卡死，交给 file input 兜底
+    return { ok: false, reason: 'unavailable' };
+  }
 };
 
 export const clearCustomWallpaper = () => {
