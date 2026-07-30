@@ -17,6 +17,7 @@ import {
   type WallpaperId,
 } from '../components/TerminalWallpaper';
 import { saveBlob } from '../saveFile';
+import { useTermSetting, useTermSettingNumber } from '../termSettings';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { palette } from '../theme';
 import { useTerminals } from '../terminalSessions';
@@ -338,12 +339,15 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
     if (!sessionActiveRef.current) markActivity(assetId);
   }, [markActivity, assetId]);
 
-  // 全局字体设置
-  const [fontSize, setFontSize] = useState<number>(() => {
-    const saved = localStorage.getItem('term_font_size');
-    return saved ? parseInt(saved, 10) : 14;
-  });
-  const [fontFamily, setFontFamily] = useState<string>(() => {
+  // 全局字体设置。
+  //
+  // 这几项必须走 useTermSetting（写 localStorage + 广播 + 各实例订阅），不能用
+  // 普通 useState：App 为每个终端会话各渲染一个 TerminalPage 实例，各存一份 state
+  // 的话改一处只有当前会话生效，其它已打开的标签一直停在旧值。
+  // 实测过：把配色从默认改成 vscode 后，同屏出现了两个底色不同的终端
+  // （#0B0F19 与 #1E1E1E 并存）；新建会话反而正确，因为它挂载时才读 localStorage。
+  const [fontSize, setFontSize] = useTermSettingNumber('term_font_size', 14, 10, 28);
+  const [fontFamily, setFontFamily] = useTermSetting('term_font_family', (() => {
     // Consolas 必须排在 Courier New 之前。
     // Fira Code 通常没装，Menlo / Monaco 只存在于 macOS——Windows 上这条链原来
     // 一路落到 Courier New（打字机衬线体），而 Windows 该用的是 Consolas。
@@ -351,23 +355,22 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
     //   Courier New  normal 墨迹 1259，bold 增幅 +22.3%（粗体明显糊）
     //   Consolas     normal 墨迹 1526，bold 增幅 +10.4%
     // macOS 不受影响：Menlo 仍排在前面，先命中。
-    return localStorage.getItem('term_font_family')
-      || 'Fira Code, Menlo, Monaco, Consolas, Courier New, monospace';
-  });
-  // 字号变化持久化（Select 选择 / Ctrl+滚轮 / Ctrl±缩放共用）
-  useEffect(() => { localStorage.setItem('term_font_size', String(fontSize)); }, [fontSize]);
-  // 字号缩放：Ctrl+滚轮 / Ctrl +/- 调整，Ctrl+0 复位（10–28）
+    return 'Fira Code, Menlo, Monaco, Consolas, Courier New, monospace';
+  })());
+  // 字号缩放：Ctrl+滚轮 / Ctrl +/- 调整，Ctrl+0 复位（10–28，越界由 setter 自己夹）
+  // 注意用 fontSize 当前值算，不能用 setFontSize(s => ...)——共享设置的 setter
+  // 是「写 localStorage 并广播」，没有 React 那种函数式更新语义。
   const zoomFont = useCallback((delta: number) => {
-    setFontSize((s) => Math.max(10, Math.min(28, s + delta)));
-  }, []);
-  const resetFont = useCallback(() => setFontSize(14), []);
+    setFontSize(fontSize + delta);
+  }, [fontSize, setFontSize]);
+  const resetFont = useCallback(() => setFontSize(14), [setFontSize]);
 
   // 终端配色主题
-  const [termThemeKey, setTermThemeKey] = useState<string>(() => localStorage.getItem('term_theme') || 'wjw');
+  const [termThemeKey, setTermThemeKey] = useTermSetting('term_theme', 'wjw');
   const termTheme = getTermTheme(termThemeKey);
 
   // 终端字符编码（默认 UTF-8；连本地 Windows/GBK 主机中文乱码时切 GBK）
-  const [termEncoding, setTermEncoding] = useState<string>(() => localStorage.getItem('term_encoding') || 'utf-8');
+  const [termEncoding, setTermEncoding] = useTermSetting('term_encoding', 'utf-8');
 
   // 命令自动补全开关 + 命令库管理弹窗
   const [completionEnabled, setCompletionEnabled] = useState<boolean>(() => {
@@ -853,7 +856,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                   <Select
                     size="small"
                     value={termThemeKey}
-                    onChange={(val) => { setTermThemeKey(val); localStorage.setItem('term_theme', val); }}
+                    onChange={(val) => setTermThemeKey(val)}
                     options={termThemes.map((t) => ({ label: t.label, value: t.value }))}
                     style={{ width: 170 }}
                     popupMatchSelectWidth={false}
@@ -866,7 +869,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                   <Select
                     size="small"
                     value={termEncoding}
-                    onChange={(val) => { setTermEncoding(val); localStorage.setItem('term_encoding', val); }}
+                    onChange={(val) => setTermEncoding(val)}
                     options={[{ label: 'UTF-8', value: 'utf-8' }, { label: 'GBK', value: 'gbk' }]}
                     style={{ width: 170 }}
                     popupMatchSelectWidth={false}
