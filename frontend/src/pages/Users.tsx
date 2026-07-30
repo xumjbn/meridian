@@ -169,7 +169,7 @@ export const Users: React.FC = () => {
               type="link"
               size="small"
               onClick={() => setStatus(record, 'active', text('users.approved', { user: record.username }))}
-              style={{ padding: 0, fontWeight: 600, color: '#16a34a' }}
+              style={{ padding: 0, fontWeight: 500, color: '#16a34a' }}
             >
               {text('users.approve')}
             </Button>

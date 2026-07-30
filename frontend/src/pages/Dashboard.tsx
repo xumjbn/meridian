@@ -172,7 +172,7 @@ export const Dashboard: React.FC = () => {
           {statItems.map((s) => (
             <div key={s.label} style={{ cursor: 'pointer' }} onClick={() => navigate(s.to)}>
               <div style={{ fontSize: 12, color: palette.textMute, marginBottom: 2 }}>{s.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 600, color: s.color, lineHeight: 1.1 }}>{s.value}</div>
+              <div style={{ fontSize: 22, fontWeight: 500, color: s.color, lineHeight: 1.1 }}>{s.value}</div>
             </div>
           ))}
         </div>

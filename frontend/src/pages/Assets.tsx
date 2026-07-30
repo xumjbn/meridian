@@ -765,7 +765,7 @@ export const Assets: React.FC = () => {
         const info = [record.vendor, record.arch].filter(Boolean).join(' · ');
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
-            <a onClick={() => handleShowDetail(record)} style={{ fontWeight: 600, color: palette.text, whiteSpace: 'nowrap' }}>
+            <a onClick={() => handleShowDetail(record)} style={{ fontWeight: 500, color: palette.text, whiteSpace: 'nowrap' }}>
               {v}
             </a>
             {renderTags(record.tags)}
@@ -986,7 +986,7 @@ export const Assets: React.FC = () => {
                 items={groups.map(([k, rows]) => ({
                   key: k,
                   label: (
-                    <span style={{ fontWeight: 600, color: palette.text }}>
+                    <span style={{ fontWeight: 500, color: palette.text }}>
                       {k} <Tag style={{ marginLeft: 6 }}>{rows.length}</Tag>
                     </span>
                   ),
@@ -1195,7 +1195,7 @@ export const Assets: React.FC = () => {
                   </div>
                   <div>
                     <span style={{ fontSize: '13px', color: '#64748b', marginRight: '8px' }}>{text('asset.mgmtIp')}</span>
-                    <Text copyable={{ text: drawerAsset.ip }} style={{ fontFamily: 'monospace', fontWeight: 600, color: '#334155', fontSize: '14px' }}>
+                    <Text copyable={{ text: drawerAsset.ip }} style={{ fontFamily: 'monospace', fontWeight: 500, color: '#334155', fontSize: '14px' }}>
                       {drawerAsset.ip}
                     </Text>
                   </div>
@@ -1313,7 +1313,7 @@ export const Assets: React.FC = () => {
                         color: 'blue',
                         children: (
                           <div style={{ fontSize: '12px' }}>
-                            <div style={{ fontWeight: 600, color: '#334155' }}>{fieldLabelMap[h.field] || h.field}</div>
+                            <div style={{ fontWeight: 500, color: '#334155' }}>{fieldLabelMap[h.field] || h.field}</div>
                             <div style={{ color: '#475569', margin: '2px 0' }}>
                               <Text delete type="secondary" style={{ fontSize: '12px', marginRight: 4 }}>
                                 {translateHistoryValue(h.field, h.old_value)}
@@ -1361,7 +1361,7 @@ export const Assets: React.FC = () => {
                   setDrawerVisible(false);
                   handleConnectConsole(drawerAsset);
                 }}
-                style={{ width: '100%', height: '42px', fontWeight: 600, background: '#0f172a' }}
+                style={{ width: '100%', height: '42px', fontWeight: 500, background: '#0f172a' }}
               >
                 {text('asset.openSession')}
               </Button>
@@ -1375,7 +1375,7 @@ export const Assets: React.FC = () => {
         title={
           <Space>
             <TagOutlined style={{ color: palette.primary }} />
-            <span style={{ fontWeight: 600 }}>{text('tag.globalTitle')}</span>
+            <span style={{ fontWeight: 500 }}>{text('tag.globalTitle')}</span>
           </Space>
         }
         open={isTagModalOpen}

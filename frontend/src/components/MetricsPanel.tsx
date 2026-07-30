@@ -288,7 +288,7 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
           {!err && m && (
             <>
               {/* 主机身份：出问题时第一眼要确认「我盯的是哪台」 */}
-              <div style={{ fontSize: 12, color: C.text, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 12, color: C.text, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {m.hostname || m.os || '—'}
               </div>
               <div style={{ fontSize: 10, color: C.mute, marginTop: 2, lineHeight: 1.5 }}>
@@ -300,7 +300,7 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
               {/* CPU */}
               <Section title="CPU" extra={m.cpu_cores ? `${m.cpu_cores} 核` : undefined} />
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 20, fontWeight: 600, color: heat(cpu), fontVariantNumeric: 'tabular-nums' }}>{cpu}%</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: heat(cpu), fontVariantNumeric: 'tabular-nums' }}>{cpu}%</span>
                 {(m.load1 != null) && (
                   <span style={{ fontSize: 10, color: loadHot ? C.bad : C.mute, fontVariantNumeric: 'tabular-nums' }}>
                     负载 {m.load1?.toFixed(2)} / {m.load5?.toFixed(2)} / {m.load15?.toFixed(2)}
@@ -313,7 +313,7 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
               {/* 内存 */}
               <Section title="内存" extra={`${fmtKB(m.mem_used_kb)} / ${fmtKB(m.mem_total_kb)}`} />
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 20, fontWeight: 600, color: heat(mem), fontVariantNumeric: 'tabular-nums' }}>{mem}%</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: heat(mem), fontVariantNumeric: 'tabular-nums' }}>{mem}%</span>
                 {!!m.mem_cache_kb && <span style={{ fontSize: 10, color: C.mute }}>缓存 {fmtKB(m.mem_cache_kb)}</span>}
               </div>
               <Bar p={mem} w={inner} />

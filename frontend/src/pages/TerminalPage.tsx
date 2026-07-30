@@ -2536,7 +2536,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
               background: 'rgba(99,102,241,0.15)',
               padding: '1px 6px',
               borderRadius: '4px',
-              fontWeight: 600,
+              fontWeight: 500,
               display: 'inline-flex',
               alignItems: 'center',
               animation: 'pulse 2s infinite'
@@ -2618,7 +2618,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
                 border: '1px solid #334155', width: '90%', maxWidth: '300px'
               }}>
                 <div style={{ fontSize: 24, marginBottom: 8 }}>⚠️</div>
-                <h4 style={{ margin: '0 0 4px 0', color: '#f8fafc', fontSize: 13, fontWeight: 600 }}>终端连接已断开</h4>
+                <h4 style={{ margin: '0 0 4px 0', color: '#f8fafc', fontSize: 13, fontWeight: 500 }}>终端连接已断开</h4>
                 <p style={{ margin: '0 0 12px 0', color: '#94a3b8', fontSize: 11, lineHeight: 1.4, wordBreak: 'break-all' }}>
                   {errorDetail || 'WebSocket 意外关闭，请校验主机状态或凭证'}
                 </p>
@@ -2638,7 +2638,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             zIndex: 15, padding: '16px'
           }}>
             <div style={{ width: '100%', maxWidth: '280px', background: '#1e293b', padding: '16px', borderRadius: '8px', border: '1px solid #334155' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#f8fafc', marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: '#f8fafc', marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
                 🔑 SSH 凭据验证
               </div>
               <p style={{ margin: '0 0 12px 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>

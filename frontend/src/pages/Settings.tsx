@@ -44,7 +44,7 @@ const SettingCard: React.FC<SettingCardProps> = ({ icon, title, description, chi
         {icon}
       </div>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{title}</div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}>{title}</div>
         <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{description}</div>
       </div>
     </div>
@@ -420,7 +420,7 @@ export const Settings: React.FC = () => {
               description={text('set.about.desc')}
             >
               <SettingRow label={text('set.about.product')}>
-                <Text style={{ fontWeight: 600, color: palette.text }}>
+                <Text style={{ fontWeight: 500, color: palette.text }}>
                   {brand.name}
                 </Text>
               </SettingRow>

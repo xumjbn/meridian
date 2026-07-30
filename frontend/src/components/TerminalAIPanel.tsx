@@ -283,7 +283,7 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId, onOpe
       {/* 头部 */}
       <div style={{ padding: '8px 10px', borderBottom: '1px solid #1e293b', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#a5b4fc', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#a5b4fc', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <RobotOutlined /> AI 助手 · 自动执行
           </span>
           <Space size={2}>
@@ -332,7 +332,7 @@ export const TerminalAIPanel: React.FC<Props> = ({ assets, defaultAssetId, onOpe
       {!enabled ? (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 12 }}>
           <RobotOutlined style={{ fontSize: 32, color: '#64748b' }} />
-          <div style={{ fontSize: 13, color: '#cbd5e1', fontWeight: 600 }}>AI 助手未启用</div>
+          <div style={{ fontSize: 13, color: '#cbd5e1', fontWeight: 500 }}>AI 助手未启用</div>
           <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.7 }}>
             前往「系统设置 → AI」填写 API 地址 / Key / 模型并开启，即可在终端里用一句话自动完成运维任务。
           </div>

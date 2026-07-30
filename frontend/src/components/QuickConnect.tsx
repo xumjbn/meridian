@@ -202,7 +202,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
 
   const labelStyle: React.CSSProperties = {
     fontSize: 11,
-    fontWeight: 600,
+    fontWeight: 500,
     letterSpacing: 0.4,
     color: palette.textMute,
     textTransform: 'uppercase',
@@ -301,7 +301,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
               <Dropdown key={a.id} trigger={['contextMenu']} menu={{ items: hostMenu(a) }}>
                 <Tooltip placement="right" title={`${a.name} · ${a.ip}${tags.length ? ` · ${tags.join(' / ')}` : ''}`}>
                   <div draggable onDragStart={(e) => startHostDrag(e, a)} onClick={() => connect(a)} style={iconBtn(active, false)}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: active ? palette.siderTextActive : palette.siderText }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: active ? palette.siderTextActive : palette.siderText }}>
                       {(a.name || a.ip).slice(0, 1).toUpperCase()}
                     </span>
                     <span
@@ -394,7 +394,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
             {/* 最近连接（不搜索时置顶） */}
             {!q && recentHosts.length > 0 && (
               <div style={{ marginBottom: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', color: '#7c8aa5', fontSize: 12, fontWeight: 600 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', color: '#7c8aa5', fontSize: 12, fontWeight: 500 }}>
                   <HistoryOutlined style={{ fontSize: 11 }} />
                   <span style={{ flex: 1 }}>{text('quickConnect.recent')}</span>
                 </div>
@@ -411,7 +411,7 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
                     onClick={() => setCollapsedGroups((p) => ({ ...p, [tag]: !p[tag] }))}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', cursor: 'pointer',
-                      color: '#7c8aa5', fontSize: 12, fontWeight: 600, userSelect: 'none',
+                      color: '#7c8aa5', fontSize: 12, fontWeight: 500, userSelect: 'none',
                     }}
                   >
                     {folded ? <CaretRightOutlined style={{ fontSize: 10 }} /> : <CaretDownOutlined style={{ fontSize: 10 }} />}

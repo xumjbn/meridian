@@ -651,7 +651,7 @@ export const ScanTasks: React.FC = () => {
             
             {selectedLog && (
               <div style={{ marginTop: 12, fontSize: 13, background: '#f8fafc', padding: '12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                <span style={{ fontWeight: 600, color: '#3b82f6' }}>{text('scan.log.summary')} </span>
+                <span style={{ fontWeight: 500, color: '#3b82f6' }}>{text('scan.log.summary')} </span>
                 <span style={{ color: '#334155' }}>{selectedLog.summary}</span>
               </div>
             )}

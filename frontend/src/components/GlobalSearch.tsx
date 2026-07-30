@@ -23,7 +23,7 @@ interface QuickLink {
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: 11,
-  fontWeight: 600,
+  fontWeight: 500,
   letterSpacing: '0.4px',
   color: palette.textMute,
   textTransform: 'uppercase',

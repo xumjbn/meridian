@@ -99,7 +99,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess }) => {
       >
         {/* 左：品牌与能力点（窄屏自动折行到上方） */}
         <div style={{ maxWidth: 420, minWidth: 300 }}>
-          <h1 style={{ margin: 0, fontSize: 30, fontWeight: 600, color: palette.text, letterSpacing: '-0.5px' }}>
+          <h1 style={{ margin: 0, fontSize: 30, fontWeight: 500, color: palette.text, letterSpacing: '-0.5px' }}>
             {text('brand.tagline')}
           </h1>
           <p style={{ margin: '12px 0 30px', fontSize: 14, color: palette.textSub, lineHeight: 1.7 }}>
