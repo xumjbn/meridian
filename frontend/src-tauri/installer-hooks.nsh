@@ -26,14 +26,50 @@
   ; Keep this line even after the rename settles; a stale name costs nothing.
   nsExec::Exec 'cmd.exe /c taskkill /F /T /IM lynx-backend.exe'
   Pop $0
-  ; Give Windows a moment to release the file handle before we copy over it.
-  Sleep 500
+
+  ; The MAIN binary was renamed too: meridian-desktop.exe -> lynx-desktop.exe ->
+  ; wjw-desktop.exe. Tauri's own "is the app running?" check only knows the
+  ; CURRENT name, so when a user is running the old build the installer neither
+  ; warns them nor manages to replace the locked files.
+  ;
+  ; Observed on this machine 2026-07-30: install dir was AppData\Local\wjw but
+  ; still held lynx-desktop.exe / lynx-backend.exe from the 1.0.0 build, and the
+  ; Start Menu shortcut still pointed at lynx-desktop.exe -- so every launch ran
+  ; the OLD app (console-subsystem sidecar => the cmd window; stale identifier =>
+  ; "backend exited"), and upgrade installs failed because that old process held
+  ; the files. Killing only the sidecar was not enough.
+  nsExec::Exec 'cmd.exe /c taskkill /F /T /IM lynx-desktop.exe'
+  Pop $0
+  nsExec::Exec 'cmd.exe /c taskkill /F /T /IM meridian-desktop.exe'
+  Pop $0
+  ; Give Windows a moment to release the file handles before we copy over them.
+  Sleep 800
+!macroend
+
+; Pre-rename leftovers must be deleted, not just stopped. Tauri's uninstaller
+; only knows the file list of the build that produced it, so binaries carrying an
+; older name survive every upgrade and sit in the install dir forever. A stale
+; lynx-desktop.exe is worse than clutter: any old shortcut still pointing at it
+; silently launches the previous version.
+!macro wjwRemoveLegacyBinaries
+  Delete "$INSTDIR\lynx-desktop.exe"
+  Delete "$INSTDIR\lynx-backend.exe"
+  Delete "$INSTDIR\meridian-desktop.exe"
+  Delete "$INSTDIR\meridian-backend.exe"
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro wjwKillSidecar
 !macroend
 
+!macro NSIS_HOOK_POSTINSTALL
+  !insertmacro wjwRemoveLegacyBinaries
+!macroend
+
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro wjwKillSidecar
+!macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  !insertmacro wjwRemoveLegacyBinaries
 !macroend
