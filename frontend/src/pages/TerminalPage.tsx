@@ -2086,19 +2086,27 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     if (assetId <= 0 || uploadFiles.length === 0) return;
     setUploading(true);
     let ok = 0;
-    let fail = 0;
+    const failed: string[] = [];
+    let firstErr = '';
     for (const f of uploadFiles) {
       try {
         await sftpUpload(assetId, uploadDir.trim() || '.', f);
         ok++;
-      } catch {
-        fail++;
+      } catch (e: any) {
+        // 原来这里是 catch { fail++ }，只累计个数。用户看到「失败 2」但完全不知道
+        // 是权限不够、目录不存在还是磁盘满——这种提示等于没提示。
+        failed.push(f.name);
+        if (!firstErr) firstErr = e?.message || '';
       }
     }
     setUploading(false);
     setUploadFiles([]);
-    if (fail === 0) message.success(`已上传 ${ok} 个文件到 ${uploadDir.trim() || '~'}`);
-    else message.warning(`上传完成：成功 ${ok}，失败 ${fail}`);
+    if (failed.length === 0) {
+      message.success(`已上传 ${ok} 个文件到 ${uploadDir.trim() || '~'}`);
+    } else {
+      const names = failed.slice(0, 3).join('、') + (failed.length > 3 ? ` 等 ${failed.length} 个` : '');
+      message.error(`上传失败：${names}${firstErr ? ` —— ${firstErr}` : ''}${ok ? `（另有 ${ok} 个成功）` : ''}`, 6);
+    }
   };
 
   // 用户手动重连：重置退避计数与开关，再走重连
@@ -2297,7 +2305,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           e.preventDefault();
           if (assetId <= 0) { message.warning('本地终端不支持拖拽上传'); return; }
           setUploadFiles(Array.from(e.dataTransfer.files));
-          setUploadDir('.');
+          // 默认落在终端当前所在目录，而不是 '.'（= SSH 家目录）。
+          // 用户在 /opt/app 里拖文件进来，期望就是传到 /opt/app；
+          // 传到 ~ 完全不符合直觉，而 cwd 我们本来就在跟踪（SFTP 面板用的同一个）。
+          setUploadDir(cwd || '.');
           return;
         }
         const raw = e.dataTransfer.getData('application/x-wjw-asset') || e.dataTransfer.getData('text/plain');
