@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>wjw 字体/渲染探测</title>
+<!--
+  用途：在无法远程登录目标机器时，拿到「字体实际落到哪个字族、有多宽多重」的
+  客观数据，而不是靠肉眼描述。用浏览器直接打开本文件即可，无需服务器、无需依赖。
+
+  背景：wjw 的中文在 macOS 落到 PingFang SC、在 Windows 落到 Microsoft YaHei，
+  两者宽度与笔画重量差别明显，导致「同一界面在 Windows 上更宽更厚重」。
+  Windows 侧已量过全部候选字体；macOS 侧缺数据，本页就是为了补上它。
+
+  测量方法：把同一段界面文案画进 canvas，数不透明像素（= 墨量，代表笔画厚重
+  程度），并用 measureText 取宽度。不依赖截图、不依赖压缩率。
+  「是否安装」的判定：给对照组换两个不同的 generic（serif / cursive）各比一次，
+  两次都同宽才判为未安装——只用一个 generic 会把装了的字体误报成没装。
+-->
+<style>
+  body { margin: 0; padding: 20px; background: #0b1020; color: #e2e8f0;
+         font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  p.hint { color: #94a3b8; margin: 0 0 16px; font-size: 12px; }
+  table { border-collapse: collapse; margin-bottom: 22px; }
+  th, td { padding: 3px 12px 3px 0; text-align: left; font-size: 12px; white-space: nowrap; }
+  th { color: #869099; font-weight: 400; border-bottom: 1px solid #26304a; }
+  td.n { font-variant-numeric: tabular-nums; }
+  .yes { color: #4ade80; } .no { color: #64748b; }
+  pre { background: #141b2d; border: 1px solid #26304a; border-radius: 6px;
+        padding: 12px; overflow-x: auto; font-size: 12px; color: #cbd5e1; }
+  .sample { font-size: 13px; margin: 2px 0; }
+</style>
+
+<h1>wjw 字体 / 渲染探测</h1>
+<p class="hint">把最下方「复制这段给我」的整块文本发回即可。页面不联网、不上传任何内容。</p>
+
+<div id="out"></div>
+<h1 style="font-size:13px;margin:18px 0 6px">复制这段给我</h1>
+<pre id="dump"></pre>
+
+<script>
+(function () {
+  const SAMPLE = '搜索资产 / 页面  本地终端  纳管资产 在线 离线 未探测  显示名称 管理 IP';
+  const MONO   = 'Counting objects: 100% (54/54), done. iIlL10Oo';
+
+  const cv = document.createElement('canvas');
+  cv.width = 1400; cv.height = 60;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+  const widthOf = (spec, text) => { ctx.font = spec; return ctx.measureText(text).width; };
+  const installed = (name, text) => {
+    const d1 = Math.abs(widthOf(`13px "${name}", serif`, text) - widthOf('13px serif', text));
+    const d2 = Math.abs(widthOf(`13px "${name}", cursive`, text) - widthOf('13px cursive', text));
+    return d1 > 0.5 || d2 > 0.5;
+  };
+  const ink = (spec, text) => {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.font = spec; ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, 2, 30);
+    const w = Math.min(Math.ceil(ctx.measureText(text).width) + 6, cv.width);
+    const d = ctx.getImageData(0, 0, w, cv.height).data;
+    let px = 0, a = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 8) { px++; a += d[i]; }
+    return { w: +ctx.measureText(text).width.toFixed(1), px, a };
+  };
+
+  const UI_CANDS = ['PingFang SC', 'Helvetica Neue', 'Hiragino Sans GB', 'Songti SC',
+                    'Heiti SC', 'STHeiti', 'Microsoft YaHei', 'DengXian Light',
+                    'Noto Sans SC', 'Source Han Sans SC', 'Segoe UI'];
+  const MONO_CANDS = ['Menlo', 'Monaco', 'SF Mono', 'Fira Code', 'Courier New',
+                      'Consolas', 'JetBrains Mono', 'Andale Mono'];
+
+  const CHAIN_UI = `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "DengXian Light", "Microsoft YaHei", Arial, sans-serif`;
+  const CHAIN_MONO = `"Fira Code", Menlo, Monaco, Consolas, "Courier New", monospace`;
+
+  const lines = [];
+  const say = (s) => lines.push(s);
+
+  say('platform : ' + navigator.platform);
+  say('ua       : ' + navigator.userAgent);
+  say('dpr      : ' + window.devicePixelRatio + '   window: ' + window.innerWidth + 'x' + window.innerHeight);
+  say('');
+
+  say('[UI 字体候选是否安装]');
+  for (const f of UI_CANDS) say('  ' + (installed(f, SAMPLE) ? '有' : '无') + '  ' + f);
+  say('');
+  say('[等宽字体候选是否安装]');
+  for (const f of MONO_CANDS) say('  ' + (installed(f, MONO) ? '有' : '无') + '  ' + f);
+  say('');
+
+  say('[界面文案 13px：宽度 / 墨迹像素 / 墨量]  ' + JSON.stringify(SAMPLE));
+  const rowsUI = [];
+  for (const w of [400, 500, 600]) {
+    const m = ink(`${w} 13px ${CHAIN_UI}`, SAMPLE);
+    rowsUI.push({ name: `当前 UI 字体链 w${w}`, ...m });
+    say(`  当前链 w${w}   宽 ${m.w}   墨迹 ${m.px}   墨量 ${m.a}`);
+  }
+  for (const f of UI_CANDS) {
+    if (!installed(f, SAMPLE)) continue;
+    const m = ink(`400 13px "${f}"`, SAMPLE);
+    rowsUI.push({ name: f + ' w400', ...m });
+    say(`  ${f} w400`.padEnd(30) + `宽 ${m.w}   墨迹 ${m.px}   墨量 ${m.a}`);
+  }
+  say('');
+
+  say('[等宽文案 14px]  ' + JSON.stringify(MONO));
+  const rowsMono = [];
+  for (const [label, spec] of [['当前终端字体链 normal', `14px ${CHAIN_MONO}`],
+                               ['当前终端字体链 bold', `bold 14px ${CHAIN_MONO}`]]) {
+    const m = ink(spec, MONO);
+    rowsMono.push({ name: label, ...m });
+    say(`  ${label}`.padEnd(30) + `宽 ${m.w}   墨迹 ${m.px}   墨量 ${m.a}`);
+  }
+  for (const f of MONO_CANDS) {
+    if (!installed(f, MONO)) continue;
+    const n = ink(`14px "${f}"`, MONO), b = ink(`bold 14px "${f}"`, MONO);
+    rowsMono.push({ name: f, ...n });
+    const inc = n.px ? ((b.px / n.px - 1) * 100).toFixed(1) + '%' : '-';
+    say(`  ${f}`.padEnd(30) + `宽 ${n.w}   墨迹 ${n.px}   加粗增幅 ${inc}`);
+  }
+
+  document.getElementById('dump').textContent = lines.join('\n');
+
+  // 页面上再放一份可视对比，方便肉眼确认数字是否说得通
+  const out = document.getElementById('out');
+  const mk = (title, rows) => {
+    const t = document.createElement('table');
+    t.innerHTML = '<tr><th>' + title + '</th><th>宽度</th><th>墨迹像素</th><th>墨量</th></tr>' +
+      rows.map((r) => `<tr><td>${r.name}</td><td class="n">${r.w}</td><td class="n">${r.px}</td><td class="n">${r.a}</td></tr>`).join('');
+    out.appendChild(t);
+  };
+  mk('UI 文案 13px', rowsUI);
+  mk('等宽文案 14px', rowsMono);
+
+  const vis = document.createElement('div');
+  vis.innerHTML = '<h1 style="font-size:13px;margin:0 0 6px">可视对比（当前字体链）</h1>' +
+    [400, 500, 600].map((w) =>
+      `<div class="sample" style="font-family:${CHAIN_UI};font-weight:${w}">w${w} — ${SAMPLE}</div>`).join('') +
+    `<div class="sample" style="font-family:${CHAIN_MONO}">mono — ${MONO}</div>` +
+    `<div class="sample" style="font-family:${CHAIN_MONO};font-weight:bold">mono bold — ${MONO}</div>`;
+  out.appendChild(vis);
+})();
+</script>
+</html>
