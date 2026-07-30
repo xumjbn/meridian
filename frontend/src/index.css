@@ -17,13 +17,11 @@
   background-color: var(--wjw-bg);
 }
 
-/* 灰度抗锯齿只给非 Windows 平台。
-   这两行原来写在 :root 上无条件生效，是从 macOS 那套 CSS 抄来的：
-   macOS 上不加会显得过粗，加了才是常规观感。
-   但在 Windows 的 Chromium/WebView2 上它会强制灰度抗锯齿、
-   关掉 ClearType 次像素渲染，字变细发虚——就是「显示不细腻」的一部分。
-   平台标记由 main.tsx 在渲染前打到 <html data-plat> 上。 */
-:root:not([data-plat='win']) {
+/* 灰度抗锯齿。只对 macOS 有效，Windows 的 Chromium 直接忽略这两个属性——
+   实测：同一段文字加与不加，截图逐像素比对完全相同（彩色边缘占比都是
+   99.9%，说明 ClearType 一直是开着的，压根没被它关掉）。
+   所以别再为「Windows 上字发虚」来改这里，方向是错的。 */
+:root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

@@ -108,11 +108,11 @@ const filterSgrParams = (ps: string[]): string => {
   const out: string[] = [];
   for (let i = 0; i < ps.length; i++) {
     const n = Number(ps[i] || '0');
-    // 反显（SGR 7）在壁纸模式下必须关掉：反显是拿背景色当前景色画字，
-    // 而壁纸开着时 theme.background 的 alpha 是 0 —— 画出来是全透明，
-    // 表现为「这段字直接没了」。vim 状态行、bash 的 Ctrl+R 反查提示、
-    // less 的搜索高亮全中招。降级成普通显示，丢的是高亮，保的是能看见。
-    if (n === 7) { out.push('27'); continue; }
+    // 注意：不要动反显（SGR 7）。
+    // 曾按「反显拿背景色当前景色、而壁纸模式下背景 alpha=0，所以字会全透明」
+    // 把它降级成 27。实测（xterm 6.1 + WebGL，壁纸在下层）否掉了这个推断：
+    // 反显行照样有字，且亮像素比不透明方案还多——反显呈现为「亮底 + 字挖空」，
+    // 本来就看得见。降级只会白白拿掉一个正常工作的高亮。
     if (n === 40) { out.push('49'); continue; }          // ANSI 黑底
     if (n === 48) {
       const mode = Number(ps[i + 1]);
