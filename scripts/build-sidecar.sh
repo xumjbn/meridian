@@ -3,7 +3,21 @@
 # 用法：bash scripts/build-sidecar.sh
 set -euo pipefail
 
-triple="$(rustc -Vv | sed -n 's/^host: //p')"
+# 目标三元组优先问 rustc。但不能只靠它：某些 shell（后台任务、CI 的精简
+# 环境）PATH 里没有 rustc，脚本会在这一行 set -e 退出，而调用方若用 ; 串起
+# tauri build，就会拿着上一次的旧 sidecar 继续打包——包能出、版本号也对，
+# 唯独后端是旧的。这种「静默用旧二进制打包」比直接失败难查得多，
+# 所以这里给出兜底，并把实际用的三元组打出来。
+if triple="$(rustc -Vv 2>/dev/null | sed -n 's/^host: //p')" && [ -n "$triple" ]; then
+  echo "目标三元组（rustc）: $triple"
+else
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) triple="x86_64-pc-windows-msvc" ;;
+    Darwin) [ "$(uname -m)" = "arm64" ] && triple="aarch64-apple-darwin" || triple="x86_64-apple-darwin" ;;
+    *)      triple="x86_64-unknown-linux-gnu" ;;
+  esac
+  echo "警告：找不到 rustc，按当前系统推断三元组: $triple"
+fi
 ext=""
 case "$triple" in *windows*) ext=".exe" ;; esac
 
