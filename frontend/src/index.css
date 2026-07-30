@@ -216,7 +216,14 @@ body {
 .wjw-wp {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  /* 铺在终端容器（z-index:1）之上。放下层的话，远端程序刷的背景色会把壁纸
+     整片挡掉，壁纸上横着一条条实心黑块——挡不挡得住取决于对端输出什么，
+     我们控制不了。放上层就与终端画什么无关。 */
+  z-index: 4;
+  /* lighten 只提亮不压暗：终端文字比壁纸笔画亮，所以字保持原样不被糊；
+     暗处（含程序刷的黑底）才被壁纸点亮。
+     没有它的话这层会直接盖在文字上，整屏字都被蒙一层。 */
+  mix-blend-mode: lighten;
   overflow: hidden;
   border-radius: 8px;
   pointer-events: none; /* 选中 / 右键 / 点击必须照常落到终端上 */

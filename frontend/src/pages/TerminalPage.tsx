@@ -87,79 +87,19 @@ const termThemes: { label: string; value: string; theme: TermTheme }[] = [
 ];
 const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value === v) || termThemes[0]).theme;
 
-/** 壁纸开着时把 xterm 的底色换成全透明（其余色位不动），好让下层背景透出来。
- *  参数是当前选中的那一套（空串=关闭） */
-const withWallpaperBg = (t: TermTheme, on: WallpaperId): TermTheme =>
-  (on ? { ...t, background: 'rgba(0,0,0,0)' } : { ...t });
-
-// ── 壁纸模式：把「黑底」摘掉 ────────────────────────────────────────────
-// 把 xterm 的 background 设成透明只解决了「默认背景」那部分格子。程序自己
-// 用 SGR 显式刷的背景色（claude / vim / tmux 的状态栏都这么干）依然是实心的，
-// 于是壁纸上会横着一条条黑块，只有没被写过的空隙能透出来——就是截图里那样。
-//
-// 这里在写进终端之前把「黑或接近黑」的背景参数换成 49（默认背景），
-// 落回透明。非黑的背景（选中高亮、告警红底之类）保持原样，不然选中就看不出来了。
-// 只在壁纸开着时启用；关掉壁纸时数据一个字节都不动，走原来的字节直写路径。
-const DARK_BG_MAX = 40;                                  // RGB 三通道都 ≤ 这个值算黑
-const DARK_256 = new Set([0, 16, 232, 233, 234, 235]);   // 256 色里的黑/近黑档
-
-/** 处理一串 SGR 参数，把黑背景换成 49；返回新的参数串 */
-const filterSgrParams = (ps: string[]): string => {
-  const out: string[] = [];
-  for (let i = 0; i < ps.length; i++) {
-    const n = Number(ps[i] || '0');
-    // 注意：不要动反显（SGR 7）。
-    // 曾按「反显拿背景色当前景色、而壁纸模式下背景 alpha=0，所以字会全透明」
-    // 把它降级成 27。实测（xterm 6.1 + WebGL，壁纸在下层）否掉了这个推断：
-    // 反显行照样有字，且亮像素比不透明方案还多——反显呈现为「亮底 + 字挖空」，
-    // 本来就看得见。降级只会白白拿掉一个正常工作的高亮。
-    if (n === 40) { out.push('49'); continue; }          // ANSI 黑底
-    if (n === 48) {
-      const mode = Number(ps[i + 1]);
-      if (mode === 5) {                                   // 48;5;n
-        const idx = Number(ps[i + 2]);
-        out.push(DARK_256.has(idx) ? '49' : `48;5;${idx}`);
-        i += 2;
-        continue;
-      }
-      if (mode === 2 && ps.length > i + 4) {               // 48;2;r;g;b
-        const r = Number(ps[i + 2]), g = Number(ps[i + 3]), b = Number(ps[i + 4]);
-        const bad = [r, g, b].some((x) => !Number.isFinite(x));
-        // 参数残缺就原样放回，不要拿 NaN 拼出一条更坏的序列
-        out.push(!bad && Math.max(r, g, b) <= DARK_BG_MAX ? '49' : `48;2;${ps[i + 2]};${ps[i + 3]};${ps[i + 4]}`);
-        i += 4;
-        continue;
-      }
-      // 未知子模式：原样放回，别自作聪明吞掉
-      out.push(ps[i]);
-      continue;
-    }
-    out.push(ps[i]);
-  }
-  return out.join(';');
-};
-
-/** 建一个带状态的过滤器：WebSocket 分片可能正好把转义序列切成两半，
- *  结尾没闭合的 CSI 要留到下一片一起处理，否则那条序列会漏网。 */
-const makeDarkBgFilter = () => {
-  let pending = '';
-  return (chunk: string): string => {
-    const s = pending + chunk;
-    pending = '';
-    // 结尾是半截 ESC / CSI（还没等到终止字母）就先扣下
-    // 大头是纯文本块（cat 大文件、编译输出），里面一个转义符都没有。
-    // 先探一下有没有 ESC，没有就直接返回，省掉整趟正则扫描与拼串。
-    if (s.indexOf('\x1b') === -1) return s;
-    const tail = s.match(/\x1b(\[[0-9;]*)?$/);
-    const body = tail ? s.slice(0, s.length - tail[0].length) : s;
-    if (tail) pending = tail[0];
-    return body.replace(/\x1b\[([0-9;]*)m/g, (all, params: string) => {
-      const next = filterSgrParams(params.split(';'));
-      // 没改动就把原串还回去，不白造一个一样的新字符串
-      return next === params ? all : `\x1b[${next}m`;
-    });
-  };
-};
+/**
+ * 主题原样返回。
+ *
+ * 这里曾经在壁纸开着时把 background 换成 rgba(0,0,0,0)，让壁纸从终端画布下面
+ * 透出来。那条路走不通：透出不透出取决于远端程序刷不刷背景色，claude / vim /
+ * tmux 的状态栏都会刷，一刷就把壁纸整片挡成黑块，我们控制不了对端输出什么。
+ * 现在壁纸铺在终端之上（.wjw-wp 的 z-index + mix-blend-mode:lighten），
+ * 不再依赖终端透明，底色恒为主题色。
+ *
+ * 函数保留是因为 allowTransparency 仍然恒开（它无法在 open() 之后改），
+ * 主题仍需走同一个入口，将来若要恢复「透明底」只改这一处即可。
+ */
+const withWallpaperBg = (t: TermTheme, _on: WallpaperId): TermTheme => ({ ...t });
 
 // 复制/粘贴统一走 ../clipboard：桌面端原生剪贴板优先，Web 端 execCommand + API 兜底。
 const writeClipboard = (text: string) => copyText(text);
@@ -1128,8 +1068,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   useEffect(() => { termThemeRef.current = termTheme; }, [termTheme]);
 
   // wjw 专属背景（口令 wjw-bg 开 / wjw-bg-hide 关）。
-  // 背景层铺在 xterm 画布下面，所以开着的时候 xterm 自己画的底色必须是透明的，
-  // 否则那层不透明的 background 会把壁纸整个盖住（实测：只改容器 background 没有用）。
+  // 背景层铺在 xterm 画布「之上」（.wjw-wp: z-index 4 + mix-blend-mode:lighten）。
+  // 早先是铺在下面、靠把 xterm 底色设成透明来透出，但透不透得出取决于远端程序
+  // 刷不刷背景色——claude / vim / tmux 的状态栏都会刷，一刷壁纸就被挡成实心黑块。
+  // 改到上层后与对端输出无关，这个变量现在只用来决定「画不画壁纸」。
   const wallpaperOn = useWallpaper();
   const wallpaperRef = useRef(wallpaperOn);
   useEffect(() => { wallpaperRef.current = wallpaperOn; }, [wallpaperOn]);
@@ -1894,18 +1836,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     let gbkDecoder: TextDecoder | null = null;
     try { gbkDecoder = new TextDecoder('gb18030'); } catch { gbkDecoder = null; }
 
-    // 壁纸模式下要摘掉程序刷的黑底，就得先看到文本。UTF-8 也上流式解码器，
-    // stream:true 会把跨帧的半个字符留到下一片，不会因为分片切在多字节中间而乱码。
-    let utf8Decoder: TextDecoder | null = null;
-    try { utf8Decoder = new TextDecoder('utf-8'); } catch { utf8Decoder = null; }
-    const darkBg = makeDarkBgFilter();
-
-    // 统一出口：壁纸开着才过滤，关着时一个字节都不动，走原来的路径。
+    // 统一出口：写入终端 + 记进重连回放缓冲。
+    // 这里曾经在壁纸模式下改写 SGR、把黑背景摘成默认背景，还为此把 UTF-8 也
+    // 拉去做流式解码。壁纸改到上层后这条路整个没有必要了——不管对端刷什么
+    // 背景色都挡不住上层的壁纸，字节原样直写即可。
     const writeOut = (chunk: string | Uint8Array) => {
-      if (typeof chunk !== 'string') { term.write(chunk); appendBuf(chunk); return; }
-      const s = wallpaperRef.current ? darkBg(chunk) : chunk;
-      term.write(s);
-      appendBuf(s);
+      term.write(chunk as string);
+      appendBuf(chunk);
     };
 
     // 累积远端输出到历史缓冲（上限 512KB，超出从头丢弃），供重连回放
@@ -1968,11 +1905,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         if (termEncodingRef.current === 'gbk' && gbkDecoder) {
           // GBK 主机：先解码为字符串再写入（xterm 默认按 UTF-8 解析字节，会乱码）
           writeOut(gbkDecoder.decode(bytes, { stream: true }));
-        } else if (wallpaperRef.current && utf8Decoder) {
-          // 壁纸开着：要改写 SGR 就得先解码成文本
-          writeOut(utf8Decoder.decode(bytes, { stream: true }));
         } else {
-          // 没开壁纸：维持原来的字节直写，不引入任何解码开销与行为变化
+          // UTF-8：字节直写，让 xterm 自己解析，不额外解码一遍
           writeOut(bytes);
         }
       }
@@ -2617,7 +2551,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </div>
         )}
 
-        {/* wjw 专属背景：必须排在终端容器之前 + z-index 更低，才压得住在画布下层 */}
+        {/* wjw 专属背景：铺在终端「之上」。
+            放下层时，程序自己刷的背景色（claude / vim / tmux 的状态栏都会刷）
+            会把壁纸整片挡掉，壁纸上就横着一条条实心黑块——只有从没被写过的
+            空隙能透出来。挡不挡得住取决于远端程序输出什么，我们控制不了。
+            放上层就与终端画什么无关了：混合模式取 lighten，只提亮不压暗，
+            终端文字本身比壁纸笔画亮，所以字保持原样，暗处才被壁纸点亮。 */}
         {wallpaperOn && <TerminalWallpaper variant={wallpaperOn} />}
 
         <div
@@ -2630,10 +2569,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
             padding: '4px 6px 6px',
             boxSizing: 'border-box',
             overflow: 'hidden',
-            // 壁纸开着时容器也要透出去；底色改由外层 wrapper 提供
-            background: wallpaperOn ? 'transparent' : termTheme.background,
-            // 显式定位 + z-index：终端容器本身是静态元素，
-            // 而壁纸是绝对定位的，不写死层级它会浮到终端文字上面
+            // 底色恒为主题色，不再随壁纸切成透明。
+            // 壁纸现在铺在终端「之上」（见 .wjw-wp 的 z-index 与 mix-blend-mode），
+            // 不依赖终端透出来，所以这里不需要、也不应该透明。
+            background: termTheme.background,
             position: 'relative',
             zIndex: 1,
           }}
