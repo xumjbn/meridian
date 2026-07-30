@@ -2458,7 +2458,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       {filesOpen && !isLocal && sftpDock === 'left' && (
         <SftpPanel assetId={assetId} cwd={cwd} hasCred={!!asset?.credential_id} onClose={() => setFilesOpen(false)} />
       )}
-      {/* 壁纸开着时 xterm 与容器都是透明的，底色改由这层兜住 */}
+      {/* 终端所在层。壁纸是这一层的绝对定位子元素（z-index 4），只覆盖终端，
+          不会盖到左侧的监控面板与 SFTP 面板——它们是这个 div 的兄弟节点。
+          闲置占位卡 z-5 / 拖拽提示 z-12 / 搜索框 z-16 都在壁纸之上，符合预期。 */}
       <div style={{ flexGrow: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden', background: termTheme.background }}>
         {/* Placeholder: 空白未连接状态卡片 */}
         {status === 'idle' && (

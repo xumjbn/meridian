@@ -53,6 +53,18 @@ const joinPath = (dir: string, name: string): string => {
   return dir.replace(/\/+$/, '') + '/' + name;
 };
 
+/**
+ * 校验用户输入的文件名。
+ * 必须挡住 '/'：输入框语义是「名字」，但它直接拼进远端路径——
+ * 在「重命名」里输入 ../../x 就变成把文件移到别的目录，界面上完全看不出来。
+ */
+const badName = (s: string): string => {
+  if (!s) return '名字不能为空';
+  if (s.includes('/')) return '名字里不能带 /';
+  if (s === '.' || s === '..') return '这个名字不合法';
+  return '';
+};
+
 export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose, initialPath }) => {
   const [path, setPath] = useState('');
   const [entries, setEntries] = useState<SftpEntry[]>([]);
@@ -124,9 +136,12 @@ export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose, initialPath 
   };
 
   const doMkdir = async () => {
-    if (!asset?.id || !mkdirName.trim()) return;
+    if (!asset?.id) return;
+    const name = mkdirName.trim();
+    const bad = badName(name);
+    if (bad) { message.warning(bad); return; }
     try {
-      await sftpMkdir(asset.id, joinPath(path, mkdirName.trim()));
+      await sftpMkdir(asset.id, joinPath(path, name));
       message.success('目录已创建');
       setMkdirOpen(false);
       setMkdirName('');
@@ -137,9 +152,13 @@ export const SftpDrawer: React.FC<Props> = ({ asset, open, onClose, initialPath 
   };
 
   const doRename = async () => {
-    if (!asset?.id || !renameTarget || !renameName.trim()) return;
+    if (!asset?.id || !renameTarget) return;
+    const name = renameName.trim();
+    const bad = badName(name);
+    if (bad) { message.warning(bad); return; }
+    if (name === renameTarget.name) { setRenameTarget(null); return; }
     try {
-      await sftpRename(asset.id, renameTarget.path, joinPath(parentOf(renameTarget.path), renameName.trim()));
+      await sftpRename(asset.id, renameTarget.path, joinPath(parentOf(renameTarget.path), name));
       message.success('已重命名');
       setRenameTarget(null);
       setRenameName('');

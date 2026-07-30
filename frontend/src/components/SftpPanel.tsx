@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dropdown, Input, Tooltip, Upload, message } from 'antd';
+import { Dropdown, Input, Modal, Tooltip, Upload, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   FolderFilled,
@@ -83,6 +83,25 @@ const parentOf = (p: string): string => {
   const t = p.replace(/\/+$/, '');
   const idx = t.lastIndexOf('/');
   return idx <= 0 ? '/' : t.slice(0, idx);
+};
+
+/** 拼路径。别手写 dir + '/' + name：dir 是根目录 '/' 时会拼出 '//name'。 */
+const joinPath = (dir: string, name: string): string => {
+  if (!dir || dir === '/') return '/' + name;
+  return dir.replace(/\/+$/, '') + '/' + name;
+};
+
+/**
+ * 校验用户输入的文件名。
+ * 必须挡住 '/'：这里的输入框语义是「名字」，可它是直接拼进远端路径的——
+ * 输入 ../../x 就变成把文件移到别的目录去，输入框上却写着「重命名」。
+ * 同时挡掉 . 与 ..，它们拼出来指向目录自身或父目录。
+ */
+const badName = (s: string): string => {
+  if (!s) return '名字不能为空';
+  if (s.includes('/')) return '名字里不能带 /';
+  if (s === '.' || s === '..') return '这个名字不合法';
+  return '';
 };
 
 export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) => {
@@ -202,10 +221,32 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
     }
   };
 
+  /**
+   * 删远端文件必须先确认。
+   * 这个面板原来是右键菜单点「删除」直接就删——操作的是生产机上的文件，
+   * 手滑一次没有任何挽回余地。旧的 SFTP 抽屉一直有 Popconfirm（还区分
+   * 「目录及其全部内容」），这个新面板漏了，等于同一个动作两种安全等级。
+   * Dropdown 菜单项里塞不进 Popconfirm，所以用 Modal.confirm。
+   */
+  const confirmRemove = (r: SftpEntry) => {
+    Modal.confirm({
+      title: r.is_dir ? `删除目录「${r.name}」及其全部内容？` : `删除文件「${r.name}」？`,
+      content: <span style={{ fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>{r.path}</span>,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => doRemove(r),
+    });
+  };
+
   const doRename = async () => {
-    if (!renaming || !renameVal.trim()) return;
+    if (!renaming) return;
+    const name = renameVal.trim();
+    const bad = badName(name);
+    if (bad) { message.warning(bad); return; }
+    if (name === renaming.name) { setRenaming(null); return; }
     try {
-      await sftpRename(assetId, renaming.path, parentOf(renaming.path) + '/' + renameVal.trim());
+      await sftpRename(assetId, renaming.path, joinPath(parentOf(renaming.path), name));
       setRenaming(null);
       load(path);
     } catch (e: any) {
@@ -214,9 +255,11 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
   };
 
   const doMkdir = async () => {
-    if (!mkdirVal.trim()) return;
+    const name = mkdirVal.trim();
+    const bad = badName(name);
+    if (bad) { message.warning(bad); return; }
     try {
-      await sftpMkdir(assetId, (path === '/' ? '' : path) + '/' + mkdirVal.trim());
+      await sftpMkdir(assetId, joinPath(path, name));
       setMkdirOn(false);
       setMkdirVal('');
       load(path);
@@ -234,7 +277,7 @@ export const SftpPanel: React.FC<Props> = ({ assetId, cwd, hasCred, onClose }) =
   const onRowMenu = (key: string, r: SftpEntry) => {
     if (key === 'dl') download(r);
     else if (key === 'rn') { setRenaming(r); setRenameVal(r.name); }
-    else if (key === 'rm') doRemove(r);
+    else if (key === 'rm') confirmRemove(r);
   };
 
   const iconBtn: React.CSSProperties = {
