@@ -33,7 +33,9 @@ import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
 const fontFamilies = [
-  { label: 'Fira Code', value: 'Fira Code, Menlo, Monaco, Courier New, monospace' },
+  // 与默认值保持一致：Consolas 插在 Courier New 之前，否则 Windows 上没装
+  // Fira Code 的机器会落到 Courier New（见下方默认值处的实测数据）。
+  { label: 'Fira Code', value: 'Fira Code, Menlo, Monaco, Consolas, Courier New, monospace' },
   { label: 'Source Code Pro', value: '"Source Code Pro", Consolas, Monaco, monospace' },
   { label: 'JetBrains Mono', value: '"JetBrains Mono", Consolas, Monaco, monospace' },
   { label: 'Consolas', value: 'Consolas, Monaco, monospace' },
@@ -96,8 +98,9 @@ const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value =
  * 现在壁纸铺在终端之上（.wjw-wp 的 z-index + mix-blend-mode:lighten），
  * 不再依赖终端透明，底色恒为主题色。
  *
- * 函数保留是因为 allowTransparency 仍然恒开（它无法在 open() 之后改），
- * 主题仍需走同一个入口，将来若要恢复「透明底」只改这一处即可。
+ * 函数保留只为留一个统一入口：将来若要恢复「透明底」，改这一处即可，
+ * 但同时必须把 allowTransparency 改回 true —— 它无法在 open() 之后修改，
+ * 两者不成对改会得到「底色透明、渲染器仍按不透明合成」的错状态。
  */
 const withWallpaperBg = (t: TermTheme, _on: WallpaperId): TermTheme => ({ ...t });
 
@@ -341,7 +344,15 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
     return saved ? parseInt(saved, 10) : 14;
   });
   const [fontFamily, setFontFamily] = useState<string>(() => {
-    return localStorage.getItem('term_font_family') || 'Fira Code, Menlo, Monaco, Courier New, monospace';
+    // Consolas 必须排在 Courier New 之前。
+    // Fira Code 通常没装，Menlo / Monaco 只存在于 macOS——Windows 上这条链原来
+    // 一路落到 Courier New（打字机衬线体），而 Windows 该用的是 Consolas。
+    // 实测（canvas 数像素，同一行文本 14px）：
+    //   Courier New  normal 墨迹 1259，bold 增幅 +22.3%（粗体明显糊）
+    //   Consolas     normal 墨迹 1526，bold 增幅 +10.4%
+    // macOS 不受影响：Menlo 仍排在前面，先命中。
+    return localStorage.getItem('term_font_family')
+      || 'Fira Code, Menlo, Monaco, Consolas, Courier New, monospace';
   });
   // 字号变化持久化（Select 选择 / Ctrl+滚轮 / Ctrl±缩放共用）
   useEffect(() => { localStorage.setItem('term_font_size', String(fontSize)); }, [fontSize]);
@@ -1680,14 +1691,17 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       fontSize: fontSize,
       fontFamily: fontFamily,
       theme: withWallpaperBg(termThemeRef.current, wallpaperRef.current),
-      // 必须恒开，别改成「按当前壁纸状态决定」。
-      // xterm 的 ITerminalOptions 明写着：allowTransparency must be set before
-      // Terminal.open() and can't be changed later without executing it again。
-      // 一旦按创建时的状态决定，壁纸关着时建的终端之后敲 wjw-bg 就会变成
-      // 「透明底设了、渲染器仍按不透明合成」——壁纸压根不显示。
-      // 代价是开启透明会让文字略微不如不透明时锐利（官方也这么写），
-      // 这是为「壁纸随时可开关」付的固定成本，要省只能重建终端，会断会话。
-      allowTransparency: true,
+      // 关掉透明。
+      //
+      // 曾经必须恒开：那时壁纸铺在终端画布「下面」，靠把 theme.background 设成
+      // 透明来透出，而 allowTransparency 无法在 open() 之后修改，所以只能一直开着。
+      // 壁纸改到终端「之上」后（.wjw-wp 的 z-index + mix-blend-mode），
+      // 终端底色恒为不透明主题色，再也不需要透出——这个选项就成了纯代价零收益。
+      //
+      // 代价是实打实的：开启透明后 xterm 无法使用次像素抗锯齿，只能退化为灰度
+      // 抗锯齿，在 macOS 上表现为整屏文字明显变粗变重（用户反馈 git 输出「加粗、
+      // 难看」）。官方文档也写了开启它会让文字不如不透明时锐利。
+      allowTransparency: false,
       allowProposedApi: true,
     });
     termRef.current = term;
