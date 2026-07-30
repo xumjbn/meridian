@@ -3,8 +3,6 @@
     'Microsoft YaHei', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
   line-height: 1.5;
   color: var(--wjw-text);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 
   /* ── 表面/文本/边框令牌（浅色，默认） ───────────── */
@@ -17,6 +15,17 @@
   --wjw-text-mute: #869099;
 
   background-color: var(--wjw-bg);
+}
+
+/* 灰度抗锯齿只给非 Windows 平台。
+   这两行原来写在 :root 上无条件生效，是从 macOS 那套 CSS 抄来的：
+   macOS 上不加会显得过粗，加了才是常规观感。
+   但在 Windows 的 Chromium/WebView2 上它会强制灰度抗锯齿、
+   关掉 ClearType 次像素渲染，字变细发虚——就是「显示不细腻」的一部分。
+   平台标记由 main.tsx 在渲染前打到 <html data-plat> 上。 */
+:root:not([data-plat='win']) {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ── 深色主题覆盖 ─────────────────────────────── */

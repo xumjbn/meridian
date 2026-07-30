@@ -32,6 +32,19 @@ import App from './App.tsx';
   }
 })();
 
+// 平台标记：字体抗锯齿要按平台区分（见 index.css 里 data-plat 的注释）。
+// 必须在首屏渲染前打上，否则会先按非 Windows 的规则画一帧再切，字重会闪一下。
+(() => {
+  try {
+    const ua = navigator.userAgent || '';
+    const plat = (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform || '';
+    const isWin = /Windows|Win32|Win64|WOW64/i.test(`${ua} ${plat}`);
+    document.documentElement.dataset.plat = isWin ? 'win' : 'other';
+  } catch {
+    // 取不到就当非 Windows：保持和改动前一致的观感，不会更糟
+  }
+})();
+
 // 屏蔽浏览器无害的 "ResizeObserver loop ..." 报错，避免触发 Vite 开发期错误浮层覆盖界面
 const swallowResizeObserverError = (e: ErrorEvent) => {
   if (e.message && e.message.includes('ResizeObserver loop')) {

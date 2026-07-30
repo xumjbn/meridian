@@ -63,8 +63,31 @@ const SettingRow: React.FC<{ label: string; hint?: string; children: React.React
   </div>
 );
 
+// 渲染环境读数：缩放比例 / 窗口逻辑像素 / 实际设备像素 / 内核版本。
+// 缩放比例是关键那一项——桌面端如果显示 1 而系统实际是 125%，
+// 就说明窗口不是按 DPI 感知创建的，整屏在被位图拉伸，那才是「发虚」的根因；
+// 若和浏览器一样是 1.25，问题就在抗锯齿/渲染路径而不是缩放。
+const readDisplayInfo = (): string => {
+  try {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth, h = window.innerHeight;
+    const m = /(Edg|Chrome)\/([\d.]+)/.exec(navigator.userAgent || '');
+    const core = m ? `${m[1]} ${m[2].split('.')[0]}` : '未知内核';
+    return `缩放 ${dpr}× · ${w}×${h} 逻辑 / ${Math.round(w * dpr)}×${Math.round(h * dpr)} 物理 · ${core}`;
+  } catch {
+    return '读取失败';
+  }
+};
+
 export const Settings: React.FC = () => {
   const { text } = useI18n();
+  // 窗口挪到不同缩放的显示器上 dpr 会变，跟着刷新，否则读到的是打开时的旧值
+  const [displayInfo, setDisplayInfo] = useState(readDisplayInfo);
+  useEffect(() => {
+    const h = () => setDisplayInfo(readDisplayInfo());
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [concurrency, setConcurrency] = useState(100);
@@ -418,6 +441,12 @@ export const Settings: React.FC = () => {
               </SettingRow>
               <SettingRow label={text('set.about.dbFile')}>
                 <Text code style={{ fontSize: 12 }}>backend/assets.db</Text>
+              </SettingRow>
+              {/* 渲染环境读数。「桌面端字发虚、不如浏览器」这类问题，光看代码定不了位——
+                  缩放比例、窗口实际像素、渲染内核版本是判断被位图拉伸还是抗锯齿差异的
+                  必要输入。放在「关于」里，用户能直接读出来对比浏览器。 */}
+              <SettingRow label={text('set.about.display')} hint={text('set.about.displayHint')}>
+                <Text code style={{ fontSize: 12 }}>{displayInfo}</Text>
               </SettingRow>
               <SettingRow label={text('header.source')}>
                 <Link href={brand.repo} target="_blank">

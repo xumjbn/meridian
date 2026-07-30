@@ -465,6 +465,8 @@ const resources: Record<LocaleCode, Record<string, string>> = {
     'set.about.version': '当前版本',
     'set.about.stack': '技术栈',
     'set.about.dbFile': '数据库文件',
+    'set.about.display': '渲染环境',
+    'set.about.displayHint': '缩放比例、窗口像素与渲染内核。排查「字发虚」时和浏览器里的读数对比',
 
     'scan.subtitle': '配置并触发端口网段发现任务，自动将在线主机录入资产清单',
     'scan.create': '创建扫描任务',
@@ -1267,6 +1269,8 @@ const resources: Record<LocaleCode, Record<string, string>> = {
     'set.about.version': 'Version',
     'set.about.stack': 'Stack',
     'set.about.dbFile': 'Database file',
+    'set.about.display': 'Rendering',
+    'set.about.displayHint': 'Scale factor, window pixels and rendering engine. Compare with a browser when text looks blurry.',
 
     'scan.subtitle': 'Configure and trigger subnet/port discovery tasks that add live hosts to the inventory automatically',
     'scan.create': 'New scan task',

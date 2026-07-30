@@ -1668,8 +1668,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       fontSize: fontSize,
       fontFamily: fontFamily,
       theme: withWallpaperBg(termThemeRef.current, wallpaperRef.current),
-      // 必须在 open() 之前定死，运行中改不了；而壁纸是随时能敲口令开关的，
-      // 所以这里恒开。关着壁纸时底色仍是不透明色值，观感与之前完全一致。
+      // 必须恒开，别改成「按当前壁纸状态决定」。
+      // xterm 的 ITerminalOptions 明写着：allowTransparency must be set before
+      // Terminal.open() and can't be changed later without executing it again。
+      // 一旦按创建时的状态决定，壁纸关着时建的终端之后敲 wjw-bg 就会变成
+      // 「透明底设了、渲染器仍按不透明合成」——壁纸压根不显示。
+      // 代价是开启透明会让文字略微不如不透明时锐利（官方也这么写），
+      // 这是为「壁纸随时可开关」付的固定成本，要省只能重建终端，会断会话。
       allowTransparency: true,
       allowProposedApi: true,
     });
