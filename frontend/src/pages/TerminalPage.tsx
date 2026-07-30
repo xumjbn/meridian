@@ -101,6 +101,76 @@ const getTermTheme = (v: string): TermTheme => (termThemes.find((t) => t.value =
  */
 const withWallpaperBg = (t: TermTheme, _on: WallpaperId): TermTheme => ({ ...t });
 
+// ── 壁纸模式：把程序刷的「黑底」改写成默认底 ────────────────────────────
+//
+// 为什么把壁纸挪到上层还不够（实测结论，别再兜回去）：
+// 壁纸在上层确实不会被遮挡，但混合用的是 lighten——取两者较亮值。
+// 程序刷出来的是纯黑，而壁纸在那个位置往往只是接近黑的环境渐变，
+// max(纯黑, 接近黑) 仍然是黑。真实应用截图里那条
+// 「PROGRAM PAINTED BLACK BG」依然是一条清晰的黑条。
+// 机制上没被挡住 ≠ 观感上看不出来。
+//
+// 所以还得从数据下手：写进终端之前，把「黑或接近黑」的背景参数换成 49
+// （默认背景），那些格子就渲染成终端自己的底色，与周围完全一致，黑条消失。
+// 非黑背景（选中高亮、告警红底）一律保持原样，否则反色高亮全废。
+// 只在壁纸开着时启用；关掉壁纸时数据一个字节都不动。
+//
+// 注意：不要动反显（SGR 7）。实测反显是「亮底 + 字挖空」，本来就看得见，
+// 降级成 27 等于白拿掉一个正常工作的高亮。
+const DARK_BG_MAX = 40;                                  // RGB 三通道都 ≤ 这个值算黑
+const DARK_256 = new Set([0, 16, 232, 233, 234, 235]);   // 256 色里的黑/近黑档
+
+/** 处理一串 SGR 参数，把黑背景换成 49；返回新的参数串 */
+const filterSgrParams = (ps: string[]): string => {
+  const out: string[] = [];
+  for (let i = 0; i < ps.length; i++) {
+    const n = Number(ps[i] || '0');
+    if (n === 40) { out.push('49'); continue; }          // ANSI 黑底
+    if (n === 48) {
+      const mode = Number(ps[i + 1]);
+      if (mode === 5) {                                   // 48;5;n
+        const idx = Number(ps[i + 2]);
+        out.push(DARK_256.has(idx) ? '49' : `48;5;${idx}`);
+        i += 2;
+        continue;
+      }
+      if (mode === 2 && ps.length > i + 4) {              // 48;2;r;g;b
+        const r = Number(ps[i + 2]), g = Number(ps[i + 3]), b = Number(ps[i + 4]);
+        const bad = [r, g, b].some((x) => !Number.isFinite(x));
+        // 参数残缺就原样放回，不要拿 NaN 拼出一条更坏的序列
+        out.push(!bad && Math.max(r, g, b) <= DARK_BG_MAX
+          ? '49'
+          : `48;2;${ps[i + 2]};${ps[i + 3]};${ps[i + 4]}`);
+        i += 4;
+        continue;
+      }
+      out.push(ps[i]);                                    // 未知子模式原样放回
+      continue;
+    }
+    out.push(ps[i]);
+  }
+  return out.join(';');
+};
+
+/** 带状态的过滤器：WebSocket 分片可能把转义序列切成两半，
+ *  结尾未闭合的 CSI 要留到下一片一起处理，否则那条序列会漏网。 */
+const makeDarkBgFilter = () => {
+  let pending = '';
+  return (chunk: string): string => {
+    const s = pending + chunk;
+    pending = '';
+    // 大头是纯文本块（cat 大文件、编译输出），一个转义符都没有，先探一下省整趟正则
+    if (s.indexOf('\x1b') === -1) return s;
+    const tail = s.match(/\x1b(\[[0-9;]*)?$/);
+    const body = tail ? s.slice(0, s.length - tail[0].length) : s;
+    if (tail) pending = tail[0];
+    return body.replace(/\x1b\[([0-9;]*)m/g, (all, params: string) => {
+      const next = filterSgrParams(params.split(';'));
+      return next === params ? all : `\x1b[${next}m`;     // 没改动就还原串，不白造新字符串
+    });
+  };
+};
+
 // 复制/粘贴统一走 ../clipboard：桌面端原生剪贴板优先，Web 端 execCommand + API 兜底。
 const writeClipboard = (text: string) => copyText(text);
 const readClipboard = (): Promise<string> => pasteText();
@@ -1836,13 +1906,18 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     let gbkDecoder: TextDecoder | null = null;
     try { gbkDecoder = new TextDecoder('gb18030'); } catch { gbkDecoder = null; }
 
-    // 统一出口：写入终端 + 记进重连回放缓冲。
-    // 这里曾经在壁纸模式下改写 SGR、把黑背景摘成默认背景，还为此把 UTF-8 也
-    // 拉去做流式解码。壁纸改到上层后这条路整个没有必要了——不管对端刷什么
-    // 背景色都挡不住上层的壁纸，字节原样直写即可。
+    // 要改写 SGR 就得先看到文本，所以壁纸开着时 UTF-8 也走流式解码器。
+    // stream:true 会把跨帧的半个多字节字符留到下一片，不会因分片切在中间而乱码。
+    let utf8Decoder: TextDecoder | null = null;
+    try { utf8Decoder = new TextDecoder('utf-8'); } catch { utf8Decoder = null; }
+    const darkBg = makeDarkBgFilter();
+
+    // 统一出口：壁纸开着才过滤，关着时一个字节都不动，走原来的字节直写路径。
     const writeOut = (chunk: string | Uint8Array) => {
-      term.write(chunk as string);
-      appendBuf(chunk);
+      if (typeof chunk !== 'string') { term.write(chunk); appendBuf(chunk); return; }
+      const s = wallpaperRef.current ? darkBg(chunk) : chunk;
+      term.write(s);
+      appendBuf(s);
     };
 
     // 累积远端输出到历史缓冲（上限 512KB，超出从头丢弃），供重连回放
@@ -1905,8 +1980,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         if (termEncodingRef.current === 'gbk' && gbkDecoder) {
           // GBK 主机：先解码为字符串再写入（xterm 默认按 UTF-8 解析字节，会乱码）
           writeOut(gbkDecoder.decode(bytes, { stream: true }));
+        } else if (wallpaperRef.current && utf8Decoder) {
+          // 壁纸开着：要改写 SGR 就得先解码成文本
+          writeOut(utf8Decoder.decode(bytes, { stream: true }));
         } else {
-          // UTF-8：字节直写，让 xterm 自己解析，不额外解码一遍
+          // 没开壁纸：字节直写，让 xterm 自己解析，不额外解码一遍
           writeOut(bytes);
         }
       }
