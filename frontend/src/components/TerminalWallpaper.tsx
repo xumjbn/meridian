@@ -106,6 +106,16 @@ export const setWallpaper = (id: WallpaperId) => {
 /** 自定义图片（data URL），没传过就是空串 */
 export const customWallpaperImage = (): string => localStorage.getItem(IMG_KEY) || '';
 
+/**
+ * 只判断「有没有自定义图」，不把图取出来。
+ *
+ * 别用 customWallpaperImage() 做这个判断：那张图是 3MB 量级的 base64 字符串，
+ * getItem 每次都要完整拷贝一份出来。而这个判断写在渲染里（设置面板的「清除」
+ * 按钮是否显示），面板每重渲染一次就白拷 3MB，纯浪费。
+ * `in` 只查键存不存在，不会实体化值。
+ */
+export const hasCustomWallpaperImage = (): boolean => IMG_KEY in localStorage;
+
 /** 透明度，越界或没存过一律回默认值 */
 export const wallpaperOpacity = (): number => {
   const v = parseFloat(localStorage.getItem(OPACITY_KEY) || '');

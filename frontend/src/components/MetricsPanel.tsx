@@ -163,6 +163,15 @@ export const MetricsPanel: React.FC<Props> = ({ assetId, onClose }) => {
 
   useEffect(() => {
     if (assetId < 0) return;
+    // 换主机等于全新一次连接，这三样必须归零，它们都是跨 assetId 存活的：
+    // - retryRef：前一台失败满 5 次后没清零，新主机只试一次就报「已停止重试」，
+    //   明明是台好机器也再不重连。
+    // - err：上一台的错误提示会挂在新主机的面板上。
+    // - hist：曲线会从上一台的历史接着画，看到的是别人的 CPU。
+    retryRef.current = 0;
+    setErr('');
+    setM(null);
+    setHist({ cpu: [], mem: [], rx: [], tx: [], dr: [], dw: [] });
     let closed = false;
     let gotFrame = false;
 

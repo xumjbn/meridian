@@ -13,7 +13,7 @@ import {
   TerminalWallpaper, useWallpaper, setWallpaper, wallpaperIdFromCmd,
   WALLPAPER_SHOW_RE, WALLPAPER_HIDE_RE, WALLPAPER_OPTIONS, WALLPAPER_LABELS,
   useWallpaperOpacity, setWallpaperOpacity, MIN_OPACITY, MAX_OPACITY,
-  readImageAsWallpaper, setCustomWallpaper, clearCustomWallpaper, customWallpaperImage, pickImageFile,
+  readImageAsWallpaper, setCustomWallpaper, clearCustomWallpaper, hasCustomWallpaperImage, pickImageFile,
   type WallpaperId,
 } from '../components/TerminalWallpaper';
 import { saveBlob } from '../saveFile';
@@ -108,6 +108,11 @@ const filterSgrParams = (ps: string[]): string => {
   const out: string[] = [];
   for (let i = 0; i < ps.length; i++) {
     const n = Number(ps[i] || '0');
+    // 反显（SGR 7）在壁纸模式下必须关掉：反显是拿背景色当前景色画字，
+    // 而壁纸开着时 theme.background 的 alpha 是 0 —— 画出来是全透明，
+    // 表现为「这段字直接没了」。vim 状态行、bash 的 Ctrl+R 反查提示、
+    // less 的搜索高亮全中招。降级成普通显示，丢的是高亮，保的是能看见。
+    if (n === 7) { out.push('27'); continue; }
     if (n === 40) { out.push('49'); continue; }          // ANSI 黑底
     if (n === 48) {
       const mode = Number(ps[i + 1]);
@@ -142,11 +147,17 @@ const makeDarkBgFilter = () => {
     const s = pending + chunk;
     pending = '';
     // 结尾是半截 ESC / CSI（还没等到终止字母）就先扣下
+    // 大头是纯文本块（cat 大文件、编译输出），里面一个转义符都没有。
+    // 先探一下有没有 ESC，没有就直接返回，省掉整趟正则扫描与拼串。
+    if (s.indexOf('\x1b') === -1) return s;
     const tail = s.match(/\x1b(\[[0-9;]*)?$/);
     const body = tail ? s.slice(0, s.length - tail[0].length) : s;
     if (tail) pending = tail[0];
-    return body.replace(/\x1b\[([0-9;]*)m/g, (_all, params: string) =>
-      `\x1b[${filterSgrParams(params.split(';'))}m`);
+    return body.replace(/\x1b\[([0-9;]*)m/g, (all, params: string) => {
+      const next = filterSgrParams(params.split(';'));
+      // 没改动就把原串还回去，不白造一个一样的新字符串
+      return next === params ? all : `\x1b[${next}m`;
+    });
   };
 };
 
@@ -851,7 +862,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                       value={wallpaperOn}
                       onChange={async (val: WallpaperId) => {
                         // 选了自定义却还没传过图，直接开会是一片空白，所以先引导去传
-                        if (val === 'custom' && !customWallpaperImage()) {
+                        if (val === 'custom' && !hasCustomWallpaperImage()) {
                           message.info('先选一张图片');
                           const r = await pickImageFile();
                           if (r.ok) applyWallpaperFile(r.file);
@@ -898,7 +909,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
                     >
                       选择图片
                     </Button>
-                    {!!customWallpaperImage() && (
+                    {hasCustomWallpaperImage() && (
                       <Button size="small" type="text" danger onClick={() => { clearCustomWallpaper(); message.success('已清除自定义图片'); }} style={{ fontSize: 12 }}>
                         清除
                       </Button>

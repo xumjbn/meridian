@@ -1271,6 +1271,13 @@ func autoSaveInteractiveCred(asset *model.Asset, username, password string) stri
 	if asset == nil || asset.ID == 0 || strings.TrimSpace(username) == "" {
 		return ""
 	}
+	// 空密码一律不存。少数配置错误的主机确实会放空密码进来，但一旦存下并绑定，
+	// 下次连接就直接用这条凭据、不再弹输入框；这条又必然认证失败——
+	// 结果是这台资产从此连不上，而且用户完全不知道为什么。
+	// 宁可让他再敲一遍，也不能把资产锁死。
+	if password == "" {
+		return ""
+	}
 	db := store.GlobalDB
 	if db == nil {
 		return ""
@@ -1336,7 +1343,10 @@ func autoSaveInteractiveCred(asset *model.Asset, username, password string) stri
 		return ""
 	}
 	asset.CredentialID = &credID
-	recordAssetChange(db, fresh.ID, "管理凭证", "", credName)
+	// 字段名与值的形态都跟 UpdateAsset 保持一致（字段叫「凭据」、值是 ID）。
+	// 换个叫法或改记名字，同一资产的变更历史里就会出现两条互不相关的记录，
+	// 看的人根本对不上是同一件事。
+	recordAssetChange(db, fresh.ID, "凭据", "", credIDStr(&credID))
 
 	if reused {
 		return fmt.Sprintf("登录成功：该账号密码与已有凭据「%s」一致，已直接绑定到本资产，下次免输入。", credName)
