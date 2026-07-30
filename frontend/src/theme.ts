@@ -90,8 +90,11 @@ export const cardStyle: CSSProperties = {
 export const pagePadding = '16px 20px 24px';
 
 // Antd 字体族（浅/深色共用）
+// 与 index.css 的 :root 保持同一条链。两处都要改：antd 组件（输入框、表格、
+// 下拉…）用的是这里的 token，不继承 :root——左侧搜索框就是 antd Input。
+// 'DengXian Light' 排在 'Microsoft YaHei' 之前的理由见 index.css 处的注释。
 const antdFontFamily =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", Arial, sans-serif';
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "DengXian Light", "Microsoft YaHei", Arial, sans-serif';
 
 // Antd ConfigProvider 主色令牌（浅色主题）
 // 注意：antd 主题算法无法解析 CSS 变量 var(...)，因此这里使用字面 hex 值

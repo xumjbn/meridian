@@ -1,6 +1,23 @@
 :root {
+  /* 'DengXian Light'（等线 Light）必须排在 'Microsoft YaHei' 之前。
+     中文在 macOS 落到 PingFang SC，在 Windows 落到 Microsoft YaHei，后者更宽更重，
+     整个界面（侧栏、搜索框、表头、标签）都显得厚重。
+     这台机器上量过所有已装的中文字体（13px，真实界面文案，canvas 数不透明像素）：
+       Microsoft YaHei        墨迹 2095   宽 313.2
+       Microsoft YaHei UI     墨迹 2095   宽 313.2   （与 YaHei 完全相同）
+       Microsoft YaHei Light  墨迹 2222   宽 312.8   （反而更重）
+       DengXian               墨迹 2117   宽 310
+       DengXian Light         墨迹 1968   宽 309.8   <- 已装字体里最轻最窄
+       Noto Sans SC           墨迹 2430   宽 304.3   （最重）
+       Microsoft JhengHei     墨迹 1809   宽 307.7   （繁体字体，简体覆盖不全，不能用）
+     数字只差 6%，但渲染出来看差距明显——侧栏各项笔画细一档。
+     等线是 Windows 10+ 自带，不需要内嵌字体。
+     macOS 不受影响：PingFang SC 仍排在更前面，先命中。
+     字重 600 的地方会用合成粗体，实机渲染确认不糊、区分度仍在
+     （试过用 @font-face 把 451-700 映射到 DengXian 常规体，结果粗体区分完全丢失，
+      已放弃那个方案）。 */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'PingFang SC',
-    'Microsoft YaHei', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    'DengXian Light', 'Microsoft YaHei', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
   line-height: 1.5;
   color: var(--wjw-text);
   text-rendering: optimizeLegibility;
