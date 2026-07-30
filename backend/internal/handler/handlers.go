@@ -1253,6 +1253,95 @@ func CollectAsset(c *gin.Context) {
 // 不再需要用户去资产列表手点「采集」。
 func init() {
 	sshproxy.OnSSHConnected = autoCollectSysInfo
+	sshproxy.OnInteractiveAuth = autoSaveInteractiveCred
+}
+
+// autoSaveInteractiveCred 把「资产没绑凭据、用户在终端里手敲、并且真的连上了」
+// 的那套账号密码存成凭据并绑到资产上，下次开这台机器不用再敲一遍。
+//
+// 只在拨号成功后被调用（见 sshproxy），所以不会把打错的密码固化下来。
+// 密码走 Credential 的 BeforeSave 钩子加密（AES-256-GCM）入库，接口不回显明文。
+//
+// 几条刻意的约束：
+//   - 已经绑了凭据的资产一律不动。本次输入不该悄悄顶掉用户自己配的绑定。
+//   - 落库只更新 credential_id 这一列，绝不走 UpdateAsset 那条路径——
+//     那里是按请求整体覆盖 name/ip/type/ports，从这儿调会把资产字段清成零值。
+//   - 全程失败静默（只打日志）：这是顺带做的事，不能影响终端本身能不能用。
+func autoSaveInteractiveCred(asset *model.Asset, username, password string) string {
+	if asset == nil || asset.ID == 0 || strings.TrimSpace(username) == "" {
+		return ""
+	}
+	db := store.GlobalDB
+	if db == nil {
+		return ""
+	}
+
+	// 重新读一遍：这条 WebSocket 可能已经开了很久，期间用户也许已经在界面上绑好凭据了
+	var fresh model.Asset
+	if err := db.First(&fresh, asset.ID).Error; err != nil {
+		return ""
+	}
+	if fresh.CredentialID != nil && *fresh.CredentialID != 0 {
+		return ""
+	}
+
+	// 同一账号 + 同一密码已经存过就复用，别把凭据列表刷成一堆重复项。
+	// Password 字段有 AfterFind 解密钩子，这里比的是明文。
+	var candidates []model.Credential
+	db.Where("owner_id = ? AND type = ? AND username = ?", fresh.OwnerID, "ssh_password", username).
+		Find(&candidates)
+
+	var credID uint
+	var credName string
+	for i := range candidates {
+		if candidates[i].Password == password {
+			credID = candidates[i].ID
+			credName = candidates[i].Name
+			break
+		}
+	}
+	reused := credID != 0
+
+	if !reused {
+		// 名字取「账号@资产名」。Name 上没有唯一约束，但列表里两条同名凭据
+		// 人是分不出来的，所以重名加序号。
+		base := fmt.Sprintf("%s@%s", username, fresh.Name)
+		credName = base
+		for i := 2; i <= 50; i++ {
+			var n int64
+			db.Model(&model.Credential{}).
+				Where("owner_id = ? AND name = ?", fresh.OwnerID, credName).Count(&n)
+			if n == 0 {
+				break
+			}
+			credName = fmt.Sprintf("%s (%d)", base, i)
+		}
+		cred := model.Credential{
+			OwnerID:  fresh.OwnerID,
+			Name:     credName,
+			Type:     "ssh_password",
+			Username: username,
+			Password: password,
+		}
+		if err := db.Create(&cred).Error; err != nil {
+			log.Printf("自动保存凭据失败（资产 %d）: %v", fresh.ID, err)
+			return ""
+		}
+		credID = cred.ID
+	}
+
+	if err := db.Model(&model.Asset{}).Where("id = ?", fresh.ID).
+		Update("credential_id", credID).Error; err != nil {
+		log.Printf("自动绑定凭据失败（资产 %d）: %v", fresh.ID, err)
+		return ""
+	}
+	asset.CredentialID = &credID
+	recordAssetChange(db, fresh.ID, "管理凭证", "", credName)
+
+	if reused {
+		return fmt.Sprintf("登录成功：该账号密码与已有凭据「%s」一致，已直接绑定到本资产，下次免输入。", credName)
+	}
+	return fmt.Sprintf("登录成功：已把本次输入保存为凭据「%s」（密码加密入库，不回显）并绑定到本资产，下次免输入。", credName)
 }
 
 // autoCollectSysInfo 在已经建好的 SSH 连接上顺手取一次系统信息（架构 / 内核 / 虚拟化）。

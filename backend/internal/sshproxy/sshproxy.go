@@ -20,6 +20,16 @@ import (
 // 由 handler 在初始化时赋值；为空表示不做任何事。
 var OnSSHConnected func(asset *model.Asset, client *ssh.Client)
 
+// OnInteractiveAuth 在「资产没绑凭据、用户在终端里手敲了账号密码、且这套凭据
+// 确实连上了」之后被调用一次，由上层把它存成凭据并绑定到该资产，
+// 下次开这台机器就不用再敲一遍。
+//
+// 只在拨号成功之后才调：密码错了还存下来，等于把错的东西固化，下次更难连。
+// 返回给用户看的一句话（空串=什么都不用说），本包把它当 status 消息发给前端，
+// 让终端里能看到「存了什么」——自动保存但不静默，用户得知道发生了什么。
+// 同样用回调避免 handler 反向 import 成环。
+var OnInteractiveAuth func(asset *model.Asset, username, password string) string
+
 // wsReadIdleTimeout 是 WebSocket 读空闲超时。前端每 15s 发一次心跳 ping，
 // 超过该时长仍无任何帧到达即判定为半开连接（客户端休眠/掉线/被 kill），
 // 由 ReadMessage 报错触发 closeAll，释放 SSH 会话、PTY 与协程，避免半开连接长期泄漏。
@@ -90,6 +100,10 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 		privateKey = cred.PrivateKey
 	}
 
+	// 凭据是不是用户在终端里现敲的。只有现敲的才需要在连上之后帮他存下来；
+	// 本来就绑了凭据的不用管，更不能拿本次输入去覆盖已有绑定。
+	interactive := false
+
 	// 2. 如果资产没有关联凭据，提示前端输入
 	if username == "" && password == "" && privateKey == "" {
 		// 发送索要凭证请求
@@ -111,6 +125,7 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 				if err := json.Unmarshal(message, &msg); err == nil && msg.Type == "auth_response" {
 					username = msg.Username
 					password = msg.Password
+					interactive = true
 					break
 				}
 			}
@@ -156,6 +171,18 @@ func ProxyTerminal(ws *websocket.Conn, asset *model.Asset, cred *model.Credentia
 		return
 	}
 	defer sshClient.Close()
+
+	// 手敲的凭据既然连通了，就存成凭据绑到资产上，下次免敲。
+	// 同步调用：只是两三条 SQLite 语句，代价远小于刚做完的这次 SSH 拨号；
+	// 而且要把「存了什么」在 shell 起来之前告诉用户，异步就赶不上这个位置了。
+	if interactive && username != "" {
+		if hook := OnInteractiveAuth; hook != nil {
+			if notice := hook(asset, username, password); notice != "" {
+				m, _ := json.Marshal(WSMessage{Type: "status", Message: notice})
+				_ = writeMessage(websocket.TextMessage, m)
+			}
+		}
+	}
 
 	// 连接已建立：顺手让上层在这条连接上做一次系统信息探测。
 	// 用回调而不是直接调 handler，是因为 handler 已经依赖本包，反向 import 会成环。
