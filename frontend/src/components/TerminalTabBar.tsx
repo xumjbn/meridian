@@ -192,7 +192,13 @@ export const TerminalTabBar: React.FC<Props> = ({
     background: palette.chromeActive,
     border: `1px solid ${palette.chromeBorder}`,
     color: palette.siderTextActive,
-    fontWeight: 600,
+    // 500 而不是 600：Windows 上中文落在 Microsoft YaHei，而它在这里只有
+    // Regular 与 Bold 两档——600 会直接跳到全粗，标签行看起来明显比 macOS
+    // 厚重（canvas 实测同一文案：w400/w500 墨迹 1017 像素完全相同，
+    // w600/w700 都是 1156，+13.7%）。500 在 Windows 上落回 Regular，
+    // 在 macOS 上则是 PingFang 真正的 Medium，两边都合适，不需要平台分支。
+    // 选中态本来就有背景色 + 边框 + 亮蓝字三重标识，粗体是冗余的。
+    fontWeight: 500,
   };
   const idleStyle: React.CSSProperties = { color: palette.chromeText, background: 'transparent' };
 
