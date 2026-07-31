@@ -157,7 +157,14 @@ body {
   padding: 12px;
   background: #0b0f19;
   border-radius: 8px;
-  border: 1px solid #1e293b;
+  /* 不要给这里加边框。
+     它的上边缘紧贴标签栏的 bottom 边框——两条 1px 线只差 0.8px，颜色还不一样
+     （#1c2333 与 #1e293b）。在 125% 缩放下两条各自舍入到不同的物理像素行，
+     显示成两条并排的分割线；macOS 的 dpr 2 会把它们合成一条发丝线，所以那边
+     看着正常，只有 Windows 用户会发现。
+     另外三条边本来就贴在窗口边缘，画了也看不见，纯属白画。
+     实测（1.25 dpr 下枚举全部可见边框）：删掉这条后，页面上位置重合的
+     同向边框配对从 1 组降到 0 组。 */
 }
 .terminal-container .xterm {
   padding: 4px;
