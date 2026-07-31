@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 
 // 一个在 App 内部打开的终端会话（选项卡标签页）。
 //
@@ -76,6 +76,12 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [sessions, setSessions] = useState<TermSession[]>([]);
   const [activeId, setActiveRaw] = useState<number | null>(null);
   const [activityIds, setActivityIds] = useState<number[]>([]);
+
+  // close() 里要知道「被关掉的那个排第几」才能挑相邻标签，而 setState 的更新函数
+  // 必须是纯的（StrictMode 下会跑两次），不能在里面顺手改另一个 state。
+  // 所以用一个 ref 跟住列表，供 close() 只读地算位置。
+  const sessionsRef = useRef<TermSession[]>([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
 
   // 全局同步会话物理连接注册表与选择集
   const globalWsRegistry = useRef<Record<string, GlobalWSHandler>>({});
@@ -158,9 +164,21 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const close = useCallback((id: number) => {
+    // 关掉当前会话后该激活谁：优先右邻，没有右邻取左邻，一个都不剩才回普通页面。
+    // 原来是无条件 setActiveRaw(null)，不看还剩几个终端——activeId=null 的语义是
+    // 「回普通页面」，所以关掉一个标签就整个掉回控制台，哪怕旁边还开着好几个。
+    // 浏览器标签、VS Code、各家终端都是「关掉后落到相邻标签」，这里对齐。
+    const before = sessionsRef.current;
+    const idx = before.findIndex((x) => x.id === id);
+    const rest = before.filter((x) => x.id !== id);
+
     setSessions((prev) => prev.filter((x) => x.id !== id));
-    // 关闭的若是当前激活会话，则回到普通页面
-    setActiveRaw((cur) => (cur === id ? null : cur));
+    setActiveRaw((cur) => {
+      if (cur !== id) return cur;          // 关的不是当前的，激活项不动
+      if (rest.length === 0) return null;  // 没有别的终端了，回普通页面
+      // idx 落在 rest 里正好就是「原来的右邻」；关的是最后一个时夹到末位 = 左邻
+      return rest[Math.min(idx, rest.length - 1)].id;
+    });
     clearActivity(id);
   }, []);
 
