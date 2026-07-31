@@ -83,7 +83,16 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           mkdir -p ../frontend/src-tauri/binaries
-          go build -trimpath -ldflags "-s -w" \
+          # Windows 必须编成 GUI 子系统（-H=windowsgui）。
+          # 不加的话 sidecar 是控制台程序，被 Tauri（GUI 进程）拉起时 Windows 会给它
+          # 新分配一个控制台窗口——用户打开 wjw 会同时冒出一个 cmd 黑框；关掉那个黑框
+          # 还会终止挂在该控制台上的整组进程，wjw 跟着退出。
+          # main.rs 的 windows_subsystem="windows" 只管 Tauri 自己那个进程，管不到 sidecar。
+          # stdout/stderr 仍由 Tauri 的管道捕获写入 backend.log，日志一条不少。
+          LDFLAGS="-s -w"
+          if [ "${{ matrix.goos }}" = "windows" ]; then LDFLAGS="$LDFLAGS -H=windowsgui"; fi
+          echo "ldflags: $LDFLAGS"
+          go build -trimpath -ldflags "$LDFLAGS" \
             -o "../frontend/src-tauri/binaries/${{ matrix.sidecar }}" ./cmd/server
           chmod +x "../frontend/src-tauri/binaries/${{ matrix.sidecar }}" || true
 
