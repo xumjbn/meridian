@@ -105,32 +105,39 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // 本意是「打开这台资产」，不该每点一次就多出一个标签；要开第二个同主机
   // 终端走标签右键的「复制终端」（duplicate）。
   const open = useCallback((s: NewSession) => {
-    setSessions((prev) => {
-      const existing = prev.find((x) => x.assetId === s.assetId);
-      if (existing) {
-        setActiveRaw(existing.id);
-        clearActivity(existing.id);
-        return prev;
-      }
-      const sid = nextSessionId();
-      const meta = loadTabMeta()[s.assetId];
-      setActiveRaw(sid);
-      clearActivity(sid);
-      return [...prev, { ...s, id: sid, customName: meta?.name, color: meta?.color }];
-    });
+    // 注意：不要把 setActiveRaw / nextSessionId() 写进 setSessions 的更新函数里。
+    // 更新函数必须是纯的——StrictMode 下会被调用两次，ID 计数器会被消耗两次，
+    // 而第一次算出的那个 id 已经拿去 setActiveRaw 了，只是靠「后一次覆盖前一次」
+    // 侥幸没出问题。这里改成：读 ref 判重、在外面算好 id，更新函数只做拼接。
+    const existing = sessionsRef.current.find((x) => x.assetId === s.assetId);
+    if (existing) {
+      setActiveRaw(existing.id);
+      clearActivity(existing.id);
+      return;
+    }
+    const sid = nextSessionId();
+    const meta = loadTabMeta()[s.assetId];
+    // 更新函数里再判一次同主机是否已存在：ref 可能是同一拍里的旧值，
+    // 连点两下会绕过上面的判断，多开一个标签。
+    setSessions((prev) => (prev.some((x) => x.assetId === s.assetId)
+      ? prev
+      : [...prev, { ...s, id: sid, customName: meta?.name, color: meta?.color }]));
+    setActiveRaw(sid);
+    clearActivity(sid);
   }, []);
 
   // 复制终端：对同一台主机再开一个独立会话（标签右键触发）
   const duplicate = useCallback((id: number) => {
+    // 同 open：id 在外面生成一次，更新函数保持纯粹（理由见 open 处注释）
+    const src = sessionsRef.current.find((x) => x.id === id);
+    if (!src) return;
+    const sid = nextSessionId();
     setSessions((prev) => {
-      const src = prev.find((x) => x.id === id);
-      if (!src) return prev;
-      const sid = nextSessionId();
-      setActiveRaw(sid);
       const idx = prev.findIndex((x) => x.id === id);
-      const copy = { ...src, id: sid };
-      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)];
+      if (idx < 0) return prev;                    // 源标签已被关掉
+      return [...prev.slice(0, idx + 1), { ...src, id: sid }, ...prev.slice(idx + 1)];
     });
+    setActiveRaw(sid);
   }, []);
 
   // 持久化按资产维度存（会话 ID 每次都变，存了也对不上）
