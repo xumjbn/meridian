@@ -31,7 +31,10 @@ interface Props {
 
 const TAB_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899'];
 
-const TAB_BAR_HEIGHT = 34;
+// 30 而不是 34：终端模式下这条紧贴在系统标题栏下面，而 Windows 的原生标题栏是
+// 32px——原来 34（实测含边框 35）比标题栏还厚，两条横条叠着，下面那条更粗，
+// 看上去头重脚轻。压到 30 让它明显薄于标题栏，层级才对。
+const TAB_BAR_HEIGHT = 30;
 
 /** 标签栏右侧插槽的 DOM id：单分屏时终端窗格把自己的状态条 portal 进来 */
 export const TERM_TAB_SLOT_ID = 'wjw-term-tab-slot';
@@ -173,14 +176,17 @@ export const TerminalTabBar: React.FC<Props> = ({
     { key: 'close', icon: <CloseOutlined />, danger: true, label: text('terminalTab.close'), onClick: () => onClose(s.id) },
   ];
 
+  // 尺寸整体收一档：标签栏压到 30px 后，26px 高的标签几乎顶满，留白不够；
+  // 而且「本地终端」这样四个字的标签实测 115px 宽，比顶部品牌区还长，显得笨重。
+  // 高 23 / 左右内边距 8 / 间距 6 / 字号 12，配 30px 的栏高上下各留 3-4px。
   const tabBase: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 8,
-    height: 26,
-    padding: '0 10px',
-    borderRadius: 6,
-    fontSize: 12.5,
+    gap: 6,
+    height: 23,
+    padding: '0 8px',
+    borderRadius: 5,
+    fontSize: 12,
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     border: '1px solid transparent',
@@ -227,11 +233,11 @@ export const TerminalTabBar: React.FC<Props> = ({
       {/* 当前页面标签：与顶栏品牌区的页名确有重复，但终端模式下顶栏是隐藏的，
           这是唯一能退回页面的入口，故保留。 */}
       <div style={{ ...tabBase, ...(activeId === null ? activeStyle : idleStyle) }} onClick={onSelectPage}>
-        <AppstoreOutlined style={{ fontSize: 14 }} />
+        <AppstoreOutlined style={{ fontSize: 13 }} />
         {currentPageLabel}
       </div>
 
-      <span style={{ width: 1, height: 18, background: palette.chromeBorder, margin: '0 2px' }} />
+      <span style={{ width: 1, height: 15, background: palette.chromeBorder, margin: '0 2px' }} />
 
       {/* 终端会话标签（HTML5 拖拽重排） */}
       {sessions.map((s) => {
@@ -266,9 +272,9 @@ export const TerminalTabBar: React.FC<Props> = ({
             title={isLocal ? text('terminalTab.localTitle') : text('terminalTab.remoteTitle', { name: s.name, ip: s.ip })}
           >
             {isLocal ? (
-              <DesktopOutlined style={{ fontSize: 14, color: iconColor }} />
+              <DesktopOutlined style={{ fontSize: 13, color: iconColor }} />
             ) : (
-              <CodeOutlined style={{ fontSize: 14, color: iconColor }} />
+              <CodeOutlined style={{ fontSize: 13, color: iconColor }} />
             )}
             {editing ? (
               <Input
@@ -312,7 +318,7 @@ export const TerminalTabBar: React.FC<Props> = ({
           <div
             onClick={onNewConnection}
             style={{
-              flexShrink: 0, width: 26, height: 24, marginLeft: 2, borderRadius: 4, cursor: 'pointer',
+              flexShrink: 0, width: 23, height: 21, marginLeft: 2, borderRadius: 4, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: palette.chromeTextMute,
             }}
@@ -336,7 +342,7 @@ export const TerminalTabBar: React.FC<Props> = ({
           <div
             onClick={onToggleTermMode}
             style={{
-              flexShrink: 0, marginLeft: 6, width: 26, height: 24, borderRadius: 4, cursor: 'pointer',
+              flexShrink: 0, marginLeft: 6, width: 23, height: 21, borderRadius: 4, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: termMode ? palette.siderTextActive : palette.chromeTextMute,
               background: termMode ? palette.siderActive : 'transparent',

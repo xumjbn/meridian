@@ -339,8 +339,11 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
         placeholder={text('quickConnect.searchPlaceholder')}
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        prefix={<TagsOutlined style={{ color: palette.textMute }} />}
-        style={{ marginBottom: 8 }}
+        prefix={<TagsOutlined style={{ color: palette.textMute, fontSize: 12 }} />}
+        // 必须显式给字号：antd 的 size="small" 只调高度和内边距，字号仍是 token 里的
+        // 14px——于是这个搜索框成了整条侧栏最大的字（主机行 13、标签 11、IP 10），
+        // 一眼就突兀。12.5 与终端标签同号，比它过滤的列表略小，符合「过滤框」的惯例。
+        style={{ marginBottom: 8, fontSize: 12.5 }}
       />
 
       {/* 本地终端入口：点整行开终端，右侧小标签点开可换 Shell（cmd / PowerShell / pwsh） */}
