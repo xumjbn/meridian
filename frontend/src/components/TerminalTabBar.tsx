@@ -135,6 +135,20 @@ export const TerminalTabBar: React.FC<Props> = ({
     setOverId(null);
   };
 
+  // 拖拽被系统打断（触控中断/手势取消/失去指针捕获）时会派发 pointercancel 而非
+  // pointerup。若不复位，onTabPointerMove 里设下的 document.body userSelect:'none'
+  // 会一直挂着，整个应用无法选中文本，直到标签栏卸载才恢复。这里兜底清理。
+  const onTabPointerCancel = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (d && e.pointerId === d.pointerId) {
+      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    }
+    dragRef.current = null;
+    document.body.style.userSelect = '';
+    setDragId(null);
+    setOverId(null);
+  };
+
   // 右键菜单「左移 / 右移」：不依赖拖拽的确定性兜底，任何环境都能调序
   const moveTab = (s: TermSession, dir: -1 | 1) => {
     const idx = sessions.findIndex((x) => x.id === s.id);
@@ -253,6 +267,8 @@ export const TerminalTabBar: React.FC<Props> = ({
             onPointerDown={(e) => onTabPointerDown(e, s)}
             onPointerMove={onTabPointerMove}
             onPointerUp={onTabPointerUp}
+            onPointerCancel={onTabPointerCancel}
+            onLostPointerCapture={onTabPointerCancel}
             style={{
               ...tabBase,
               ...(active ? activeStyle : idleStyle),

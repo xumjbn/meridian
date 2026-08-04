@@ -336,8 +336,11 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
   const sessionActiveRef = useRef(activeId === sid);
   useEffect(() => { sessionActiveRef.current = activeId === sid; }, [activeId, sid]);
   const notifyActivity = useCallback(() => {
-    if (!sessionActiveRef.current) markActivity(assetId);
-  }, [markActivity, assetId]);
+    // 提示点、清除、激活判断全按会话 id（sid），不能用 assetId：两者取值空间重叠
+    // （会话 id 从 1 自增，assetId 也是从 1 起的库 id），传 assetId 会点亮错误的
+    // 标签、且因清除只认会话 id 而永不消除，activityIds 还会无限增长。
+    if (!sessionActiveRef.current) markActivity(sid);
+  }, [markActivity, sid]);
 
   // 全局字体设置。
   //
@@ -1148,6 +1151,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   // 终端输出历史缓冲（重连后回放，恢复以前的终端记录）
   const outputBufRef = useRef<Array<string | Uint8Array>>([]);
   const outputBytesRef = useRef(0);
+  // 上一次真正建联的 assetId：用于区分「同主机重连」（保留缓冲回放）与
+  // 「分屏里换主机」（必须清空，否则上一台的输出会被当成本机历史误播、并污染导出）
+  const lastConnectedAssetIdRef = useRef<number | null>(null);
   const termThemeRef = useRef(termTheme);
   useEffect(() => { termThemeRef.current = termTheme; }, [termTheme]);
 
@@ -1166,9 +1172,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const { globalSyncedIds, setGlobalSyncedIds, registerGlobalWS, broadcastGlobalData, sessions, setActive } = useTerminals();
 
   // 快捷键所需的最新值（避免连接闭包内引用过期）
-  const shortcutsRef = useRef({ onSplit, onCloseTab, onClose, onToggleMaximize, canClose, sessions, setActive });
+  // onZoomFont/onResetFont 也必须走 ref：连接 effect 只在 [asset,assetId,instanceId]
+  // 变化时重跑，而 zoomFont 闭包着当前 fontSize；直接引用会锁死在「连接那一刻」的字号，
+  // 之后 Ctrl+滚轮 / Ctrl+± 只能相对那个旧值挪一格，累加不上去。
+  const shortcutsRef = useRef({ onSplit, onCloseTab, onClose, onToggleMaximize, canClose, sessions, setActive, onZoomFont, onResetFont });
   useEffect(() => {
-    shortcutsRef.current = { onSplit, onCloseTab, onClose, onToggleMaximize, canClose, sessions, setActive };
+    shortcutsRef.current = { onSplit, onCloseTab, onClose, onToggleMaximize, canClose, sessions, setActive, onZoomFont, onResetFont };
   });
 
   // 为每个物理终端分配一个全局唯一的 instanceId，并在 unmount 时自动注销
@@ -1671,6 +1680,14 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     // 避免用旧 asset.id 向「上一台主机」多建立一次无用的 SSH 连接（拨号 + 审计噪声）
     if (!isLocal && asset.id !== assetId) return;
 
+    // 换主机（分屏切换资产）时清掉上一台的输出缓冲：同主机重连 assetId 不变、缓冲保留
+    // 用于回放；一旦 assetId 变了就是另一台机器，旧输出不能再当「重连历史」播出来。
+    if (lastConnectedAssetIdRef.current !== assetId) {
+      outputBufRef.current = [];
+      outputBytesRef.current = 0;
+      lastConnectedAssetIdRef.current = assetId;
+    }
+
     setConnecting(true);
     setAuthRequired(false);
     setStatus('connecting');
@@ -1767,9 +1784,9 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       }
       // 字号缩放：Ctrl/⌘ + =/+ 放大、-/_ 缩小、0 复位（不下发给 shell）
       const zoomMod = e.ctrlKey || e.metaKey;
-      if (zoomMod && (e.key === '=' || e.key === '+')) { onZoomFont(1); return false; }
-      if (zoomMod && (e.key === '-' || e.key === '_')) { onZoomFont(-1); return false; }
-      if (zoomMod && e.key === '0') { onResetFont(); return false; }
+      if (zoomMod && (e.key === '=' || e.key === '+')) { shortcutsRef.current.onZoomFont(1); return false; }
+      if (zoomMod && (e.key === '-' || e.key === '_')) { shortcutsRef.current.onZoomFont(-1); return false; }
+      if (zoomMod && e.key === '0') { shortcutsRef.current.onResetFont(); return false; }
       return true;
     });
 
@@ -1875,7 +1892,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       onWheel = (e: WheelEvent) => {
         if (!(e.ctrlKey || e.metaKey)) return;
         e.preventDefault();
-        onZoomFont(e.deltaY < 0 ? 1 : -1);
+        shortcutsRef.current.onZoomFont(e.deltaY < 0 ? 1 : -1);
       };
       terminalRef.current.addEventListener('wheel', onWheel, { passive: false });
 

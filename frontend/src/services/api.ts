@@ -195,10 +195,16 @@ export const createCredential = (data: Credential): Promise<Credential> => api.p
 export const updateCredential = (id: number, data: Credential): Promise<Credential> => api.put(`/credentials/${id}`, data);
 export const deleteCredential = (id: number): Promise<void> => api.delete(`/credentials/${id}`);
 
+// 资产增删改/导入后广播：左侧「快速连接」等一次性加载列表的地方据此重新拉取，
+// 否则新加的主机要等下次登录/整页刷新才出现在侧栏。
+export const ASSETS_CHANGED_EVENT = 'wjw-assets-changed';
+const notifyAssetsChanged = () => window.dispatchEvent(new Event(ASSETS_CHANGED_EVENT));
+const tapAssetsChanged = <T>(p: Promise<T>): Promise<T> => p.then((r) => { notifyAssetsChanged(); return r; });
+
 export const getAssets = (params?: { q?: string; type?: string; status?: string }): Promise<Asset[]> =>
   api.get('/assets', { params });
 export const getAsset = (id: number): Promise<Asset> => api.get(`/assets/${id}`);
-export const createAsset = (data: Asset): Promise<Asset> => api.post('/assets', data);
+export const createAsset = (data: Asset): Promise<Asset> => tapAssetsChanged(api.post('/assets', data));
 
 // CSV 批量导入（按 IP upsert）
 export interface ImportResult {
@@ -211,10 +217,10 @@ export const importAssets = (file: File): Promise<ImportResult> => {
   const fd = new FormData();
   fd.append('file', file);
   // 置空 Content-Type，让浏览器自动带上 multipart boundary
-  return api.post('/assets/import', fd, { headers: { 'Content-Type': undefined } as never });
+  return tapAssetsChanged(api.post('/assets/import', fd, { headers: { 'Content-Type': undefined } as never }));
 };
-export const updateAsset = (id: number, data: Asset): Promise<Asset> => api.put(`/assets/${id}`, data);
-export const deleteAsset = (id: number): Promise<void> => api.delete(`/assets/${id}`);
+export const updateAsset = (id: number, data: Asset): Promise<Asset> => tapAssetsChanged(api.put(`/assets/${id}`, data));
+export const deleteAsset = (id: number): Promise<void> => tapAssetsChanged(api.delete(`/assets/${id}`));
 
 export const getScanTasks = (): Promise<ScanTask[]> => api.get('/tasks');
 export const createScanTask = (data: ScanTask): Promise<ScanTask> => api.post('/tasks', data);

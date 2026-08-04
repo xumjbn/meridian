@@ -182,8 +182,16 @@ func DeleteK8sCluster(c *gin.Context) {
 		return
 	}
 	db := store.GlobalDB
-	db.Model(&model.Asset{}).Where("k8s_cluster_id = ?", cl.ID).Update("k8s_cluster_id", nil)
-	db.Delete(cl)
+	// 写结果必须检查：SQLite 写争用（SQLITE_BUSY）或其它错误下若静默返回 200，
+	// 前端会以为删掉了，实际集群与节点引用仍在库里，刷新后又冒出来。
+	if err := db.Model(&model.Asset{}).Where("k8s_cluster_id = ?", cl.ID).Update("k8s_cluster_id", nil).Error; err != nil {
+		SendError(c, 500, "解除节点集群引用失败: "+err.Error())
+		return
+	}
+	if err := db.Delete(cl).Error; err != nil {
+		SendError(c, 500, "删除集群失败: "+err.Error())
+		return
+	}
 	SendSuccess(c, gin.H{"ok": true})
 }
 

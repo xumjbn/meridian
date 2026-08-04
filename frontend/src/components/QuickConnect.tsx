@@ -21,6 +21,7 @@ import {
   getLocalShellPref,
   setLocalShellPref,
   LOCAL_SHELL_OPTIONS,
+  ASSETS_CHANGED_EVENT,
   type Asset,
 } from '../services/api';
 import { useTerminals } from '../terminalSessions';
@@ -99,7 +100,13 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
     init();
     // 桌面端后台登录拿到 token 后会广播，此时再拉一次（首屏可能在拿到 token 前就挂载了）
     window.addEventListener('wjw-auth-ready', init);
-    return () => window.removeEventListener('wjw-auth-ready', init);
+    // 别处新增/编辑/删除/导入资产后广播，侧栏据此重新拉列表——否则新加的主机
+    // 要等下次登录才出现。只重拉资产，不必再探一次 capabilities。
+    window.addEventListener(ASSETS_CHANGED_EVENT, load);
+    return () => {
+      window.removeEventListener('wjw-auth-ready', init);
+      window.removeEventListener(ASSETS_CHANGED_EVENT, load);
+    };
   }, []);
 
   const openIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions]);
