@@ -969,7 +969,12 @@ export const Assets: React.FC = () => {
               rowKey="id"
               loading={loading}
               rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
-              pagination={{ pageSize: 10, showSizeChanger: false, style: { padding: '0 16px' } }}
+              pagination={{
+                defaultPageSize: 10,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                style: { padding: '0 16px' },
+              }}
             />
           ) : (
           (() => {
