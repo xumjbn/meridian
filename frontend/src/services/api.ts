@@ -370,7 +370,10 @@ export interface K8sCluster {
   owner_name?: string;
   cred_name?: string;
   online?: boolean;
-  has_token?: boolean;
+  has_token?: boolean;  // 具备 kube API 凭证（Token 或客户端证书）
+  auth_mode?: 'token' | 'clientcert';
+  has_cert?: boolean;   // 配了客户端证书对
+  has_ca?: boolean;     // 配了 CA（配了才会真校验 apiserver 证书）
 }
 
 /** 控制台探测：单个候选路径的结果 */
@@ -388,10 +391,22 @@ export interface K8sLiveNode {
 }
 export interface K8sLivePod {
   name: string; namespace: string; phase: string; node: string; restarts: number; created_at: string;
+  containers?: string[]; // 容器名；多容器 Pod 开终端时必须指定其一
 }
 export interface K8sOverview {
   has_token: boolean; version?: string;
   nodes_total?: number; nodes_ready?: number; pods_total?: number; pods_running?: number;
+  /** Pod 数触到后端单次拉取上限，统计值只覆盖前 N 个 */
+  pods_truncated?: boolean;
+}
+/** Pod 列表分页返回体。truncated 表示集群 Pod 总数超过后端单次拉取上限 cap */
+export interface K8sLivePodPage {
+  items: K8sLivePod[];
+  total: number;
+  page: number;
+  page_size: number;
+  truncated: boolean;
+  cap: number;
 }
 export const getK8sClusters = (): Promise<K8sCluster[]> => api.get('/k8s/clusters');
 export const createK8sCluster = (data: K8sCluster): Promise<K8sCluster> => api.post('/k8s/clusters', data);
@@ -462,11 +477,48 @@ export const bootstrapK8sTokenBySSH = (
   clusterId: number,
   body: K8sSSHBootstrapReq,
 ): Promise<K8sSSHBootstrapResult> => api.post(`/k8s/clusters/${clusterId}/ssh-bootstrap`, body);
+/** 连接自检结果 */
+export interface K8sTestResult {
+  ok: boolean;
+  version: string;
+  node_count: number;
+  latency_ms: number;
+  can_exec: boolean;
+  error?: string;
+  exec_reason?: string;
+}
+/** 打一次 /version + /api/v1/nodes，当场告诉用户配置对不对 */
+export const testK8sConnection = (clusterId: number): Promise<K8sTestResult> =>
+  api.post(`/k8s/clusters/${clusterId}/test-connection`);
+
+export interface K8sKubeconfigResult {
+  context: string;
+  contexts: string[];
+  api_server: string;
+  auth_mode: 'token' | 'clientcert';
+  verify_tls: boolean;
+  test: K8sTestResult;
+}
+/** 导入 kubeconfig：解析出 API Server / CA / Token 或客户端证书对并落库，随后自检一次 */
+export const importK8sKubeconfig = (
+  clusterId: number,
+  kubeconfig: string,
+  context?: string,
+): Promise<K8sKubeconfigResult> =>
+  api.post(`/k8s/clusters/${clusterId}/import-kubeconfig`, { kubeconfig, context });
+
 // Phase 3：实时看板（调 kube-apiserver）
 export const getK8sOverview = (id: number): Promise<K8sOverview> => api.get(`/k8s/clusters/${id}/overview`);
 export const getK8sLiveNodes = (id: number): Promise<K8sLiveNode[]> => api.get(`/k8s/clusters/${id}/live/nodes`);
-export const getK8sLivePods = (id: number, namespace?: string): Promise<K8sLivePod[]> =>
-  api.get(`/k8s/clusters/${id}/live/pods`, { params: namespace ? { namespace } : {} });
+export const getK8sLivePods = (
+  id: number,
+  namespace?: string,
+  page = 1,
+  pageSize = 50,
+): Promise<K8sLivePodPage> =>
+  api.get(`/k8s/clusters/${id}/live/pods`, {
+    params: { page, page_size: pageSize, ...(namespace ? { namespace } : {}) },
+  });
 
 // ── SFTP 文件传输 ─────────────────────────────
 export interface SftpEntry {
@@ -639,10 +691,93 @@ export const getScanStreamUrl = (taskId: number): string => {
   return `${BACKEND_ORIGIN}/api/tasks/${taskId}/stream${q}`;
 };
 
+/** 自动归类 SSE 流地址：节点多时逐个 SSH 探测耗时长，用 SSE 推进度而不是干等 */
+export const getAutoClassifyStreamUrl = (): string => {
+  const token = localStorage.getItem('wjw-token') || '';
+  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${BACKEND_ORIGIN}/api/k8s/auto-classify/stream${q}`;
+};
+
 
 
 // 本地终端哨兵 assetId：用于在分屏/标签中标识「连后端本机 Shell」的会话
 export const LOCAL_ASSET_ID = -1;
+
+// ── K8s Pod 终端的合成 assetId ────────────────────────────────
+// 分屏窗格（PaneNode）整套是按 assetId 组织的，把 Pod 做成一等目标要改动
+// 整个分屏机制，回归面太大。本地终端当初也是同一个问题，用「负数哨兵 assetId」
+// 解决的；Pod 沿用同一模式：分配一个负数 id 并在这里登记它对应哪个 Pod，
+// 分屏 / 标签 / 拖拽等所有既有逻辑都不用改。
+//
+// 取值从 -1000 起，与本地终端的 -1 拉开距离，避免两者混淆。
+export const K8S_ASSET_ID_BASE = -1000;
+
+export interface K8sPodTarget {
+  clusterId: number;
+  clusterName: string;
+  namespace: string;
+  pod: string;
+  container: string;
+  /** exec=交互终端，logs=只读日志流。两者共用 xterm 渲染与标签机制 */
+  mode?: 'exec' | 'logs';
+  /** logs 模式参数 */
+  tail?: number;
+  follow?: boolean;
+  previous?: boolean;
+  timestamps?: boolean;
+}
+
+const k8sPodTargets = new Map<number, K8sPodTarget>();
+const k8sPodKeyToId = new Map<string, number>();
+let k8sPodSeq = 0;
+
+// 同一个容器的「终端」和「日志」是两个独立标签，所以 mode 要进 key
+const k8sPodKey = (t: K8sPodTarget) =>
+  `${t.mode || 'exec'}:${t.clusterId}/${t.namespace}/${t.pod}/${t.container}`;
+
+/** 登记一个 Pod 终端目标，返回其合成 assetId；同一 Pod+容器复用同一个 id（标签才能正确去重） */
+export const registerK8sPodTarget = (t: K8sPodTarget): number => {
+  const key = k8sPodKey(t);
+  const existing = k8sPodKeyToId.get(key);
+  if (existing !== undefined) return existing;
+  const id = K8S_ASSET_ID_BASE - k8sPodSeq++;
+  k8sPodKeyToId.set(key, id);
+  k8sPodTargets.set(id, t);
+  return id;
+};
+
+export const isK8sPodAssetId = (id: number): boolean => id <= K8S_ASSET_ID_BASE;
+export const getK8sPodTarget = (assetId: number): K8sPodTarget | undefined => k8sPodTargets.get(assetId);
+
+/** WebSocket 基址：与 getTerminalWsUrl 的三种部署分支保持一致（桌面 sidecar / 开发直连 / 同源反代） */
+const wsBase = (): string => {
+  if (BACKEND_ORIGIN) return 'ws://127.0.0.1:8765';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return `${protocol}//127.0.0.1:8080`;
+  }
+  return `${protocol}//${window.location.host}`;
+};
+
+/** Pod 终端 / 日志的 WebSocket 地址（token 走查询参数，与其它 WS 一致） */
+export const getK8sExecWsUrl = (assetId: number, shell?: string): string => {
+  const t = k8sPodTargets.get(assetId);
+  if (!t) return '';
+  const token = localStorage.getItem('wjw-token') || '';
+  const q = new URLSearchParams({ namespace: t.namespace, pod: t.pod });
+  if (t.container) q.set('container', t.container);
+  if (token) q.set('token', token);
+
+  if (t.mode === 'logs') {
+    q.set('tail', String(t.tail ?? 500));
+    q.set('follow', t.follow === false ? '0' : '1');
+    if (t.previous) q.set('previous', '1');
+    if (t.timestamps) q.set('timestamps', '1');
+    return `${wsBase()}/api/ws/k8s/${t.clusterId}/logs?${q.toString()}`;
+  }
+  if (shell) q.set('shell', shell);
+  return `${wsBase()}/api/ws/k8s/${t.clusterId}/exec?${q.toString()}`;
+};
 
 // 后端能力开关（如本地终端是否可用——多用户服务器默认关闭）
 export interface Capabilities {

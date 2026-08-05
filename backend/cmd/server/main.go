@@ -194,8 +194,11 @@ func main() {
 		api.POST("/k8s/clusters/:id/sync-nodes", handler.SyncK8sNodesFromAPI)  // 按 kube API 节点表归类
 		// SSH 登到 master 自动建只读 SA 并取 Token，省掉手工粘贴（成功后自动同步一次节点）
 		api.POST("/k8s/clusters/:id/ssh-bootstrap", handler.BootstrapK8sTokenBySSH)
+		api.POST("/k8s/clusters/:id/import-kubeconfig", handler.ImportK8sKubeconfig) // 导入 kubeconfig（支持客户端证书认证）
+		api.POST("/k8s/clusters/:id/test-connection", handler.TestK8sConnection)     // 连接自检
 		api.GET("/k8s/nodes/unassigned", handler.ListUnassignedK8sNodes)
 		api.POST("/k8s/auto-classify", handler.AutoClassifyK8s)
+		api.GET("/k8s/auto-classify/stream", handler.StreamAutoClassifyK8s) // SSE：边探测边推进度
 		// Phase 3：调 kube-apiserver 拉实时看板（需集群配置 API Token）
 		api.GET("/k8s/clusters/:id/overview", handler.GetK8sOverview)
 		api.GET("/k8s/clusters/:id/live/nodes", handler.GetK8sLiveNodes)
@@ -268,6 +271,8 @@ func main() {
 		// 此前漏注册，前端连过去是 404，握手失败即 code 1006，
 		// 界面只能一直显示「监控连接中…」。
 		api.GET("/ws/metrics/:id", handler.StreamAssetMetrics)
+		api.GET("/ws/k8s/:id/exec", handler.ConnectK8sExec) // Pod 容器终端（v4.channel.k8s.io）
+		api.GET("/ws/k8s/:id/logs", handler.ConnectK8sLogs) // Pod 日志流（复用 xterm 渲染）
 	}
 
 	// 5. 启动服务：默认仅监听本机 127.0.0.1:8080；容器部署时由 LISTEN_ADDR

@@ -22,6 +22,7 @@ import {
   setLocalShellPref,
   LOCAL_SHELL_OPTIONS,
   ASSETS_CHANGED_EVENT,
+  isK8sPodAssetId,
   type Asset,
 } from '../services/api';
 import { useTerminals } from '../terminalSessions';
@@ -126,7 +127,11 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
   };
   // 每次新建一个独立的本地终端：用更小的负数资产 id 保证后端会话互不干扰
   const connectLocal = () => {
-    const localIds = sessions.filter((s) => s.assetId < 0).map((s) => s.assetId);
+    // 只统计真正的本地终端 id：Pod 会话也是负数（≤ -1000），把它算进来的话
+    // min()-1 会落进 K8s 的 id 段，新开的本地终端就会被当成一个没登记的 Pod。
+    const localIds = sessions
+      .filter((s) => s.assetId < 0 && !isK8sPodAssetId(s.assetId))
+      .map((s) => s.assetId);
     const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
     const n = localIds.length + 1;
     open({

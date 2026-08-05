@@ -3,6 +3,7 @@ import { Dropdown, Input, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { AppstoreOutlined, CodeOutlined, DesktopOutlined, CloseOutlined, EditOutlined, BgColorsOutlined, LeftOutlined, RightOutlined, ExpandOutlined, CompressOutlined, PlusOutlined, CopyOutlined } from '@ant-design/icons';
 import { palette } from '../theme';
+import { isK8sPodAssetId } from '../services/api';
 import type { TermSession } from '../terminalSessions';
 import { useI18n } from '../i18n';
 
@@ -256,7 +257,9 @@ export const TerminalTabBar: React.FC<Props> = ({
       {/* 终端会话标签（HTML5 拖拽重排） */}
       {sessions.map((s) => {
         const active = activeId === s.id;
-        const isLocal = s.assetId < 0;   // 负数资产 id = 本地终端；s.id 现在是会话 id
+        // 负数资产 id 分两段：≤ -1000 是 K8s Pod 会话，其余负数才是本地终端
+        const isPod = isK8sPodAssetId(s.assetId);
+        const isLocal = s.assetId < 0 && !isPod;
         const isDropTarget = overId === s.id && dragId !== s.id;
         const editing = editingId === s.id;
         const iconColor = s.color || (active ? palette.siderTextActive : isLocal ? palette.accent : palette.chromeTextMute);

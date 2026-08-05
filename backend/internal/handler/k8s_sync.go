@@ -164,6 +164,9 @@ func syncK8sNodesCore(c *gin.Context, cl *model.K8sCluster, createMissing bool) 
 		details = append(details, res)
 	}
 
+	// 节点归属刚变过，集群相关的 kube 缓存作废，免得看板还在显示同步前的旧状态
+	invalidateKubeCache(cl.ID)
+
 	db.Create(&model.AuditLog{
 		Actor: currentUsername(c), Action: "K8S_SYNC_NODES",
 		Path: fmt.Sprintf("集群#%d 按 API 同步节点：归类 %d、更新 %d、补录 %d（共 %d）",

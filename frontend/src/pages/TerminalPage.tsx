@@ -5,7 +5,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
-import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri, type Asset } from '../services/api';
+import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri,
+  isK8sPodAssetId, getK8sPodTarget, getK8sExecWsUrl, type Asset } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined, DashboardOutlined } from '@ant-design/icons';
 import { EASTER_EGG_RE, EASTER_EGG_BIRTHDAY_RE, fireEasterEgg } from '../components/EasterEgg';
 import { WEDDING_EGG_RE, fireWeddingEgg } from '../components/WeddingEgg';
@@ -1217,8 +1218,10 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const ghostRef = useRef('');                            // 当前幽灵残余文本
   const ghostCmdRef = useRef('');                         // 幽灵对应的完整命令（用于频率学习）
   const ghostDecoRef = useRef<{ dispose: () => void } | null>(null); // xterm 装饰器句柄
-  // 历史命令按主机隔离：本地终端用 local，远程用资产 ID
-  const historyKey = assetId < 0 ? 'local' : `asset-${assetId}`;
+  // 历史命令按主机隔离：本地终端用 local，Pod 用合成 id（不能和本地终端混到一起），远程用资产 ID
+  const historyKey = assetId === LOCAL_ASSET_ID
+    ? 'local'
+    : isK8sPodAssetId(assetId) ? `k8s-${-assetId}` : `asset-${assetId}`;
 
   const lastGhostPosRef = useRef('');                     // 上次绘制的位置签名，避免重复重建装饰器
 
@@ -1635,15 +1638,30 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     };
   }, [status, assetId, registerGlobalWS, instanceId]);
 
-  // 本地终端：任意负数 assetId 都视为本地终端（连后端本机 Shell），
-  // 不同负数 id 即不同的本地终端会话/分屏，支持同时开多个。
-  const isLocal = assetId < 0;
+  // K8s Pod 终端：合成的负数 assetId（≤ -1000）代表一个 Pod 容器会话，
+  // 目标详情登记在 api.ts 的注册表里（见 registerK8sPodTarget）。
+  const k8sTarget = isK8sPodAssetId(assetId) ? getK8sPodTarget(assetId) : undefined;
+
+  // 本地终端：负数 assetId 中的 -1。
+  // 原先是「任意负数都算本地终端」，Pod 会话引入后必须区分开，
+  // 否则 Pod 标签会被当成本地 Shell 连到后端本机上去。
+  const isLocal = assetId === LOCAL_ASSET_ID;
 
   // 2. 同步加载被分配的资产详情
   useEffect(() => {
     if (isLocal) {
       // 合成一个「本地终端」资产，驱动下方 WebSocket 建联（不发请求）
       setAsset({ id: assetId, name: '本地终端', ip: '本机', type: 'server' } as Asset);
+      return;
+    }
+    if (k8sTarget) {
+      // 同样合成一个「资产」驱动建联：Pod 不在资产表里，不发请求
+      setAsset({
+        id: assetId,
+        name: `${k8sTarget.pod}${k8sTarget.container ? ' · ' + k8sTarget.container : ''}`,
+        ip: `${k8sTarget.clusterName || 'k8s'}/${k8sTarget.namespace}`,
+        type: 'server',
+      } as Asset);
       return;
     }
     if (assetId <= 0) {
@@ -1670,12 +1688,12 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     };
     fetchAsset();
     return () => { stale = true; };
-  }, [assetId, isLocal]);
+  }, [assetId, isLocal, k8sTarget]);
 
   // 3. 建立 WebSocket 隧道
   useEffect(() => {
     if (!asset) return;
-    if (!isLocal && assetId <= 0) return;
+    if (!isLocal && !k8sTarget && assetId <= 0) return;
     // assetId 刚切换、asset 详情尚未拉到新值时跳过这次过期触发，
     // 避免用旧 asset.id 向「上一台主机」多建立一次无用的 SSH 连接（拨号 + 审计噪声）
     if (!isLocal && asset.id !== assetId) return;
@@ -1700,7 +1718,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     let onWheel: ((e: WheelEvent) => void) | null = null;
     const containerEl = terminalRef.current;
 
-    const wsUrl = isLocal ? getLocalTerminalWsUrl() : getTerminalWsUrl(asset.id!);
+    const wsUrl = k8sTarget
+      ? getK8sExecWsUrl(assetId)
+      : isLocal
+        ? getLocalTerminalWsUrl()
+        : getTerminalWsUrl(asset.id!);
     const socket = new WebSocket(wsUrl);
     socket.binaryType = 'arraybuffer';
     wsRef.current = socket;
@@ -2316,7 +2338,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           style={{ padding: '0 4px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center' }}
         />
       )}
-      {!isLocal && status === 'connected' && (
+      {!isLocal && !k8sTarget && status === 'connected' && (
         <Button
           size="small"
           type="text"
@@ -2331,7 +2353,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           监控
         </Button>
       )}
-      {!isLocal && status === 'connected' && (
+      {!isLocal && !k8sTarget && status === 'connected' && (
         <Button
           size="small"
           type="text"
@@ -2574,11 +2596,11 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
       {/* 常驻资源监控：贴终端左侧 */}
-      {metricsOpen && !isLocal && (
+      {metricsOpen && !isLocal && !k8sTarget && (
         <MetricsPanel assetId={assetId} onClose={() => setMetricsOpen(false)} />
       )}
       {/* 文件面板停靠左侧时排在终端之前 */}
-      {filesOpen && !isLocal && sftpDock === 'left' && (
+      {filesOpen && !isLocal && !k8sTarget && sftpDock === 'left' && (
         <SftpPanel assetId={assetId} cwd={cwd} hasCred={!!asset?.credential_id} onClose={() => setFilesOpen(false)} />
       )}
       {/* 终端所在层。壁纸是这一层的绝对定位子元素（z-index 4），只覆盖终端，
@@ -2793,7 +2815,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       </div>
 
       {/* 常驻文件面板：停靠右侧时排在终端之后 */}
-      {filesOpen && !isLocal && sftpDock === 'right' && (
+      {filesOpen && !isLocal && !k8sTarget && sftpDock === 'right' && (
         <SftpPanel
           assetId={assetId}
           cwd={cwd}
@@ -2804,7 +2826,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       </div>
 
       {/* 停靠下方：作为外层列布局的最后一行 */}
-      {filesOpen && !isLocal && sftpDock === 'bottom' && (
+      {filesOpen && !isLocal && !k8sTarget && sftpDock === 'bottom' && (
         <SftpPanel
           assetId={assetId}
           cwd={cwd}

@@ -5,14 +5,16 @@ import {
 } from 'antd';
 import {
   CloudServerOutlined, PlusOutlined, ReloadOutlined, LinkOutlined, EditOutlined,
-  DeleteOutlined, CodeOutlined, ClusterOutlined, ApiOutlined, ThunderboltOutlined,
+  DeleteOutlined, CodeOutlined, ClusterOutlined, ApiOutlined, ThunderboltOutlined, FileTextOutlined,
 } from '@ant-design/icons';
 import {
   getK8sClusters, createK8sCluster, updateK8sCluster, deleteK8sCluster, getK8sCluster,
   getUnassignedK8sNodes, assignK8sNodes, unassignK8sNode, getK8sConsole, getCredentials,
-  getK8sOverview, getK8sLiveNodes, getK8sLivePods, autoClassifyK8s, detectK8sConsole, syncK8sNodes,
+  getK8sOverview, getK8sLiveNodes, getK8sLivePods, getAutoClassifyStreamUrl, detectK8sConsole, syncK8sNodes,
+  importK8sKubeconfig, testK8sConnection, registerK8sPodTarget, type K8sTestResult,
   bootstrapK8sTokenBySSH,
-  type K8sCluster, type Asset, type Credential, type K8sLiveNode, type K8sLivePod, type K8sOverview,
+  type K8sCluster, type Asset, type Credential, type K8sLiveNode, type K8sLivePod, type K8sLivePodPage, type K8sOverview,
+  type AutoClassifyResult,
   type K8sSSHBootstrapReq,
 } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
@@ -69,7 +71,9 @@ export const K8sClusters: React.FC = () => {
   // Phase 3 实时看板
   const [overview, setOverview] = useState<K8sOverview | null>(null);
   const [liveNodes, setLiveNodes] = useState<K8sLiveNode[]>([]);
-  const [livePods, setLivePods] = useState<K8sLivePod[]>([]);
+  // Pod 改服务端分页：整页返回体（含 total / truncated）而不只是数组
+  const [podPage, setPodPage] = useState<K8sLivePodPage | null>(null);
+  const podPageSize = 50;
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveErr, setLiveErr] = useState('');
 
@@ -153,7 +157,7 @@ export const K8sClusters: React.FC = () => {
   };
 
   const openNodes = async (cl: K8sCluster) => {
-    setOverview(null); setLiveNodes([]); setLivePods([]); setLiveErr('');
+    setOverview(null); setLiveNodes([]); setPodPage(null); setLiveErr('');
     try {
       const { cluster, nodes } = await getK8sCluster(cl.id!);
       setDrawerCluster(cluster);
@@ -165,18 +169,34 @@ export const K8sClusters: React.FC = () => {
   };
 
   // 拉取实时看板（kube API）
-  const loadLive = async (id: number) => {
+  //
+  // 这里原先对 nodes / pods 用 .catch(() => []) 兜底，等于把「拉取失败」显示成
+  // 「集群里没有节点/Pod」——后端就算如实报错，用户在界面上也只看到一片空。
+  // 现在失败一律汇入 liveErr 显示出来。
+  const loadLive = async (id: number, page = 1) => {
     setLiveLoading(true);
     setLiveErr('');
     try {
       const [ov, ns, pods] = await Promise.all([
         getK8sOverview(id),
-        getK8sLiveNodes(id).catch(() => [] as K8sLiveNode[]),
-        getK8sLivePods(id).catch(() => [] as K8sLivePod[]),
+        getK8sLiveNodes(id),
+        getK8sLivePods(id, undefined, page, podPageSize),
       ]);
       setOverview(ov);
       setLiveNodes(ns);
-      setLivePods(pods);
+      setPodPage(pods);
+    } catch (e: any) {
+      setLiveErr(e?.message || text('k8s.liveFailed'));
+    } finally {
+      setLiveLoading(false);
+    }
+  };
+
+  // Pod 分页：只换页时不必重拉概览与节点（后端 10s 缓存内也不会真去打 apiserver）
+  const loadPodPage = async (id: number, page: number) => {
+    setLiveLoading(true);
+    try {
+      setPodPage(await getK8sLivePods(id, undefined, page, podPageSize));
     } catch (e: any) {
       setLiveErr(e?.message || text('k8s.liveFailed'));
     } finally {
@@ -206,12 +226,147 @@ export const K8sClusters: React.FC = () => {
     }
   };
 
+  // kubeconfig 导入与连接自检
+  const [kubeconfigText, setKubeconfigText] = useState('');
+  const [kcLoading, setKcLoading] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<K8sTestResult | null>(null);
+
+  const doImportKubeconfig = async (clusterId: number) => {
+    setKcLoading(true);
+    try {
+      const r = await importK8sKubeconfig(clusterId, kubeconfigText);
+      setTestResult(r.test);
+      message.success(text('k8s.kubeconfig.imported', { context: r.context, server: r.api_server }));
+      setKubeconfigText('');
+      // 认证方式/证书状态变了，重新拉一遍集群让 Modal 上的标记同步
+      const { cluster } = await getK8sCluster(clusterId);
+      setEditing(cluster);
+      load();
+    } catch (e: any) {
+      message.error(e?.message || text('k8s.kubeconfig.importFailed'));
+    } finally {
+      setKcLoading(false);
+    }
+  };
+
+  const doTestConnection = async (clusterId: number) => {
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      setTestResult(await testK8sConnection(clusterId));
+    } catch (e: any) {
+      setTestResult({ ok: false, version: '', node_count: 0, latency_ms: 0, can_exec: false, error: e?.message || 'failed' });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
+  // 打开 Pod 容器终端：登记一个合成 assetId 后走与 SSH 终端完全相同的标签/分屏机制
+  const openPodTerminal = (p: K8sLivePod, container?: string) => {
+    if (!drawerCluster?.id) return;
+    const containers = p.containers || [];
+    // 多容器 Pod 必须指定 container，否则 apiserver 直接报错——先让用户挑
+    if (!container && containers.length > 1) {
+      Modal.confirm({
+        title: text('k8s.pickContainer'),
+        icon: null,
+        content: (
+          <Space direction="vertical" style={{ width: '100%', marginTop: 12 }}>
+            {containers.map((cn) => (
+              <Button key={cn} block onClick={() => { Modal.destroyAll(); openPodTerminal(p, cn); }}>{cn}</Button>
+            ))}
+          </Space>
+        ),
+        footer: null,
+        closable: true,
+      });
+      return;
+    }
+    const target = container || containers[0] || '';
+    const assetId = registerK8sPodTarget({
+      clusterId: drawerCluster.id,
+      clusterName: drawerCluster.name,
+      namespace: p.namespace,
+      pod: p.name,
+      container: target,
+    });
+    openTerminal({
+      assetId,
+      name: target ? `${p.name} · ${target}` : p.name,
+      ip: `${drawerCluster.name}/${p.namespace}`,
+    });
+  };
+
+  // 打开 Pod 日志流：和终端同一套标签/xterm，只是走 logs 端点且只读。
+  // 复用之后 Ctrl+F 搜索、滚动回看、ANSI 配色全部白拿——正是看日志最需要的。
+  const openPodLogs = (p: K8sLivePod, container?: string) => {
+    if (!drawerCluster?.id) return;
+    const containers = p.containers || [];
+    if (!container && containers.length > 1) {
+      Modal.confirm({
+        title: text('k8s.pickContainer'),
+        icon: null,
+        content: (
+          <Space direction="vertical" style={{ width: '100%', marginTop: 12 }}>
+            {containers.map((cn) => (
+              <Button key={cn} block onClick={() => { Modal.destroyAll(); openPodLogs(p, cn); }}>{cn}</Button>
+            ))}
+          </Space>
+        ),
+        footer: null,
+        closable: true,
+      });
+      return;
+    }
+    const target = container || containers[0] || '';
+    const assetId = registerK8sPodTarget({
+      clusterId: drawerCluster.id,
+      clusterName: drawerCluster.name,
+      namespace: p.namespace,
+      pod: p.name,
+      container: target,
+      mode: 'logs',
+      tail: 500,
+      follow: true,
+      // 容器已经不在 Running 了，多半是崩溃重启，直接看上一个容器的日志才有价值
+      previous: p.phase !== 'Running',
+    });
+    openTerminal({
+      assetId,
+      name: `📄 ${p.name}${target ? ' · ' + target : ''}`,
+      ip: `${drawerCluster.name}/${p.namespace}`,
+    });
+  };
+
   const [autoLoading, setAutoLoading] = useState(false);
+  const [autoProgress, setAutoProgress] = useState('');
   // 自动归类：读 K8s 节点 /etc/hosts 的 cluster-vip 标记 → 按 VIP 建/并集群
+  //
+  // 走 SSE：探测是逐节点 SSH，节点多时整轮要跑很久，不推进度的话按钮
+  // 就一直转圈、用户不知道卡在哪台机器上（也分不清是慢还是挂了）。
   const runAutoClassify = async () => {
     setAutoLoading(true);
+    setAutoProgress('');
     try {
-      const r = await autoClassifyK8s();
+      const r = await new Promise<AutoClassifyResult>((resolve, reject) => {
+        const es = new EventSource(getAutoClassifyStreamUrl());
+        es.addEventListener('progress', (ev) => {
+          try {
+            const p = JSON.parse((ev as MessageEvent).data) as { done: number; total: number; ip: string };
+            setAutoProgress(`${p.done}/${p.total} · ${p.ip}`);
+          } catch { /* 单条进度解析失败不影响整轮 */ }
+        });
+        es.addEventListener('done', (ev) => {
+          es.close();
+          try {
+            resolve(JSON.parse((ev as MessageEvent).data) as AutoClassifyResult);
+          } catch (err) {
+            reject(err);
+          }
+        });
+        es.onerror = () => { es.close(); reject(new Error(text('k8s.autoClassifyError'))); };
+      });
       const failed = r.details.filter((d) => !d.ok);
       Modal.info({
         title: text('k8s.autoClassifyResult'),
@@ -235,6 +390,7 @@ export const K8sClusters: React.FC = () => {
       message.error(e?.message || text('k8s.autoClassifyError'));
     } finally {
       setAutoLoading(false);
+      setAutoProgress('');
     }
   };
 
@@ -399,6 +555,24 @@ export const K8sClusters: React.FC = () => {
     { title: text('k8s.col.status'), dataIndex: 'phase', key: 'phase', width: 100, render: (v: string) => <Tag color={phaseColor(v)}>{v}</Tag> },
     { title: text('k8s.col.node'), dataIndex: 'node', key: 'node', width: 150, render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v || '-'}</span> },
     { title: text('k8s.col.restarts'), dataIndex: 'restarts', key: 're', width: 70 },
+    {
+      title: text('users.col.action'), key: 'act', width: 150,
+      render: (_: unknown, p: K8sLivePod) => (
+        <Space size={0}>
+          {/* 只有 Running 的 Pod 能 exec；Pending/Failed 点了也只会拿到一个报错 */}
+          <Button type="link" size="small" icon={<CodeOutlined />}
+            disabled={p.phase !== 'Running'}
+            onClick={() => openPodTerminal(p)}>
+            {text('k8s.terminal')}
+          </Button>
+          {/* 日志不要求 Running：查崩溃容器恰恰是最需要看日志的时候 */}
+          <Button type="link" size="small" icon={<FileTextOutlined />}
+            onClick={() => openPodLogs(p)}>
+            {text('k8s.logs')}
+          </Button>
+        </Space>
+      ),
+    },
   ];
 
   const unassignedCols = [
@@ -441,7 +615,9 @@ export const K8sClusters: React.FC = () => {
         extra={
           <Space>
             <Tooltip title={text('k8s.autoClassifyTip')}>
-              <Button icon={<ApiOutlined />} loading={autoLoading} onClick={runAutoClassify}>{text('k8s.autoClassify')}</Button>
+              <Button icon={<ApiOutlined />} loading={autoLoading} onClick={runAutoClassify}>
+                {autoProgress ? `${text('k8s.autoClassify')} ${autoProgress}` : text('k8s.autoClassify')}
+              </Button>
             </Tooltip>
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>{text('common.refresh')}</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{text('k8s.newCluster')}</Button>
@@ -602,6 +778,36 @@ export const K8sClusters: React.FC = () => {
             tooltip={text('k8s.form.apiTokenTip')}>
             <Input.Password placeholder={editing?.has_token ? text('k8s.form.apiTokenSet') : 'kube-apiserver ServiceAccount Token'} autoComplete="new-password" />
           </Form.Item>
+
+          {/* kubeconfig 导入与连接自检：只对已保存的集群可用（要有 id 才能调接口）。
+              手上现成的多是一份 kubeconfig，而且里面往往是客户端证书而非 Token。 */}
+          {editing?.id ? (
+            <div style={{ marginBottom: 16, padding: 12, background: 'var(--wjw-bg)', borderRadius: 6 }}>
+              <div style={{ fontSize: 13, marginBottom: 8, color: 'var(--wjw-text-sub)' }}>
+                {text('k8s.kubeconfig.title')}
+                {editing.auth_mode === 'clientcert' && <Tag color="blue" style={{ marginLeft: 8 }}>{text('k8s.kubeconfig.modeCert')}</Tag>}
+                {editing.has_ca && <Tag color="green">{text('k8s.kubeconfig.tlsVerified')}</Tag>}
+              </div>
+              <Input.TextArea rows={3} value={kubeconfigText} onChange={(e) => setKubeconfigText(e.target.value)}
+                placeholder={text('k8s.kubeconfig.placeholder')} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+              <Space style={{ marginTop: 8 }}>
+                <Button size="small" loading={kcLoading} disabled={!kubeconfigText.trim()}
+                  onClick={() => doImportKubeconfig(editing.id!)}>
+                  {text('k8s.kubeconfig.import')}
+                </Button>
+                <Button size="small" loading={testLoading} onClick={() => doTestConnection(editing.id!)}>
+                  {text('k8s.kubeconfig.test')}
+                </Button>
+                {testResult && (
+                  <span style={{ fontSize: 12, color: testResult.ok ? '#00a870' : '#e34d59' }}>
+                    {testResult.ok
+                      ? text('k8s.kubeconfig.testOk', { version: testResult.version || '?', nodes: testResult.node_count, ms: testResult.latency_ms })
+                      : testResult.error}
+                  </span>
+                )}
+              </Space>
+            </div>
+          ) : null}
           <Form.Item label={text('k8s.form.description')} name="description">
             <Input.TextArea rows={2} placeholder={text('k8s.form.descriptionPlaceholder')} />
           </Form.Item>
@@ -712,8 +918,31 @@ export const K8sClusters: React.FC = () => {
                 children: <Table size="small" rowKey="name" loading={liveLoading} dataSource={liveNodes} pagination={false} columns={liveNodeCols} scroll={{ y: 420 }} />,
               },
               {
-                key: 'pods', label: `Pod (${livePods.length})`,
-                children: <Table size="small" rowKey={(r: K8sLivePod) => `${r.namespace}/${r.name}`} loading={liveLoading} dataSource={livePods} pagination={{ pageSize: 15, showSizeChanger: false }} columns={livePodCols} scroll={{ y: 420 }} />,
+                key: 'pods', label: `Pod (${podPage?.total ?? 0})`,
+                children: (
+                  <>
+                    {/* 截断如实告知：原先直接砍到前 500 条且界面上完全看不出来 */}
+                    {podPage?.truncated && (
+                      <Alert style={{ marginBottom: 8 }} type="warning" showIcon
+                        message={text('k8s.podsTruncated', { cap: podPage.cap })} />
+                    )}
+                    <Table
+                      size="small"
+                      rowKey={(r: K8sLivePod) => `${r.namespace}/${r.name}`}
+                      loading={liveLoading}
+                      dataSource={podPage?.items || []}
+                      pagination={{
+                        current: podPage?.page ?? 1,
+                        pageSize: podPage?.page_size ?? podPageSize,
+                        total: podPage?.total ?? 0,
+                        showSizeChanger: false,
+                        onChange: (p) => drawerCluster?.id && loadPodPage(drawerCluster.id, p),
+                      }}
+                      columns={livePodCols}
+                      scroll={{ y: 420 }}
+                    />
+                  </>
+                ),
               },
             ] : []),
             {

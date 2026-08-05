@@ -253,6 +253,14 @@ type K8sCluster struct {
 	ConsolePath  string    `gorm:"size:200" json:"console_path"`  // 控制台路径，如 "/#/login"，默认 "/"
 	APIServer    string    `gorm:"size:120" json:"api_server"`    // 可选，默认 VIP:6443
 	APIToken     string    `gorm:"type:text" json:"-"`            // kube-apiserver ServiceAccount Bearer Token（不回传前端）
+
+	// ── 认证方式（kubeconfig 导入后可能是客户端证书而非 Token）──
+	// 只支持 Bearer Token 的话，用 client-cert 认证的集群根本接不进来，
+	// 而 kubeconfig 里给的恰恰多数是证书对。
+	AuthMode   string `gorm:"size:20;default:token" json:"auth_mode"` // token | clientcert
+	ClientCert string `gorm:"type:text" json:"-"`                     // PEM，clientcert 模式用
+	ClientKey  string `gorm:"type:text" json:"-"`                     // PEM 私钥，与 APIToken 同级机密，加密落库
+	CACert     string `gorm:"type:text" json:"-"`                     // PEM，非空则真校验 apiserver 证书
 	CredentialID *uint     `json:"credential_id"`                 // 绑定的控制台登录凭据
 	Description  string    `gorm:"type:text" json:"description"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -270,18 +278,26 @@ type K8sCluster struct {
 	OwnerName   string `gorm:"-" json:"owner_name"`
 	CredName    string `gorm:"-" json:"cred_name"`
 	Online      bool   `gorm:"-" json:"online"`     // VIP:console_port 连通性（探测得到）
-	HasToken    bool   `gorm:"-" json:"has_token"`  // 是否已配置 kube API Token
+	HasToken    bool   `gorm:"-" json:"has_token"`  // 是否已配置 kube API 凭证（Token 或客户端证书）
+	HasCert     bool   `gorm:"-" json:"has_cert"`   // 是否配了客户端证书
+	HasCA       bool   `gorm:"-" json:"has_ca"`     // 是否配了 CA（配了才会真校验 TLS）
 }
 
 // BeforeSave 落库前加密 API Token。
 // 这个 token 通常绑着一个能读全集群的 ServiceAccount，和 SSH 密码是同一量级的秘密，
 // 之前却是明文落库——Credential 走了加密钩子，这里漏了。
+// 客户端私钥与 Token 同级机密，走同一套钩子；证书与 CA 是公开信息，明文即可。
 func (c *K8sCluster) BeforeSave(tx *gorm.DB) error {
 	enc, err := crypto.EncryptSecret(c.APIToken)
 	if err != nil {
 		return err
 	}
 	c.APIToken = enc
+	encKey, err := crypto.EncryptSecret(c.ClientKey)
+	if err != nil {
+		return err
+	}
+	c.ClientKey = encKey
 	return nil
 }
 
@@ -289,7 +305,12 @@ func (c *K8sCluster) BeforeSave(tx *gorm.DB) error {
 // 升级后旧集群的 token 照常能用，不需要用户重填。
 func (c *K8sCluster) AfterFind(tx *gorm.DB) error {
 	c.APIToken = crypto.MustDecrypt(c.APIToken)
-	c.HasToken = c.APIToken != ""
+	c.ClientKey = crypto.MustDecrypt(c.ClientKey)
+	c.HasCert = c.ClientCert != "" && c.ClientKey != ""
+	c.HasCA = c.CACert != ""
+	// has_token 的语义是「能不能调 kube API」，客户端证书同样算数——
+	// 否则用 kubeconfig 证书接进来的集群，前端会一直提示「未配置 Token」。
+	c.HasToken = c.APIToken != "" || c.HasCert
 	return nil
 }
 
@@ -300,6 +321,7 @@ func (c *K8sCluster) AfterFind(tx *gorm.DB) error {
 // 而不是指望每个调用点自己记得复位。
 func (c *K8sCluster) AfterSave(tx *gorm.DB) error {
 	c.APIToken = crypto.MustDecrypt(c.APIToken)
+	c.ClientKey = crypto.MustDecrypt(c.ClientKey)
 	return nil
 }
 

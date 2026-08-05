@@ -20,7 +20,7 @@ import {
   FolderOpenOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { getStats, getRecentActivity, getAssets, type Stats, type ActivityLog, type Asset } from '../services/api';
+import { getStats, getRecentActivity, getAssets, isK8sPodAssetId, type Stats, type ActivityLog, type Asset } from '../services/api';
 import { PageHeader } from '../components/PageHeader';
 import { useTerminals } from '../terminalSessions';
 import { palette, cardStyle, pagePadding } from '../theme';
@@ -208,7 +208,9 @@ export const Dashboard: React.FC = () => {
                           color: active ? palette.primaryDeep : palette.text,
                         }}
                       >
-                        {s.assetId < 0 ? <DesktopOutlined /> : <CodeOutlined />}
+                        {isK8sPodAssetId(s.assetId)
+                          ? <CloudServerOutlined />
+                          : s.assetId < 0 ? <DesktopOutlined /> : <CodeOutlined />}
                         <span style={{ fontWeight: 500 }}>{s.customName || s.name}</span>
                         <span style={{ fontFamily: 'monospace', fontSize: 11, color: palette.textMute }}>{s.ip}</span>
                       </div>
