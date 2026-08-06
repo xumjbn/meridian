@@ -1850,81 +1850,62 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         }
       }
 
-      // ── 输入法合成期间钉住候选框位置 ──
-      // xterm 把隐藏的 textarea 钉在光标格上给输入法定位，搜狗的候选框（SoPY_Comp）
-      // 就贴着它走。问题是合成过程中 xterm 仍然每帧按「终端光标」重写它的 left/top
-      // （CompositionHelper.updateCompositionElements 里那个 setTimeout 自我递归），
-      // 而终端有输出时光标一直在动 —— 于是你正打着拼音，候选框就跟着输出满屏跑。
+      // ── 输入法锚点：只跟用户的按键走，不跟应用挪的光标走 ──
       //
-      // 实测（终端挂 ping -t，一个词 nihaoshijie 全程不提交，采样 textarea 位置）：
-      //   改前 7 个位置，顺着输出一行行往下爬 88px：
-      //     14.4,140.8 → 0,158.4 → 0,176 → 0,193.6 → 0,211.2 → 14.4,211.2 → 0,228.8
-      //   改后 1 个位置，不动。
-      // 用 Win32 抓真实搜狗窗口也印证了同一件事：SoPY_Comp 在 (6,676)|(6,690)|(19,690)
-      // 三个位置之间来回弹。codex / claude 这类整屏重绘的 TUI 光标满屏跑，框就满屏飞。
+      // xterm 把隐藏的 textarea 钉在「终端光标」所在格上，输入法（搜狗候选框
+      // SoPY_Comp）就贴着它定位。问题是 codex / claude 这类 TUI 在 working 时会
+      // 不停把光标在几行之间来回挪（spinner 行 / 输入框 / 底部状态行），xterm 每次
+      // 都跟着重定位 textarea，于是你正在打的拼音候选框就满屏乱跳。
       //
-      // 打字期间用户的输入点是不动的，候选框就不该动。
+      // 实测（真桌面端 WebView2 + 真搜狗，挂 CDP 探针进去量的）：
+      //   codex working 期间 textarea 位移 82 次、纵向跨度 653px；
+      //   搜狗候选框 SoPY_Comp 跟着跳 20 次、9 个位置、纵向 117px。
       //
-      // 第一版只钉 style.left/top（相对定位），Chrome 里量到 CSS 值确实不动了，
-      // 但装成桌面端实测候选框照跳：25 秒 15 次位移、纵向窜 109px。原因是钉错了层——
-      // left/top 是相对它外层容器的，终端视口一滚，屏幕坐标照样变，而搜狗跟的是屏幕坐标。
-      // 现在改成合成期间把 textarea 提成 position:fixed 并锁死屏幕坐标：脱离滚动容器，
-      // 容器怎么滚都不影响它。位置走 CSS 变量 + !important（见 index.css 的 .ime-pinned），
-      // 作者样式表的 !important 压得住行内非 important 声明，xterm 每帧的写入就失效了。
-      // 两个元素都要钉，缺一个就还会闪：
-      //   .xterm-helper-textarea —— 隐藏的输入锚点，搜狗候选框贴着它定位
-      //   .xterm-composition-view —— xterm 自己画的「正在输入的拼音」小框，是可见元素
-      // 同一段 updateCompositionElements 里按同一个光标坐标摆这两个。实测 codex 处于
-      // working 时（发完一句话它在转圈），它会把终端光标在 spinner 行和输入框之间来回挪：
-      // 3 秒内锚点跳 23 次、8 个位置、纵向跨度 88px。只钉 textarea 的话，那个可见的
-      // 拼音框照样跟着光标满屏跳。
+      // 前三版都挂在 compositionstart 上钉位置，全部无效——同一份探针数据显示
+      // **合成事件在 WebView2 + 搜狗下一次都没触发过**（start=0 end=0），
+      // 钉子从来没上过身。所以这里彻底不碰合成事件。
+      //
+      // 现在的规则很简单：光标位置只有「用户刚敲了键」时才允许更新锚点；
+      // 其余时间 xterm 怎么改都拽回去。用户在哪打字，候选框就待在哪。
       const ta = term.textarea;
       if (ta) {
-        const compView = () => term.element?.querySelector<HTMLElement>('.xterm-composition-view') || null;
-        const pin = (el: HTMLElement | null) => {
-          if (!el) return;
-          const r = el.getBoundingClientRect();
-          el.style.setProperty('--ime-left', `${r.left}px`);
-          el.style.setProperty('--ime-top', `${r.top}px`);
-          el.classList.add('ime-pinned');
-        };
-        const unpin = (el: HTMLElement | null) => {
-          if (!el) return;
-          el.classList.remove('ime-pinned');
-          el.style.removeProperty('--ime-left');
-          el.style.removeProperty('--ime-top');
-        };
-        // 合成结束不立刻松开，留一段宽限期。
-        // 搜狗打一个词的过程中会反复 end / start（逐字上屏、云输入都会这样），而
-        // 每次 start 都按「此刻的终端光标」重新钉位置。codex 在 working 时把光标
-        // 在三行之间来回弹（实测 y 只有 356 / 409 / 444 三个值 —— 正是 working 行、
-        // 输入框、底部 gpt 那行），于是每按一个键就钉到随机一行，看起来就是候选框
-        // 跟着闪。宽限期内的连续合成复用同一个锚点，中间那些重启就不再改位置。
-        let releaseTimer: ReturnType<typeof setTimeout> | null = null;
-        let pinned = false;
-        const onCompStart = () => {
-          if (releaseTimer) { clearTimeout(releaseTimer); releaseTimer = null; }
-          if (pinned) return;           // 仍在宽限期内：沿用上一次的锚点，不重新钉
-          // 下一拍再取值：xterm 自己的 compositionstart 处理里会先 _syncTextArea()
-          // 把 textarea 挪到真实光标处，抢在它前面记会钉住一个旧位置。
-          setTimeout(() => { pin(ta); pin(compView()); pinned = true; }, 0);
-        };
-        const release = () => {
-          releaseTimer = null;
-          pinned = false;
-          unpin(ta); unpin(compView());
-        };
-        const onCompEnd = () => {
-          if (releaseTimer) clearTimeout(releaseTimer);
-          releaseTimer = setTimeout(release, 800);
-        };
-        ta.addEventListener('compositionstart', onCompStart);
-        ta.addEventListener('compositionend', onCompEnd);
+        let anchor: { left: string; top: string } | null = null;
+        let acceptUntil = 0;
+        const KEY_GRACE_MS = 150;   // 按键后留一小段时间让 xterm 定位到真实输入点
+
+        const onUserKey = () => { acceptUntil = Date.now() + KEY_GRACE_MS; };
+        const resetAnchor = () => { anchor = null; };
+
+        const keeper = new MutationObserver(() => {
+          if (Date.now() <= acceptUntil) {
+            // 用户刚按过键：这次移动是冲着真实输入点去的，收下当新锚点
+            anchor = { left: ta.style.left, top: ta.style.top };
+            return;
+          }
+          if (!anchor) { anchor = { left: ta.style.left, top: ta.style.top }; return; }
+          if (ta.style.left !== anchor.left || ta.style.top !== anchor.top) {
+            // 应用自己挪的光标，不是用户输入点——拽回去
+            ta.style.left = anchor.left;
+            ta.style.top = anchor.top;
+          }
+        });
+        keeper.observe(ta, { attributes: true, attributeFilter: ['style'] });
+
+        // keydown 覆盖普通打字；beforeinput 覆盖输入法上屏（合成事件不可靠，但
+        // 上屏最终一定会走 input/beforeinput）；focus 时重来一遍锚点。
+        ta.addEventListener('keydown', onUserKey, true);
+        ta.addEventListener('beforeinput', onUserKey, true);
+        ta.addEventListener('input', onUserKey, true);
+        ta.addEventListener('focus', resetAnchor, true);
+        ta.addEventListener('blur', resetAnchor, true);
+
         imeFreezeCleanupRef.current = () => {
-          ta.removeEventListener('compositionstart', onCompStart);
-          ta.removeEventListener('compositionend', onCompEnd);
-          if (releaseTimer) clearTimeout(releaseTimer);
-          release();   // 拆除时立即松开，别留着定时器打到已卸载的 DOM 上
+          keeper.disconnect();
+          ta.removeEventListener('keydown', onUserKey, true);
+          ta.removeEventListener('beforeinput', onUserKey, true);
+          ta.removeEventListener('input', onUserKey, true);
+          ta.removeEventListener('focus', resetAnchor, true);
+          ta.removeEventListener('blur', resetAnchor, true);
         };
       }
 
