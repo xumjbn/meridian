@@ -22,6 +22,13 @@ const nextSessionId = () => sessionSeq++;
 
 const META_KEY = 'term_tab_meta';
 type TabMeta = Record<number, { name?: string; color?: string }>;
+
+// 标签名/颜色按 assetId 持久化，前提是 assetId 代表一台稳定的主机——只有正数资产 ID 满足。
+// 负数是合成 ID：本地终端的 -1/-2/-3 是「当前开着第几个」算出来的槽位号，K8s Pod 的
+// ≤ -1000 是本次页面加载内的登记顺序，两者都不指向固定的东西。给它们存名字的后果是
+// 名字会串台：把第 2 个本地终端改名 rustshell，下次再开第 2 个本地终端（哪怕是完全
+// 不相干的一个 Shell）就又叫 rustshell 了。所以合成 ID 的改名/改色只在本次会话内有效。
+const isPersistableAssetId = (assetId: number): boolean => assetId > 0;
 const loadTabMeta = (): TabMeta => {
   try { return JSON.parse(localStorage.getItem(META_KEY) || '{}') as TabMeta; } catch { return {}; }
 };
@@ -116,7 +123,7 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return;
     }
     const sid = nextSessionId();
-    const meta = loadTabMeta()[s.assetId];
+    const meta = isPersistableAssetId(s.assetId) ? loadTabMeta()[s.assetId] : undefined;
     // 更新函数里再判一次同主机是否已存在：ref 可能是同一拍里的旧值，
     // 连点两下会绕过上面的判断，多开一个标签。
     setSessions((prev) => (prev.some((x) => x.assetId === s.assetId)
@@ -149,7 +156,7 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       assetId = s.assetId;
       return { ...s, customName: v || undefined };
     }));
-    if (assetId != null) {
+    if (assetId != null && isPersistableAssetId(assetId)) {
       const m = loadTabMeta();
       m[assetId] = { ...(m[assetId] || {}), name: v || undefined };
       saveTabMeta(m);
@@ -163,7 +170,7 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       assetId = s.assetId;
       return { ...s, color: color || undefined };
     }));
-    if (assetId != null) {
+    if (assetId != null && isPersistableAssetId(assetId)) {
       const m = loadTabMeta();
       m[assetId] = { ...(m[assetId] || {}), color: color || undefined };
       saveTabMeta(m);

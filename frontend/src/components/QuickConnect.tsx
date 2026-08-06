@@ -133,7 +133,9 @@ export const QuickConnect: React.FC<Props> = ({ collapsed = false }) => {
       .filter((s) => s.assetId < 0 && !isK8sPodAssetId(s.assetId))
       .map((s) => s.assetId);
     const nextId = (localIds.length ? Math.min(...localIds) : 0) - 1;
-    const n = localIds.length + 1;
+    // 序号跟着 id 走，不用「当前开着几个」——关掉中间某个标签后，两者会算出不同的数，
+    // 比如 -1/-2/-3 关掉 -2 再新建：id 是 -4，而个数算出来是 3，标签就会重名。
+    const n = -nextId;
     open({
       assetId: nextId,
       name: n > 1 ? text('quickConnect.localTerminalN', { count: n }) : text('quickConnect.localTerminal'),
