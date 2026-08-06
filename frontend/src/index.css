@@ -159,8 +159,12 @@ body {
    这里必须满足两件事，缺一不可：
    1) position:fixed —— 只锁 left/top 不够。那是相对外层容器的，终端视口一滚，
       屏幕坐标照样变（实测桌面端 25 秒跳 15 次、纵向 109px）。fixed 脱离滚动容器。
-   2) !important —— xterm 每帧写的是行内 style，作者样式表带 !important 才压得住。 */
-.xterm .xterm-helper-textarea.ime-pinned {
+   2) !important —— xterm 每帧写的是行内 style，作者样式表带 !important 才压得住。
+   3) 两个元素都要钉：隐藏的 helper-textarea（搜狗候选框贴着它定位）和 xterm 自己
+      画的 composition-view（可见的「正在输入的拼音」小框）。它们由同一段代码按同一
+      个光标坐标摆放，只钉一个的话另一个照样跟着光标跳。 */
+.xterm .xterm-helper-textarea.ime-pinned,
+.xterm .xterm-composition-view.ime-pinned {
   position: fixed !important;
   left: var(--ime-left) !important;
   top: var(--ime-top) !important;

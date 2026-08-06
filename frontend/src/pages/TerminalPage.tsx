@@ -1871,29 +1871,60 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       // 现在改成合成期间把 textarea 提成 position:fixed 并锁死屏幕坐标：脱离滚动容器，
       // 容器怎么滚都不影响它。位置走 CSS 变量 + !important（见 index.css 的 .ime-pinned），
       // 作者样式表的 !important 压得住行内非 important 声明，xterm 每帧的写入就失效了。
+      // 两个元素都要钉，缺一个就还会闪：
+      //   .xterm-helper-textarea —— 隐藏的输入锚点，搜狗候选框贴着它定位
+      //   .xterm-composition-view —— xterm 自己画的「正在输入的拼音」小框，是可见元素
+      // 同一段 updateCompositionElements 里按同一个光标坐标摆这两个。实测 codex 处于
+      // working 时（发完一句话它在转圈），它会把终端光标在 spinner 行和输入框之间来回挪：
+      // 3 秒内锚点跳 23 次、8 个位置、纵向跨度 88px。只钉 textarea 的话，那个可见的
+      // 拼音框照样跟着光标满屏跳。
       const ta = term.textarea;
       if (ta) {
+        const compView = () => term.element?.querySelector<HTMLElement>('.xterm-composition-view') || null;
+        const pin = (el: HTMLElement | null) => {
+          if (!el) return;
+          const r = el.getBoundingClientRect();
+          el.style.setProperty('--ime-left', `${r.left}px`);
+          el.style.setProperty('--ime-top', `${r.top}px`);
+          el.classList.add('ime-pinned');
+        };
+        const unpin = (el: HTMLElement | null) => {
+          if (!el) return;
+          el.classList.remove('ime-pinned');
+          el.style.removeProperty('--ime-left');
+          el.style.removeProperty('--ime-top');
+        };
+        // 合成结束不立刻松开，留一段宽限期。
+        // 搜狗打一个词的过程中会反复 end / start（逐字上屏、云输入都会这样），而
+        // 每次 start 都按「此刻的终端光标」重新钉位置。codex 在 working 时把光标
+        // 在三行之间来回弹（实测 y 只有 356 / 409 / 444 三个值 —— 正是 working 行、
+        // 输入框、底部 gpt 那行），于是每按一个键就钉到随机一行，看起来就是候选框
+        // 跟着闪。宽限期内的连续合成复用同一个锚点，中间那些重启就不再改位置。
+        let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+        let pinned = false;
         const onCompStart = () => {
+          if (releaseTimer) { clearTimeout(releaseTimer); releaseTimer = null; }
+          if (pinned) return;           // 仍在宽限期内：沿用上一次的锚点，不重新钉
           // 下一拍再取值：xterm 自己的 compositionstart 处理里会先 _syncTextArea()
           // 把 textarea 挪到真实光标处，抢在它前面记会钉住一个旧位置。
-          setTimeout(() => {
-            const r = ta.getBoundingClientRect();
-            ta.style.setProperty('--ime-left', `${r.left}px`);
-            ta.style.setProperty('--ime-top', `${r.top}px`);
-            ta.classList.add('ime-pinned');
-          }, 0);
+          setTimeout(() => { pin(ta); pin(compView()); pinned = true; }, 0);
+        };
+        const release = () => {
+          releaseTimer = null;
+          pinned = false;
+          unpin(ta); unpin(compView());
         };
         const onCompEnd = () => {
-          ta.classList.remove('ime-pinned');
-          ta.style.removeProperty('--ime-left');
-          ta.style.removeProperty('--ime-top');
+          if (releaseTimer) clearTimeout(releaseTimer);
+          releaseTimer = setTimeout(release, 800);
         };
         ta.addEventListener('compositionstart', onCompStart);
         ta.addEventListener('compositionend', onCompEnd);
         imeFreezeCleanupRef.current = () => {
           ta.removeEventListener('compositionstart', onCompStart);
           ta.removeEventListener('compositionend', onCompEnd);
-          onCompEnd();
+          if (releaseTimer) clearTimeout(releaseTimer);
+          release();   // 拆除时立即松开，别留着定时器打到已卸载的 DOM 上
         };
       }
 
