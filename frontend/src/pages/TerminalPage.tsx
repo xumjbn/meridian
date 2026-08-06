@@ -1218,6 +1218,7 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const ghostRef = useRef('');                            // 当前幽灵残余文本
   const ghostCmdRef = useRef('');                         // 幽灵对应的完整命令（用于频率学习）
   const ghostDecoRef = useRef<{ dispose: () => void } | null>(null); // xterm 装饰器句柄
+  const imeFreezeCleanupRef = useRef<(() => void) | null>(null);     // 输入法位置钉住的监听拆除
   // 历史命令按主机隔离：本地终端用 local，Pod 用合成 id（不能和本地终端混到一起），远程用资产 ID
   const historyKey = assetId === LOCAL_ASSET_ID
     ? 'local'
@@ -1840,6 +1841,49 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         }
       }
 
+      // ── 输入法合成期间钉住候选框位置 ──
+      // xterm 把隐藏的 textarea 钉在光标格上给输入法定位，搜狗的候选框（SoPY_Comp）
+      // 就贴着它走。问题是合成过程中 xterm 仍然每帧按「终端光标」重写它的 left/top
+      // （CompositionHelper.updateCompositionElements 里那个 setTimeout 自我递归），
+      // 而终端有输出时光标一直在动 —— 于是你正打着拼音，候选框就跟着输出满屏跑。
+      //
+      // 实测（终端挂 ping -t，一个词 nihaoshijie 全程不提交，采样 textarea 位置）：
+      //   改前 7 个位置，顺着输出一行行往下爬 88px：
+      //     14.4,140.8 → 0,158.4 → 0,176 → 0,193.6 → 0,211.2 → 14.4,211.2 → 0,228.8
+      //   改后 1 个位置，不动。
+      // 用 Win32 抓真实搜狗窗口也印证了同一件事：SoPY_Comp 在 (6,676)|(6,690)|(19,690)
+      // 三个位置之间来回弹。codex / claude 这类整屏重绘的 TUI 光标满屏跑，框就满屏飞。
+      //
+      // 打字期间用户的输入点是不动的，候选框就不该动。这里在 compositionstart 之后
+      // 记下位置并盯着改回去，compositionend 解除，只在合成窗口内生效。
+      const ta = term.textarea;
+      if (ta) {
+        let frozen: { left: string; top: string } | null = null;
+        const keeper = new MutationObserver(() => {
+          if (!frozen) return;
+          if (ta.style.left !== frozen.left || ta.style.top !== frozen.top) {
+            ta.style.left = frozen.left;
+            ta.style.top = frozen.top;
+          }
+        });
+        const onCompStart = () => {
+          // 下一拍再取值：xterm 自己的 compositionstart 处理里会先 _syncTextArea()
+          // 把 textarea 挪到真实光标处，抢在它前面记会钉住一个旧位置。
+          setTimeout(() => {
+            frozen = { left: ta.style.left, top: ta.style.top };
+            keeper.observe(ta, { attributes: true, attributeFilter: ['style'] });
+          }, 0);
+        };
+        const onCompEnd = () => { frozen = null; keeper.disconnect(); };
+        ta.addEventListener('compositionstart', onCompStart);
+        ta.addEventListener('compositionend', onCompEnd);
+        imeFreezeCleanupRef.current = () => {
+          ta.removeEventListener('compositionstart', onCompStart);
+          ta.removeEventListener('compositionend', onCompEnd);
+          keeper.disconnect();
+        };
+      }
+
       // 终端内 URL 可点击（http/https）→ 系统浏览器打开
       term.registerLinkProvider({
         provideLinks(bufferLineNumber, callback) {
@@ -2132,6 +2176,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
         if (onContextMenu) containerEl.removeEventListener('contextmenu', onContextMenu);
         if (onWheel) containerEl.removeEventListener('wheel', onWheel);
       }
+      imeFreezeCleanupRef.current?.();
+      imeFreezeCleanupRef.current = null;
       term.dispose();
       // 「新建连接」填了密码但始终没收到 auth_request（例如资产已绑凭据、
       // 或连接直接失败）时，这份明文会一直躺在内存 Map 里。会话拆除时抹掉。
