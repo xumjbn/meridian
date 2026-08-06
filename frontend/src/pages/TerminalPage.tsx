@@ -398,9 +398,14 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
 
   // 分屏行结构（可变窗格数 + 可拖拽缩放）
   const [rows, setRows] = useState<RowNode[]>(() => {
-    const initLayout = (localStorage.getItem('term_layout') as LayoutType) || 'single';
+    // 新开的终端一律单屏。
+    // 原先这里从 localStorage 读全局的 term_layout 当初始布局，可是 App 给每个终端
+    // 会话各挂一个 TerminalPage 实例——于是只要切过一次田字四分，之后每开一个新标签
+    // 都自己长出四宫格，另外三格是 assetId=0 的空窗格（显示成主机选择器）。
+    // 分屏是「这个标签自己的布局」，不是全局偏好；VS Code / iTerm2 / Windows Terminal /
+    // tmux 新开标签也都是单屏。
     const first: PaneNode = { id: newPaneId(), assetId, flex: 1 };
-    return buildPreset(initLayout, [{ id: newRowId(), flex: 1, panes: [first] }]);
+    return [{ id: newRowId(), flex: 1, panes: [first] }];
   });
 
   const totalPanes = flatPanes(rows).length;
@@ -446,7 +451,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ assetId, sessionId, 
 
   // 应用预设布局（单屏 / 左右双分 / 田字四分）
   const applyPreset = (type: LayoutType) => {
-    localStorage.setItem('term_layout', type);
+    // 不再持久化：布局是本标签自己的状态，存成全局会污染之后新开的每一个终端
     setMaximizedPaneId(null); // 切换布局时取消最大化
     setRows((prev) => buildPreset(type, prev));
     // 切回单屏时取消所有同步，避免单屏输入误操作后台终端
@@ -1220,7 +1225,8 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   const ghostDecoRef = useRef<{ dispose: () => void } | null>(null); // xterm 装饰器句柄
   const imeFreezeCleanupRef = useRef<(() => void) | null>(null);     // 输入法位置钉住的监听拆除
   // 历史命令按主机隔离：本地终端用 local，Pod 用合成 id（不能和本地终端混到一起），远程用资产 ID
-  const historyKey = assetId === LOCAL_ASSET_ID
+  // 同 isLocal：多开的本地终端是 -1/-2/-3…，都该共用同一份本机历史，不能只认 -1
+  const historyKey = assetId < 0 && !isK8sPodAssetId(assetId)
     ? 'local'
     : isK8sPodAssetId(assetId) ? `k8s-${-assetId}` : `asset-${assetId}`;
 
@@ -1643,10 +1649,13 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
   // 目标详情登记在 api.ts 的注册表里（见 registerK8sPodTarget）。
   const k8sTarget = isK8sPodAssetId(assetId) ? getK8sPodTarget(assetId) : undefined;
 
-  // 本地终端：负数 assetId 中的 -1。
-  // 原先是「任意负数都算本地终端」，Pod 会话引入后必须区分开，
-  // 否则 Pod 标签会被当成本地 Shell 连到后端本机上去。
-  const isLocal = assetId === LOCAL_ASSET_ID;
+  // 本地终端：负数 assetId 里除 Pod 段（≤ -1000）以外的那些。
+  // 不能写成 `assetId === LOCAL_ASSET_ID`——LOCAL_ASSET_ID 只是 -1，而 QuickConnect
+  // 每多开一个本地终端就往下取一个更小的负数（-1、-2、-3…）。只认 -1 的话，第二个
+  // 本地终端三个分支全落空（不是本地、不是 Pod、也不是正数资产），asset 永远是 null、
+  // status 卡在 idle，界面显示成「当前分屏处于闲置状态」，终端根本连不上。
+  // 引入 Pod 会话时把「任意负数都算本地」收紧成「只有 -1」，就是在这里漏掉了多开这条路径。
+  const isLocal = assetId < 0 && !isK8sPodAssetId(assetId);
 
   // 2. 同步加载被分配的资产详情
   useEffect(() => {
@@ -1854,33 +1863,37 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       // 用 Win32 抓真实搜狗窗口也印证了同一件事：SoPY_Comp 在 (6,676)|(6,690)|(19,690)
       // 三个位置之间来回弹。codex / claude 这类整屏重绘的 TUI 光标满屏跑，框就满屏飞。
       //
-      // 打字期间用户的输入点是不动的，候选框就不该动。这里在 compositionstart 之后
-      // 记下位置并盯着改回去，compositionend 解除，只在合成窗口内生效。
+      // 打字期间用户的输入点是不动的，候选框就不该动。
+      //
+      // 第一版只钉 style.left/top（相对定位），Chrome 里量到 CSS 值确实不动了，
+      // 但装成桌面端实测候选框照跳：25 秒 15 次位移、纵向窜 109px。原因是钉错了层——
+      // left/top 是相对它外层容器的，终端视口一滚，屏幕坐标照样变，而搜狗跟的是屏幕坐标。
+      // 现在改成合成期间把 textarea 提成 position:fixed 并锁死屏幕坐标：脱离滚动容器，
+      // 容器怎么滚都不影响它。位置走 CSS 变量 + !important（见 index.css 的 .ime-pinned），
+      // 作者样式表的 !important 压得住行内非 important 声明，xterm 每帧的写入就失效了。
       const ta = term.textarea;
       if (ta) {
-        let frozen: { left: string; top: string } | null = null;
-        const keeper = new MutationObserver(() => {
-          if (!frozen) return;
-          if (ta.style.left !== frozen.left || ta.style.top !== frozen.top) {
-            ta.style.left = frozen.left;
-            ta.style.top = frozen.top;
-          }
-        });
         const onCompStart = () => {
           // 下一拍再取值：xterm 自己的 compositionstart 处理里会先 _syncTextArea()
           // 把 textarea 挪到真实光标处，抢在它前面记会钉住一个旧位置。
           setTimeout(() => {
-            frozen = { left: ta.style.left, top: ta.style.top };
-            keeper.observe(ta, { attributes: true, attributeFilter: ['style'] });
+            const r = ta.getBoundingClientRect();
+            ta.style.setProperty('--ime-left', `${r.left}px`);
+            ta.style.setProperty('--ime-top', `${r.top}px`);
+            ta.classList.add('ime-pinned');
           }, 0);
         };
-        const onCompEnd = () => { frozen = null; keeper.disconnect(); };
+        const onCompEnd = () => {
+          ta.classList.remove('ime-pinned');
+          ta.style.removeProperty('--ime-left');
+          ta.style.removeProperty('--ime-top');
+        };
         ta.addEventListener('compositionstart', onCompStart);
         ta.addEventListener('compositionend', onCompEnd);
         imeFreezeCleanupRef.current = () => {
           ta.removeEventListener('compositionstart', onCompStart);
           ta.removeEventListener('compositionend', onCompEnd);
-          keeper.disconnect();
+          onCompEnd();
         };
       }
 
