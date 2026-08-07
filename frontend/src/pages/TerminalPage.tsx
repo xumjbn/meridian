@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { readLocalDoc, sftpReadText } from '../services/api';
 import { getAsset, getTerminalWsUrl, getLocalTerminalWsUrl, getAssets, sftpUpload, LOCAL_ASSET_ID, isTauri,
   isK8sPodAssetId, getK8sPodTarget, getK8sExecWsUrl, type Asset } from '../services/api';
 import { CloseOutlined, SyncOutlined, FullscreenOutlined, FullscreenExitOutlined, PlusOutlined, SettingOutlined, UpOutlined, DownOutlined, DownloadOutlined, ExpandAltOutlined, ShrinkOutlined, QuestionCircleOutlined, FolderOpenOutlined, SwapOutlined, DashboardOutlined } from '@ant-design/icons';
@@ -31,6 +32,7 @@ import { ShortcutHelp } from '../components/ShortcutHelp';
 import { TERM_TAB_SLOT_ID, TERM_TOOLBAR_SLOT_ID } from '../components/TerminalTabBar';
 import { takePendingAuth, clearPendingAuth } from '../pendingAuth';
 import { SftpPanel, useSftpDock } from '../components/SftpPanel';
+import { DocPreviewPanel, type DocKind } from '../components/DocPreviewPanel';
 import '@xterm/xterm/css/xterm.css';
 
 const fontSizes = [12, 13, 14, 15, 16, 18, 20, 22, 24];
@@ -203,6 +205,61 @@ const openExternal = (url: string) => {
   } else {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
+};
+
+// ── 终端里可点开的文档 ────────────────────────────────────────
+// ls / find / git status 的输出里出现 .md / .html，直接点开在右侧渲染。
+// 匹配「一段不含空格与引号的路径，以文档扩展名收尾」，POSIX 与 Windows 两种写法都吃。
+const DOC_LINK_RE = /[^\s"'`<>|()[\]]*\.(?:md|markdown|html|htm)\b/gi;
+
+const docKindOf = (p: string): DocKind => {
+  const e = p.toLowerCase().split('.').pop() || '';
+  if (e === 'md' || e === 'markdown') return 'md';
+  if (e === 'html' || e === 'htm') return 'html';
+  return 'text';
+};
+
+const isAbsPath = (p: string): boolean =>
+  p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
+
+/**
+ * 从提示符里嗅出当前目录，作为 OSC 7 / 标题解析之外的兜底。
+ *
+ * Windows 的 cmd 与 PowerShell 两样都不发 —— OSC 7 是 bash/zsh 配了
+ * PROMPT_COMMAND 才有，标题解析要的是 `user@host: /path` 那种格式。
+ * 于是本地终端上 cwd 恒为空，相对路径只能原样发给后端，后端按自己的工作目录去找，
+ * 必然找不到（实测报错落在 …\srv\readme.md）。
+ * 好在 cmd / PowerShell 的提示符本身就是路径，从光标所在行往上扒几行就能拿到。
+ */
+const sniffCwdFromTerm = (term: Terminal | null): string => {
+  if (!term) return '';
+  try {
+    const buf = term.buffer.active;
+    for (let i = 0; i <= 3; i++) {
+      const ln = buf.getLine(buf.baseY + buf.cursorY - i);
+      if (!ln) continue;
+      const t = ln.translateToString(true);
+      // cmd: `C:\path>`   PowerShell: `PS C:\path>`
+      const win = /^(?:PS\s+)?([A-Za-z]:\\[^>]*)>/.exec(t);
+      if (win) return win[1];
+      // POSIX: `user@host:/var/log$`、`[user@host ~]#`
+      const nix = /[:\s]([~/][^\s$#]*)\s*[$#]\s*$/.exec(t);
+      if (nix) return nix[1];
+    }
+  } catch { /* 缓冲不可读就当没探到 */ }
+  return '';
+};
+
+/** 相对路径按终端当前目录补全；分隔符跟着 cwd 的风格走（Windows 用反斜杠） */
+const resolveDocPath = (raw: string, cwd: string): string => {
+  const p = raw.trim();
+  if (!p) return p;
+  if (isAbsPath(p)) return p;
+  if (!cwd) return p;                       // 还没探到 cwd：原样交给后端，让它报错
+  const win = /^[A-Za-z]:[\\/]/.test(cwd) || cwd.includes('\\');
+  const sep = win ? '\\' : '/';
+  const base = cwd.replace(/[\\/]+$/, '');
+  return base + sep + p.replace(/^\.[\\/]/, '');
 };
 
 // 一个终端窗格（行内带宽度权重 flex）
@@ -1513,6 +1570,42 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
     cwdRef.current = p;
     setCwd(p);
   }, []);
+
+  // ── 终端内文档预览（点 md / html 路径就在右侧渲染）──
+  // 取文分两路：远程主机走 SFTP 通道读回文本；本机（本地终端）走 /local/doc。
+  // Pod 会话两条都不通，所以不给可点链接。
+  const [doc, setDoc] = useState<null | {
+    name: string; path: string; kind: DocKind; content: string; loading: boolean; error?: string;
+  }>(null);
+
+  const openDoc = useCallback(async (rawPath: string) => {
+    // cwd 优先用 OSC 7 / 标题解析探到的；探不到（Windows 的 cmd、PowerShell）
+    // 就现从提示符里嗅一次，顺手回填给文件面板用
+    let base = cwdRef.current;
+    if (!base) {
+      base = sniffCwdFromTerm(termRef.current);
+      if (base) updateCwd(base);
+    }
+    const full = resolveDocPath(rawPath, base);
+    const name = full.split(/[\\/]/).pop() || full;
+    const kind = docKindOf(full);
+    setDoc({ name, path: full, kind, content: '', loading: true });
+    try {
+      // 本地终端是负数 assetId（Pod 段除外），远程是正数资产 ID
+      const isLocalTerm = assetId < 0 && !isK8sPodAssetId(assetId);
+      const content = isLocalTerm
+        ? (await readLocalDoc(full)).content
+        : await sftpReadText(assetId, full);
+      setDoc((prev) => (prev && prev.path === full ? { ...prev, content, loading: false } : prev));
+    } catch (e) {
+      const msg = (e as Error)?.message || '读取失败';
+      setDoc((prev) => (prev && prev.path === full ? { ...prev, loading: false, error: msg } : prev));
+    }
+  }, [assetId, updateCwd]);
+
+  // link provider 建在终端初始化里、只建一次，不能直接闭包捕获 openDoc（会拿到旧的）
+  const openDocRef = useRef(openDoc);
+  useEffect(() => { openDocRef.current = openDoc; }, [openDoc]);
   const bindCwdTracking = useCallback((term: Terminal) => {
     try {
       term.parser.registerOscHandler(7, (data: string) => {
@@ -1918,14 +2011,38 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           const re = /(https?:\/\/[^\s"'`<>()一-鿿]+)/g;
           const links: { range: { start: { x: number; y: number }; end: { x: number; y: number } }; text: string; activate: () => void }[] = [];
           let m: RegExpExecArray | null;
+          // 记下 URL 占用的区间：下面找文档路径时要避开它们，
+          // 否则 https://x/a.html 的尾巴会被再识别成一个「文档」，两个链接叠在一起。
+          const taken: [number, number][] = [];
           while ((m = re.exec(text)) !== null) {
             const url = m[1].replace(/[.,;:)]+$/, ''); // 去掉行尾标点
             if (!url) continue;
+            taken.push([m.index, m.index + url.length]);
             links.push({
               range: { start: { x: m.index + 1, y: bufferLineNumber }, end: { x: m.index + url.length, y: bufferLineNumber } },
               text: url,
               activate: () => openExternal(url),
             });
+          }
+
+          // 文档路径（.md / .html）：点开在右侧面板渲染。
+          // Pod 会话既没有 SFTP 也不是本机，取不到文件，就不做成链接。
+          if (!isK8sPodAssetId(assetId)) {
+            const dre = new RegExp(DOC_LINK_RE.source, 'gi');
+            let d: RegExpExecArray | null;
+            while ((d = dre.exec(text)) !== null) {
+              const raw = d[0].replace(/[.,;:)]+$/, '');
+              if (!raw || raw.startsWith('.') && !raw.startsWith('./')) continue; // 纯扩展名之类的噪声
+              const s0 = d.index;
+              const e0 = d.index + raw.length;
+              if (taken.some(([a, b]) => s0 < b && e0 > a)) continue; // 落在 URL 里，跳过
+              const path = raw;
+              links.push({
+                range: { start: { x: s0 + 1, y: bufferLineNumber }, end: { x: e0, y: bufferLineNumber } },
+                text: path,
+                activate: () => { void openDocRef.current(path); },
+              });
+            }
           }
           callback(links.length ? links : undefined);
         },
@@ -2884,6 +3001,22 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
           </div>
         )}
       </div>
+
+      {/* 文档预览：点终端里的 md / html 打开，停靠最右侧 */}
+      {doc && (
+        <DocPreviewPanel
+          name={doc.name}
+          path={doc.path}
+          kind={doc.kind}
+          content={doc.content}
+          loading={doc.loading}
+          error={doc.error}
+          onClose={() => setDoc(null)}
+          onReload={() => { void openDoc(doc.path); }}
+          // 只有本机文件才有「系统程序打开」——远程路径在这台机器上不存在
+          onOpenExternal={isLocal ? () => openExternal(`file:///${doc.path.replace(/\\/g, '/')}`) : undefined}
+        />
+      )}
 
       {/* 常驻文件面板：停靠右侧时排在终端之后 */}
       {filesOpen && !isLocal && !k8sTarget && sftpDock === 'right' && (

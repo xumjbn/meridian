@@ -566,6 +566,29 @@ export const sftpDownload = async (assetId: number, filePath: string): Promise<b
   return saveBlob(blob, filePath.split('/').pop() || 'download');
 };
 
+// ── 终端内文档预览（md / html）─────────────────
+// 终端里点一个 .md / .html 路径就在应用内渲染，不用下载再找程序打开。
+// 两条取文路径：远程主机复用 SFTP 下载接口读回文本；本机（本地终端）走
+// /local/doc，那个接口与本地终端共用同一道能力门禁。
+export interface LocalDoc { path: string; ext: string; size: number; content: string }
+
+export const readLocalDoc = (path: string): Promise<LocalDoc> =>
+  api.get('/local/doc', { params: { path } });
+
+/** 读远程主机上的文本文件（复用 SFTP 下载通道，只取文本不落盘） */
+export const sftpReadText = async (assetId: number, filePath: string): Promise<string> => {
+  const token = localStorage.getItem('wjw-token') || '';
+  const res = await fetch(`${BACKEND_ORIGIN}/api/assets/${assetId}/sftp/download?path=${encodeURIComponent(filePath)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const ct = res.headers.get('content-type') || '';
+  if (!res.ok || ct.includes('application/json')) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { message?: string })?.message || '读取失败');
+  }
+  return res.text();
+};
+
 // ── 资产可用性 ───────────────────────────────
 export interface AssetCheck {
   id: number;

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -806,6 +807,68 @@ func LocalShellEnabled() bool {
 func GetCapabilities(c *gin.Context) {
 	SendSuccess(c, gin.H{
 		"local_shell": LocalShellEnabled(),
+	})
+}
+
+// ── 本机文档预览 ────────────────────────────────────────────────
+// 终端里点一个 .md / .html 路径就能在应用内渲染，本地终端的文件得有个读取通道。
+//
+// 门禁复用 LocalShellEnabled()：本地终端本身就等于把这台机器的 Shell 交出去了，
+// 能开本地终端却不能读一个文档没有意义；反过来多用户服务器上本地终端是关的，
+// 这个接口也必须一起关掉，否则等于给任意登录用户开了任意文件读取。
+const localDocMaxBytes = 5 << 20 // 5MB：文档预览用，再大的基本不是拿来读的
+
+// 只放行文档类扩展名。不是为了防住恶意用户（本地终端权限本来就更大），
+// 而是防手滑点到二进制文件把几百兆读进浏览器。
+var localDocExts = map[string]bool{
+	".md": true, ".markdown": true, ".html": true, ".htm": true,
+	".txt": true, ".log": true, ".json": true, ".yaml": true, ".yml": true,
+}
+
+// ReadLocalDoc 读取运行后端这台机器上的一个文档，供终端内点击预览
+func ReadLocalDoc(c *gin.Context) {
+	if !LocalShellEnabled() {
+		SendError(c, 403, "本机文件预览在当前部署下未启用（仅桌面端/本机可用）")
+		return
+	}
+	raw := strings.TrimSpace(c.Query("path"))
+	if raw == "" {
+		SendError(c, 400, "缺少文件路径")
+		return
+	}
+	p, err := filepath.Abs(raw)
+	if err != nil {
+		SendError(c, 400, "路径无法解析: "+err.Error())
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(p))
+	if !localDocExts[ext] {
+		SendError(c, 400, "不支持预览该类型: "+ext)
+		return
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		SendError(c, 400, "文件不存在或不可读: "+err.Error())
+		return
+	}
+	if fi.IsDir() {
+		SendError(c, 400, "这是一个目录")
+		return
+	}
+	if fi.Size() > localDocMaxBytes {
+		SendError(c, 400, fmt.Sprintf("文件过大（%.1f MB），预览上限 5 MB", float64(fi.Size())/1024/1024))
+		return
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		SendError(c, 400, "读取失败: "+err.Error())
+		return
+	}
+	SendSuccess(c, gin.H{
+		"path":    p,
+		"ext":     ext,
+		"size":    fi.Size(),
+		"content": string(b),
 	})
 }
 

@@ -262,6 +262,7 @@ func main() {
 
 		// 前端能力开关（如本地终端是否可用）
 		api.GET("/capabilities", handler.GetCapabilities)
+		api.GET("/local/doc", handler.ReadLocalDoc) // 本机文档预览（终端内点 md/html）
 
 		// WebSocket 终端连接
 		api.GET("/ws/terminal/:id", handler.ConnectTerminal)
