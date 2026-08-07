@@ -836,6 +836,16 @@ func ReadLocalDoc(c *gin.Context) {
 		SendError(c, 400, "缺少文件路径")
 		return
 	}
+	// `~/x` 前端原样传过来（终端提示符里常是这种写法），这里按当前用户主目录还原。
+	// filepath.Abs 不认 ~，不展开的话会拼成 <后端工作目录>/~/x。
+	if raw == "~" || strings.HasPrefix(raw, "~/") || strings.HasPrefix(raw, `~\`) {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			SendError(c, 400, "无法确定用户主目录: "+herr.Error())
+			return
+		}
+		raw = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(raw, "~"), string(os.PathSeparator)))
+	}
 	p, err := filepath.Abs(raw)
 	if err != nil {
 		SendError(c, 400, "路径无法解析: "+err.Error())

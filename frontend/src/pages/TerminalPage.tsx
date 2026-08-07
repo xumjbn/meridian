@@ -242,8 +242,10 @@ const sniffCwdFromTerm = (term: Terminal | null): string => {
       // cmd: `C:\path>`   PowerShell: `PS C:\path>`
       const win = /^(?:PS\s+)?([A-Za-z]:\\[^>]*)>/.exec(t);
       if (win) return win[1];
-      // POSIX: `user@host:/var/log$`、`[user@host ~]#`
-      const nix = /[:\s]([~/][^\s$#]*)\s*[$#]\s*$/.exec(t);
+      // POSIX: `user@host:/var/log$`、`[user@host ~]#`、zsh 的 `… ~/work %`
+      // 结尾符必须带上 %：macOS 的 zsh 默认提示符收在 % 上，只认 $ / # 的话
+      // 整个 macOS 本地终端都嗅不到目录（这是 Mac 上点相对路径没反应的直接原因）。
+      const nix = /[:\s]([~/][^\s$#%]*)\s*[$#%]\s*$/.exec(t);
       if (nix) return nix[1];
     }
   } catch { /* 缓冲不可读就当没探到 */ }
@@ -1586,13 +1588,30 @@ const TerminalItem: React.FC<TerminalItemProps> = ({ paneId, assetId, fontSize, 
       base = sniffCwdFromTerm(termRef.current);
       if (base) updateCwd(base);
     }
-    const full = resolveDocPath(rawPath, base);
+    let full = resolveDocPath(rawPath, base);
     const name = full.split(/[\\/]/).pop() || full;
     const kind = docKindOf(full);
+    // 本地终端是负数 assetId（Pod 段除外），远程是正数资产 ID
+    const isLocalTerm = assetId < 0 && !isK8sPodAssetId(assetId);
+
+    // 提示符里只有目录名没有完整路径时（zsh 默认就是这样），拼不出绝对路径。
+    // 这种情况下与其发一个必然失败的请求、让用户看到一句莫名其妙的「文件不存在」，
+    // 不如直接说清楚为什么——「点了没反应」是最难查的一种坏。
+    if (!isAbsPath(full) && !full.startsWith('~')) {
+      setDoc({
+        name, path: full, kind, content: '', loading: false,
+        error: `没能确定终端的当前目录，无法把相对路径「${rawPath}」补成绝对路径。\n`
+          + '常见于 zsh / bash 的默认提示符——它只显示目录名（如 docs），不含完整路径。\n'
+          + '可以先在终端里执行 pwd，或直接点输出里的绝对路径。',
+      });
+      return;
+    }
+    // `~/x` 交给两边各自展开：本机由后端按用户主目录还原；
+    // SFTP 的相对路径本来就是相对登录用户的家目录，去掉 `~/` 正好等价。
+    if (full.startsWith('~/') && !isLocalTerm) full = full.slice(2);
+
     setDoc({ name, path: full, kind, content: '', loading: true });
     try {
-      // 本地终端是负数 assetId（Pod 段除外），远程是正数资产 ID
-      const isLocalTerm = assetId < 0 && !isK8sPodAssetId(assetId);
       const content = isLocalTerm
         ? (await readLocalDoc(full)).content
         : await sftpReadText(assetId, full);
